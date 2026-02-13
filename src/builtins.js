@@ -664,6 +664,207 @@ export const builtins = new Map([
     return true;
   }],
 
+  ['strategyClose', function(id, comment, qty, percent, immediately) {
+    console.log(`Strategy Close: ${id}`);
+    return true;
+  }],
+
+  ['strategyLong', function() {
+    return 'long';
+  }],
+
+  ['strategyShort', function() {
+    return 'short';
+  }],
+
+  ['chartPointFromIndex', function(_index, _price) {
+    return { index: _index ?? null, price: _price ?? null };
+  }],
+
+  ['chartPointNew', function(_time, _price) {
+    return { time: _time ?? null, price: _price ?? null };
+  }],
+
+  ['mapNew', function() {
+    return new Map();
+  }],
+
+  ['mapSize', function(m) {
+    return m instanceof Map ? m.size : 0;
+  }],
+
+  ['mapGet', function(m, key, defval) {
+    if (!(m instanceof Map)) return defval ?? null;
+    if (!m.has(key)) return defval ?? null;
+    return m.get(key);
+  }],
+
+  ['mapSet', function(m, key, value) {
+    if (!(m instanceof Map)) return null;
+    m.set(key, value);
+    return value;
+  }],
+
+  ['mapRemove', function(m, key) {
+    if (!(m instanceof Map)) return false;
+    return m.delete(key);
+  }],
+
+  ['mapKeys', function(m) {
+    if (!(m instanceof Map)) return [];
+    return Array.from(m.keys());
+  }],
+
+  ['mapValues', function(m) {
+    if (!(m instanceof Map)) return [];
+    return Array.from(m.values());
+  }],
+
+  ['mapContains', function(m, key) {
+    if (!(m instanceof Map)) return false;
+    return m.has(key);
+  }],
+
+  ['matrixNew', function(rows, cols, initialValue = 0) {
+    const r = Math.max(0, rows ?? 0);
+    const c = Math.max(0, cols ?? 0);
+    const data = Array.from({ length: r }, () => Array.from({ length: c }, () => initialValue));
+    return { rows: r, cols: c, data };
+  }],
+
+  ['matrixRows', function(m) {
+    return m?.rows ?? 0;
+  }],
+
+  ['matrixCols', function(m) {
+    return m?.cols ?? 0;
+  }],
+
+  ['matrixGet', function(m, row, col) {
+    if (!m || !Array.isArray(m.data)) return null;
+    return m.data?.[row]?.[col] ?? null;
+  }],
+
+  ['matrixSet', function(m, row, col, value) {
+    if (!m || !Array.isArray(m.data)) return null;
+    if (!Array.isArray(m.data[row])) return null;
+    m.data[row][col] = value;
+    return value;
+  }],
+
+  ['matrixFill', function(m, value) {
+    if (!m || !Array.isArray(m.data)) return null;
+    for (let r = 0; r < (m.rows ?? 0); r++) {
+      for (let c = 0; c < (m.cols ?? 0); c++) {
+        if (m.data[r]) m.data[r][c] = value;
+      }
+    }
+    return m;
+  }],
+
+  ['matrixSum', function(m) {
+    if (!m || !Array.isArray(m.data)) return null;
+    let s = 0;
+    for (let r = 0; r < (m.rows ?? 0); r++) {
+      for (let c = 0; c < (m.cols ?? 0); c++) {
+        const v = m.data?.[r]?.[c];
+        if (typeof v === 'number' && !Number.isNaN(v)) s += v;
+      }
+    }
+    return s;
+  }],
+
+  ['matrixAvg', function(m) {
+    if (!m || !Array.isArray(m.data)) return null;
+    const n = (m.rows ?? 0) * (m.cols ?? 0);
+    if (n === 0) return null;
+    const s = builtins.get('matrixSum')(m);
+    return (typeof s === 'number') ? (s / n) : null;
+  }],
+
+  ['matrixMin', function(m) {
+    if (!m || !Array.isArray(m.data)) return null;
+    let out = null;
+    for (let r = 0; r < (m.rows ?? 0); r++) {
+      for (let c = 0; c < (m.cols ?? 0); c++) {
+        const v = m.data?.[r]?.[c];
+        if (typeof v !== 'number' || Number.isNaN(v)) continue;
+        out = (out === null) ? v : Math.min(out, v);
+      }
+    }
+    return out;
+  }],
+
+  ['matrixMax', function(m) {
+    if (!m || !Array.isArray(m.data)) return null;
+    let out = null;
+    for (let r = 0; r < (m.rows ?? 0); r++) {
+      for (let c = 0; c < (m.cols ?? 0); c++) {
+        const v = m.data?.[r]?.[c];
+        if (typeof v !== 'number' || Number.isNaN(v)) continue;
+        out = (out === null) ? v : Math.max(out, v);
+      }
+    }
+    return out;
+  }],
+
+  ['matrixTranspose', function(m) {
+    if (!m || !Array.isArray(m.data)) return null;
+    const r = m.rows ?? 0;
+    const c = m.cols ?? 0;
+    const out = builtins.get('matrixNew')(c, r, 0);
+    for (let i = 0; i < r; i++) {
+      for (let j = 0; j < c; j++) {
+        out.data[j][i] = m.data?.[i]?.[j] ?? 0;
+      }
+    }
+    return out;
+  }],
+
+  ['matrixMult', function(a, b) {
+    if (!a || !b || !Array.isArray(a.data) || !Array.isArray(b.data)) return null;
+    const aRows = a.rows ?? 0;
+    const aCols = a.cols ?? 0;
+    const bRows = b.rows ?? 0;
+    const bCols = b.cols ?? 0;
+    if (aCols !== bRows) return null;
+    const out = builtins.get('matrixNew')(aRows, bCols, 0);
+    for (let i = 0; i < aRows; i++) {
+      for (let j = 0; j < bCols; j++) {
+        let s = 0;
+        for (let k = 0; k < aCols; k++) {
+          const av = a.data?.[i]?.[k] ?? 0;
+          const bv = b.data?.[k]?.[j] ?? 0;
+          s += av * bv;
+        }
+        out.data[i][j] = s;
+      }
+    }
+    return out;
+  }],
+
+  ['matrixInv', function(m) {
+    if (!m || !Array.isArray(m.data)) return null;
+    const r = m.rows ?? 0;
+    const c = m.cols ?? 0;
+    if (r !== c) return null;
+    if (r === 2) {
+      const a = m.data?.[0]?.[0] ?? 0;
+      const b = m.data?.[0]?.[1] ?? 0;
+      const d = m.data?.[1]?.[0] ?? 0;
+      const e = m.data?.[1]?.[1] ?? 0;
+      const det = (a * e) - (b * d);
+      if (det === 0) return null;
+      const out = builtins.get('matrixNew')(2, 2, 0);
+      out.data[0][0] = e / det;
+      out.data[0][1] = -b / det;
+      out.data[1][0] = -d / det;
+      out.data[1][1] = a / det;
+      return out;
+    }
+    return null;
+  }],
+
   // Security / Data Functions
   ['requestSecurity', function(symbol, timeframe, expression) {
     return expression;
