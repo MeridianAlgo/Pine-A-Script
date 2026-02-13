@@ -26,7 +26,7 @@ Options:
   --tokens             Output tokens instead of generated code
   --no-review          Disable post-conversion review
   --no-review-import   Disable runtime import smoke test
-  --review-ai          Enable optional AI review hook (no provider by default)
+  --review-ai          Enable optional local AI review (requires optional Python deps)
 
 Examples:
   node cli.js script.pine output.js

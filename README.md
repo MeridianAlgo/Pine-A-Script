@@ -25,8 +25,6 @@ This repository contains a PineScript (v5/v6-ish) to JavaScript transpiler, plus
   - `builtins.js` - JavaScript implementations of Pine built-in functions
   - `transpiler.js` - Main entry point (lexer → parser → generator)
   - `cli.js` - Command-line interface for transpilation
-- `examples/` - Sample Pine scripts for testing and reference
-- `converts/` - Generated JavaScript output files
 - `test/indicator_tests.js` - Bar-by-bar runtime smoke tests
 
 ## Quick start
@@ -40,7 +38,7 @@ npm install
 ### Convert a Pine script
 
 ```bash
-node src/cli.js examples/example.pine converts/example.js
+node src/cli.js path/to/script.pine path/to/output.js
 ```
 
 ### Post-conversion reviewer (recommended)
@@ -53,13 +51,13 @@ By default, the CLI runs a lightweight reviewer after conversion.
 Disable it if you only want the raw output:
 
 ```bash
-node src/cli.js examples/example.pine converts/example.js --no-review
+node src/cli.js path/to/script.pine path/to/output.js --no-review
 ```
 
 Disable only the runtime `import()` smoke test:
 
 ```bash
-node src/cli.js examples/example.pine converts/example.js --no-review-import
+node src/cli.js path/to/script.pine path/to/output.js --no-review-import
 ```
 
 Environment variables:
@@ -69,12 +67,7 @@ Environment variables:
 
 #### Optional AI review hook (local HuggingFace model)
 
-The reviewer can optionally call an HTTP endpoint (keeps the main repo dependency-free):
-
-- Set `PINE_REVIEWER_URL` to an endpoint that accepts `POST { code }` and returns:
-  - `{ ok: boolean, errors: string[], warnings: string[], notes: string[] }`
-
-This repo includes a simple local server you can run with a small HuggingFace model (**<100M params**).
+This repo includes a fully local optional reviewer (no server) that runs a small HuggingFace model (**<100M params**) via Python.
 
 - **Default model**: `chathuranga-jayanath/codet5-small-v2` (safetensors)
 
@@ -83,22 +76,21 @@ Note: small models may produce low-quality or repetitive text. The reviewer will
 Setup and run (Python):
 
 ```bash
-pip install -r local_reviewer/requirements.txt
-python local_reviewer/server.py
+pip install -r ai_reviewer/requirements.txt
 ```
 
 Then enable AI review in the CLI:
 
 ```bash
-set PINE_REVIEWER_URL=http://127.0.0.1:8765/review
 set PINE_REVIEW_AI=1
-node src/cli.js examples/example.pine converts/example.js --review-ai
+node src/cli.js path/to/script.pine path/to/output.js --review-ai
 ```
 
 Model selection:
 
 - `PINE_REVIEWER_MODEL=chathuranga-jayanath/codet5-small-v2`
-- `PINE_REVIEWER_PORT=8765`
+- `PINE_REVIEWER_PYTHON=python` (optional)
+- `PINE_REVIEWER_SCRIPT=ai_reviewer/review.py` (optional)
 
 ### Run the indicator runtime tests
 
@@ -334,8 +326,8 @@ alertcondition(ta.crossunder(fastMA, slowMA), "MA Crossunder", "Fast crossed bel
 ### Convert and run:
 
 ```bash
-node src/cli.js test_script.pine converts/test_script.js
-node converts/test_script.js   # Requires synthetic OHLCV data setup
+node src/cli.js test_script.pine test_script.js
+node test_script.js   # Requires synthetic OHLCV data setup
 ```
 
 ## Contributing

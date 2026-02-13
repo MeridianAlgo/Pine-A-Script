@@ -1,5 +1,9 @@
 import vm from 'node:vm';
+import { execFile } from 'node:child_process';
+import { promisify } from 'node:util';
 import { builtins as runtimeBuiltins } from './builtins.js';
+
+const execFileAsync = promisify(execFile);
 
 const uniq = (arr) => Array.from(new Set(arr));
 
@@ -95,35 +99,24 @@ export async function reviewGeneratedCode(code, opts = {}) {
   }
 
   if (options.ai) {
-    const url = process.env.PINE_REVIEWER_URL;
-    if (!url) {
-      report.notes.push('AI review enabled but no provider configured. Set PINE_REVIEWER_URL to an HTTP endpoint that accepts { code } and returns { ok, errors, warnings, notes }.');
-    } else if (typeof fetch !== 'function') {
-      report.notes.push('AI review enabled but fetch() is unavailable in this Node runtime. Upgrade Node or disable AI review.');
-    } else {
-      try {
-        const resp = await fetch(url, {
-          method: 'POST',
-          headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({ code })
-        });
-
-        if (!resp.ok) {
-          report.warnings.push(`AI review HTTP error: ${resp.status} ${resp.statusText}`);
-        } else {
-          const payload = await resp.json();
-          if (payload && typeof payload === 'object') {
-            if (Array.isArray(payload.errors)) report.errors.push(...payload.errors.map(String));
-            if (Array.isArray(payload.warnings)) report.warnings.push(...payload.warnings.map(String));
-            if (Array.isArray(payload.notes)) report.notes.push(...payload.notes.map(String));
-            if (payload.ok === false) report.ok = false;
-          } else {
-            report.warnings.push('AI review returned non-object JSON.');
-          }
-        }
-      } catch (e) {
-        report.warnings.push(`AI review request failed: ${e?.message || String(e)}`);
+    const python = process.env.PINE_REVIEWER_PYTHON || 'python';
+    const script = process.env.PINE_REVIEWER_SCRIPT || 'ai_reviewer/review.py';
+    try {
+      const input = JSON.stringify({ code });
+      const { stdout } = await execFileAsync(python, [script], { input, maxBuffer: 10 * 1024 * 1024 });
+      const payload = JSON.parse(stdout || '{}');
+      if (payload && typeof payload === 'object') {
+        if (Array.isArray(payload.errors)) report.errors.push(...payload.errors.map(String));
+        if (Array.isArray(payload.warnings)) report.warnings.push(...payload.warnings.map(String));
+        if (Array.isArray(payload.notes)) report.notes.push(...payload.notes.map(String));
+        if (payload.ok === false) report.ok = false;
+      } else {
+        report.warnings.push('AI review returned non-object JSON.');
       }
+    } catch (e) {
+      report.notes.push(
+        `AI review unavailable: ${e?.message || String(e)} (install optional deps: pip install -r ai_reviewer/requirements.txt)`
+      );
     }
   }
 
