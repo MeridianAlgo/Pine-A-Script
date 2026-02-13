@@ -1,0 +1,27 @@
+//@version=5
+indicator("Simple Moving Average Crossover", overlay=true)
+
+// Input parameters
+fastLength = input.int(10, "Fast Length")
+slowLength = input.int(20, "Slow Length")
+src = input.source(close, "Source")
+
+// Calculate SMAs
+fastSMA = ta.sma(src, fastLength)
+slowSMA = ta.sma(src, slowLength)
+
+// Plot SMAs
+plot(fastSMA, color=color.blue, title="Fast SMA")
+plot(slowSMA, color=color.red, title="Slow SMA")
+
+// Buy/Sell signals
+buySignal = ta.crossover(fastSMA, slowSMA)
+sellSignal = ta.crossunder(fastSMA, slowSMA)
+
+// Plot shapes
+plotshape(buySignal, style=shape.triangleup, location=location.belowbar, color=color.green, title="Buy Signal")
+plotshape(sellSignal, style=shape.triangledown, location=location.abovebar, color=color.red, title="Sell Signal")
+
+// Alerts
+alertcondition(buySignal, "Buy Signal", "Fast SMA crossed above Slow SMA")
+alertcondition(sellSignal, "Sell Signal", "Fast SMA crossed below Slow SMA")

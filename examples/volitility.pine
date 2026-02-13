@@ -1,0 +1,142 @@
+//@version=6
+indicator("Volatility Contraction Score", shorttitle="VCS", overlay=false)
+
+// ==========================================
+// 1. Settings
+// ==========================================
+grpCore   = "VCP Logic Settings"
+grpScreen = "Screener Data for Pine Screener"
+
+// --- VCS Logic Settings (Calculation Only) ---
+lenShortInput = input.int(13, "Short Term", minval=3, group=grpCore)
+lenLongInput  = input.int(63, "Long Term", minval=20, group=grpCore)
+lenVolInput   = input.int(50, "Volume Average (Logic)", minval=10, group=grpCore)
+sensitivity   = 2.0
+
+// --- Trend Filter ---
+grpTrend = "Trend Filter"
+trendPenaltyWeight = input.float(1.0, "Trend Penalty Strength", minval=0.0, maxval=5.0, step=0.5, group=grpTrend)
+
+// --- Structure ---
+grpStruct = "Structure Settings"
+hlLookbackInput = input.int(63, "Structure Lookback", minval=20, group=grpStruct)
+penaltyFactor   = input.float(0.75, "Penalty for Lower Low", minval=0.0, maxval=1.0, step=0.05, group=grpStruct)
+
+// --- Consistency ---
+grpBonus = "Consistency Weight"
+bonusMax = input.int(15, "Max Consistency Points", minval=5, maxval=30, group=grpBonus)
+
+// --- Screener Settings (Display Only) ---
+scr_vol_len  = input.int(50, "Avg Volume Length", minval=10, group=grpScreen) 
+rs_benchmark = input.symbol("SPY", "RS Benchmark", group=grpScreen)
+rs_len       = input.int(21, "RS Period", group=grpScreen)
+adr_len      = input.int(20, "ADR Period", group=grpScreen)
+
+// ==========================================
+// 2. Color & Thresholds
+// ==========================================
+grpColor = "Color & Thresholds"
+thHigh = input.int(80, "Level 2 (High)", minval=60, maxval=100, group=grpColor)
+thLow  = input.int(60, "Level 1 (Base)", minval=0, maxval=80, group=grpColor)
+cHigh = input.color(#00E676, "Level 2 Color", group=grpColor) 
+cLow  = input.color(#2962FF, "Level 1 Color", group=grpColor) 
+cBase = input.color(#787B86, "Base Color (<60)", group=grpColor)    
+
+// ==========================================
+// 3. VCS Calculation
+// ==========================================
+barCount = bar_index + 1
+lenLong  = math.min(barCount, lenLongInput)
+lenShort = math.min(barCount, lenShortInput)
+lenVol   = math.min(barCount, lenVolInput)
+
+// --- A. Price Compression (SMA Base) ---
+trVal = ta.tr(true)
+trShort = ta.sma(trVal, lenShort) 
+trLongAvg  = ta.sma(trVal, lenLong) 
+ratioATR = trShort / math.max(trLongAvg, 0.000001)
+
+// --- B. Price Stability (SMA Base) ---
+stdShort = ta.stdev(close, lenShort)
+stdLongAvg = ta.stdev(close, lenLong) 
+ratioStd = stdShort / math.max(stdLongAvg, 0.000001)
+
+// --- C. Volume Contraction ---
+volAvg = ta.sma(volume, lenVol)
+volShortAvg = ta.sma(volume, 5)
+volRatio = volShortAvg / math.max(volAvg, 1.0) 
+
+// --- D. Efficiency Filter ---
+netChange = math.abs(close - close[lenShort]) 
+totalTravel = math.sum(ta.tr(true), lenShort) 
+efficiency = netChange / math.max(totalTravel, 0.000001) 
+
+trendFactor = math.max(0.0, 1.0 - (efficiency * trendPenaltyWeight))
+
+// --- E. Structure Check ---
+lowRecent = ta.lowest(low, lenShort)
+barsBeforeShort = barCount - lenShortInput
+hasHistory = barsBeforeShort > 0
+lowBase = 0.0
+isHigherLow = true 
+if hasHistory
+    lowBase := ta.lowest(low, hlLookbackInput)[lenShortInput]
+    isHigherLow := lowRecent >= lowBase
+
+// ==========================================
+// 4. Score Calculation
+// ==========================================
+s_atr = math.max(0.0, 1.0 - nz(ratioATR, 1.0)) * sensitivity
+s_std = math.max(0.0, 1.0 - nz(ratioStd, 1.0)) * sensitivity
+s_vol = math.max(0.0, 1.0 - nz(volRatio, 1.0))
+
+rawScore = (s_atr * 0.4) + (s_std * 0.4) + (s_vol * 0.2)
+
+// Apply Trend Filter
+filteredScore = rawScore * trendFactor
+
+physicsScore = math.min(100, filteredScore * 100)
+smoothPhysics = ta.ema(physicsScore, 3)
+
+// ==========================================
+// 5. Final Output
+// ==========================================
+isTight = smoothPhysics >= 70
+var int daysTight = 0
+daysTight := isTight ? daysTight + 1 : 0
+weightPhysics = (100.0 - bonusMax) / 100.0
+weightedPhysicsScore = smoothPhysics * weightPhysics
+consistencyScore = math.min(bonusMax, daysTight)
+totalScore = weightedPhysicsScore + consistencyScore
+finalScore = isHigherLow ? totalScore : (totalScore * penaltyFactor)
+finalScore := nz(finalScore, 0.0)
+
+// Plot VCS
+colZone = finalScore >= thHigh ? cHigh : 
+          finalScore >= thLow  ? cLow : 
+          cBase
+
+plot(finalScore, "VCS", color=colZone, style=plot.style_histogram, linewidth=1)
+hline(thLow, "Threshold", color=color.gray, linestyle=hline.style_dotted)
+
+// ==========================================
+// 6. Screener Data Outputs
+// ==========================================
+// 1. Avg Volume
+scr_vol_val = ta.sma(volume, scr_vol_len)
+plot(scr_vol_val, "Avg Vol", display=display.data_window)
+
+// 2. Market Cap
+mCapBasic = request.financial(syminfo.tickerid, "MARKET_CAP_BASIC", "D", ignore_invalid_symbol = true)
+mCapFinal = na(mCapBasic) ? (nz(syminfo.shares_outstanding_total) * close) : mCapBasic
+plot(mCapFinal, "Market Cap", display=display.data_window)
+
+// 3. ADR %
+adr_val = 100 * (ta.sma(high / low, adr_len) - 1)
+plot(adr_val, "ADR %", display=display.data_window)
+
+// 4. Relative Strength
+benchmark_close = request.security(rs_benchmark, timeframe.period, close, ignore_invalid_symbol=true)
+rs_ratio = close / benchmark_close
+rs_rank = ta.percentrank(rs_ratio, rs_len)
+plot(rs_rank, "Relative Strength", display=display.data_window)

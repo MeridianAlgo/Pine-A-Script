@@ -1,0 +1,352 @@
+//@version=5
+indicator("Quantum MA with Consolidation Zones [Q-Meridian]", shorttitle="Quantum MA [Q-Meridian]", overlay=true, max_bars_back=1100)
+
+// --- Input Groups ---
+group_ma = "⚙️ MA Settings"
+group_visual = "🎨 Visual Settings"
+group_color = "🌌 Color Settings - Main Chart"
+group_signals = "📈 Signal Settings"
+group_table = "📊 Table Settings"
+
+
+// --- MA Inputs ---
+base_length = input.int(20, "Base MA Length", minval=5, maxval=100, group=group_ma, tooltip="Length of the base moving average used for optimization.")
+eval_period = input.int(20, "Evaluation Period", minval=10, maxval=50, group=group_ma, tooltip="Number of bars to evaluate MA performance for optimization.")
+src = input.source(close, "Price Source", group=group_ma)
+alma_offset = input.float(0.85, "ALMA Offset", minval=0, maxval=1, step=0.05, group=group_ma)
+alma_sigma = input.float(6, "ALMA Sigma", minval=1, maxval=10, group=group_ma)
+show_ma_line = input.bool(true, "Show MA Line", group=group_ma, tooltip="Toggle visibility of the optimized moving average line on the chart.")
+show_cloud = input.bool(false, "Show Cloud", group=group_ma, tooltip="Toggle visibility of the cloud between price and MA.")
+
+// --- Signal Inputs ---
+signal_style = input.string("Triangle", "Signal Shape", options=["Triangle", "Circle", "Square"], group=group_signals, tooltip="Shape for buy/sell signals.")
+signal_size = input.string("Small", "Signal Size", options=["Small", "Normal", "Large"], group=group_signals, tooltip="Size of signal shapes.")
+show_signals = input.bool(true, "Show Buy/Sell Signals", group=group_signals, tooltip="Toggle visibility of buy/sell signals on the chart.")
+
+// --- Visual Inputs ---
+ma_linewidth = input.int(3, "MA Line Width", minval=1, maxval=10, group=group_visual, tooltip="Width of the moving average line on the chart.")
+show_optimal_info = input.bool(true, "Show Optimal MA Info", group=group_visual)
+
+// --- Color Inputs ---
+fixed_color = input.color(color.rgb(0, 180, 140, 90), "Fixed Color", group=group_color, tooltip="Color used when gradient is disabled.")
+gradient_start_color = input.color(color.rgb(32, 64, 160), "Gradient Start (Bearish)", group=group_color)
+gradient_middle_color = input.color(color.rgb(144, 10, 199), "Gradient Middle", group=group_color)
+gradient_end_color = input.color(color.rgb(128, 192, 255), "Gradient End (Bullish)", group=group_color)
+cloud_bull_color = input.color(color.rgb(0, 180, 141, 64), "Cloud Bullish", group=group_color)
+cloud_bear_color = input.color(color.rgb(240, 80, 80, 64), "Cloud Bearish", group=group_color)
+use_gradient = input.bool(true, "Use Gradient Color", group=group_color, tooltip="Toggle between gradient coloring and fixed color for the MA line.")
+
+// --- Table Settings ---
+table_position = input.string("Top Right", "Table Position", options=["Top Right", "Top Left", "Bottom Right", "Bottom Left"], group=group_table)
+table_size = input.string("Normal", "Table Size", options=["Small", "Normal", "Large"], group=group_table)
+table_transparency = input.int(10, "Table Transparency", minval=0, maxval=100, group=group_table)
+table_bg_color = input.color(color.rgb(15, 15, 23, 85), "Table Background", group=group_table)
+table_border_color = input.color(color.rgb(30, 30, 45, 85), "Table Border", group=group_table)
+table_header_bg = input.color(color.rgb(25, 25, 35, 95), "Header Background", group=group_table)
+table_header_text = input.color(color.rgb(240, 240, 240), "Header Text", group=group_table)
+table_label_text = input.color(color.rgb(180, 180, 200), "Label Text", group=group_table)
+table_value_text = input.color(color.rgb(255, 255, 255), "Value Text", group=group_table)
+show_table = input.bool(true, "Show Information Table", group=group_table)
+show_performance = input.bool(true, "Show Performance Metrics", group=group_table)
+
+// --- MA Function ---
+ma(src, len, type) =>
+    switch type
+        "SMA" => ta.sma(src, len)
+        "Hull" => ta.hma(src, len)
+        "EMA" => ta.ema(src, len)
+        "WMA" => ta.wma(src, len)
+        "RMA" => ta.rma(src, len)
+        "LINREG" => ta.linreg(src, len, 0)
+        "ALMA" => ta.alma(src, len, alma_offset, alma_sigma)
+        "VWMA" => ta.vwma(src, len)
+        => ta.sma(src, len) // Default fallback
+
+// --- MA Calculations for Chart ---
+short_length = math.round(base_length * 0.5)
+mid_length = base_length
+long_length = math.round(base_length * 2)
+
+// Calculate all MAs with different types and lengths
+sma_short = ma(src, short_length, "SMA")
+ema_short = ma(src, short_length, "EMA")
+wma_short = ma(src, short_length, "WMA")
+hma_short = ma(src, short_length, "Hull")
+vwma_short = ma(src, short_length, "VWMA")
+alma_short = ma(src, short_length, "ALMA")
+rma_short = ma(src, short_length, "RMA")
+linreg_short = ma(src, short_length, "LINREG")
+
+sma_mid = ma(src, mid_length, "SMA")
+ema_mid = ma(src, mid_length, "EMA")
+wma_mid = ma(src, mid_length, "WMA")
+hma_mid = ma(src, mid_length, "Hull")
+vwma_mid = ma(src, mid_length, "VWMA")
+alma_mid = ma(src, mid_length, "ALMA")
+rma_mid = ma(src, mid_length, "RMA")
+linreg_mid = ma(src, mid_length, "LINREG")
+
+sma_long = ma(src, long_length, "SMA")
+ema_long = ma(src, long_length, "EMA")
+wma_long = ma(src, long_length, "WMA")
+hma_long = ma(src, long_length, "Hull")
+vwma_long = ma(src, long_length, "VWMA")
+alma_long = ma(src, long_length, "ALMA")
+rma_long = ma(src, long_length, "RMA")
+linreg_long = ma(src, long_length, "LINREG")
+
+// --- ML Scoring for Chart MA ---
+score_ma(ma_line, length) =>
+    var float score = 0
+    for i = 1 to eval_period
+        long_signal = ta.crossover(src[i], ma_line[i])
+        short_signal = ta.crossunder(src[i], ma_line[i])
+        profit = long_signal ? src[i-1] - src[i] : short_signal ? src[i] - src[i-1] : 0
+        score := score + profit
+    score / length
+
+// Calculate scores for all MA types
+final_scores = array.new_float(24)
+array.set(final_scores, 0, score_ma(sma_short, short_length))
+array.set(final_scores, 1, score_ma(ema_short, short_length))
+array.set(final_scores, 2, score_ma(wma_short, short_length))
+array.set(final_scores, 3, score_ma(hma_short, short_length))
+array.set(final_scores, 4, score_ma(vwma_short, short_length))
+array.set(final_scores, 5, score_ma(alma_short, short_length))
+array.set(final_scores, 6, score_ma(rma_short, short_length))
+array.set(final_scores, 7, score_ma(linreg_short, short_length))
+
+array.set(final_scores, 8, score_ma(sma_mid, mid_length))
+array.set(final_scores, 9, score_ma(ema_mid, mid_length))
+array.set(final_scores, 10, score_ma(wma_mid, mid_length))
+array.set(final_scores, 11, score_ma(hma_mid, mid_length))
+array.set(final_scores, 12, score_ma(vwma_mid, mid_length))
+array.set(final_scores, 13, score_ma(alma_mid, mid_length))
+array.set(final_scores, 14, score_ma(rma_mid, mid_length))
+array.set(final_scores, 15, score_ma(linreg_mid, mid_length))
+
+array.set(final_scores, 16, score_ma(sma_long, long_length))
+array.set(final_scores, 17, score_ma(ema_long, long_length))
+array.set(final_scores, 18, score_ma(wma_long, long_length))
+array.set(final_scores, 19, score_ma(hma_long, long_length))
+array.set(final_scores, 20, score_ma(vwma_long, long_length))
+array.set(final_scores, 21, score_ma(alma_long, long_length))
+array.set(final_scores, 22, score_ma(rma_long, long_length))
+array.set(final_scores, 23, score_ma(linreg_long, long_length))
+
+// Find best MA type and length based on scores
+best_idx = array.indexof(final_scores, array.max(final_scores))
+var string best_ma_type = "EMA"
+var int best_length = mid_length
+var float best_ma = ema_mid
+
+// Assign best MA type and length based on index
+if best_idx == 0
+    best_ma_type := "SMA"
+    best_length := short_length
+    best_ma := sma_short
+else if best_idx == 1
+    best_ma_type := "EMA"
+    best_length := short_length
+    best_ma := ema_short
+else if best_idx == 2
+    best_ma_type := "WMA"
+    best_length := short_length
+    best_ma := wma_short
+else if best_idx == 3
+    best_ma_type := "HMA"
+    best_length := short_length
+    best_ma := hma_short
+else if best_idx == 4
+    best_ma_type := "VWMA"
+    best_length := short_length
+    best_ma := vwma_short
+else if best_idx == 5
+    best_ma_type := "ALMA"
+    best_length := short_length
+    best_ma := alma_short
+else if best_idx == 6
+    best_ma_type := "RMA"
+    best_length := short_length
+    best_ma := rma_short
+else if best_idx == 7
+    best_ma_type := "LINREG"
+    best_length := short_length
+    best_ma := linreg_short
+else if best_idx == 8
+    best_ma_type := "SMA"
+    best_length := mid_length
+    best_ma := sma_mid
+else if best_idx == 9
+    best_ma_type := "EMA"
+    best_length := mid_length
+    best_ma := ema_mid
+else if best_idx == 10
+    best_ma_type := "WMA"
+    best_length := mid_length
+    best_ma := wma_mid
+else if best_idx == 11
+    best_ma_type := "HMA"
+    best_length := mid_length
+    best_ma := hma_mid
+else if best_idx == 12
+    best_ma_type := "VWMA"
+    best_length := mid_length
+    best_ma := vwma_mid
+else if best_idx == 13
+    best_ma_type := "ALMA"
+    best_length := mid_length
+    best_ma := alma_mid
+else if best_idx == 14
+    best_ma_type := "RMA"
+    best_length := mid_length
+    best_ma := rma_mid
+else if best_idx == 15
+    best_ma_type := "LINREG"
+    best_length := mid_length
+    best_ma := linreg_mid
+else if best_idx == 16
+    best_ma_type := "SMA"
+    best_length := long_length
+    best_ma := sma_long
+else if best_idx == 17
+    best_ma_type := "EMA"
+    best_length := long_length
+    best_ma := ema_long
+else if best_idx == 18
+    best_ma_type := "WMA"
+    best_length := long_length
+    best_ma := wma_long
+else if best_idx == 19
+    best_ma_type := "HMA"
+    best_length := long_length
+    best_ma := hma_long
+else if best_idx == 20
+    best_ma_type := "VWMA"
+    best_length := long_length
+    best_ma := vwma_long
+else if best_idx == 21
+    best_ma_type := "ALMA"
+    best_length := long_length
+    best_ma := alma_long
+else if best_idx == 22
+    best_ma_type := "RMA"
+    best_length := long_length
+    best_ma := rma_long
+else if best_idx == 23
+    best_ma_type := "LINREG"
+    best_length := long_length
+    best_ma := linreg_long
+
+// --- Buy/Sell Signals ---
+buy_signal = ta.crossover(src, best_ma)
+sell_signal = ta.crossunder(src, best_ma)
+var string signal_status = "Neutral"
+if buy_signal
+    signal_status := "Buy"
+else if sell_signal
+    signal_status := "Sell"
+
+
+// --- Custom R-Squared Calculation ---
+r_squared(src, ma, length) =>
+    y_mean = ta.sma(src, length)
+    y_pred_mean = ta.sma(ma, length)
+    ss_tot = 0.0
+    ss_res = 0.0
+    for i = 0 to length - 1
+        ss_tot := ss_tot + math.pow(src[i] - y_mean, 2)
+        ss_res := ss_res + math.pow(src[i] - ma[i], 2)
+    1 - ss_res / (ss_tot == 0 ? 1 : ss_tot)
+
+// --- Calculate Metrics ---
+r_squared_val = r_squared(src, best_ma, eval_period)
+trend_direction = src > best_ma ? "Bullish" : src < best_ma ? "Bearish" : "Neutral"
+
+// --- Color Logic ---
+var color ma_color = fixed_color
+if use_gradient
+    normalized_price = (src - ta.lowest(src, 50)) / (ta.highest(src, 50) - ta.lowest(src, 50))
+    weight = normalized_price < 0.5 ? normalized_price * 2 : (normalized_price - 0.5) * 2
+    start_color = normalized_price < 0.5 ? gradient_start_color : gradient_middle_color
+    end_color = normalized_price < 0.5 ? gradient_middle_color : gradient_end_color
+    ma_color := color.rgb(color.r(start_color) * (1 - weight) + color.r(end_color) * weight, color.g(start_color) * (1 - weight) + color.g(end_color) * weight, color.b(start_color) * (1 - weight) + color.b(end_color) * weight)
+else
+    ma_color := fixed_color
+
+// --- Plotting ---
+plot_ma = plot(show_ma_line ? best_ma : na, "Optimal MA", color=ma_color, linewidth=ma_linewidth)
+price_plot = plot(show_cloud ? src : na, "Price", color=color.new(color.gray, 100))
+
+// Add cloud fill between price and MA
+fill(price_plot, plot_ma, color=src > best_ma ? cloud_bull_color : cloud_bear_color)
+
+// --- Signal Size Logic ---
+plot_size = signal_size == "Small" ? size.small : signal_size == "Large" ? size.large : size.normal
+
+// --- Signal Plotting ---
+plotshape(show_signals and buy_signal ? best_ma : na, "Buy Signal", style=signal_style == "Triangle" ? shape.triangleup : signal_style == "Circle" ? shape.circle : shape.square, location=location.belowbar, color=color.green, size=size.normal)
+plotshape(show_signals and sell_signal ? best_ma : na, "Sell Signal", style=signal_style == "Triangle" ? shape.triangledown : signal_style == "Circle" ? shape.circle : shape.square, location=location.abovebar, color=color.red, size=size.normal)
+
+// --- Table Creation and Styling ---
+if show_optimal_info and show_table
+    // Calculate dynamic table size
+    font_size = table_size == "Small" ? size.small : table_size == "Large" ? size.large : size.normal
+    
+    // Performance metrics
+    var float prev_price = 0.0
+    price_change = ((src - prev_price) / prev_price) * 100
+    prev_price := src
+    
+    // Determine table position
+    var table_pos = position.top_right
+    if table_position == "Top Left"
+        table_pos := position.top_left
+    else if table_position == "Bottom Right"
+        table_pos := position.bottom_right
+    else if table_position == "Bottom Left"
+        table_pos := position.bottom_left
+    
+    // Create and format table
+    var table info_table = table.new(table_pos, 2, show_performance ? 8 : 7, border_color=table_border_color, border_width=1, bgcolor=color.new(table_bg_color, table_transparency))
+    
+    // Table title with gradient style
+    table.cell(info_table, 0, 0, "⚛ Quantum MA", text_color=table_header_text, text_size=font_size, bgcolor=table_header_bg, text_halign=text.align_center)
+    table.cell(info_table, 1, 0, "Analysis", text_color=table_header_text, text_size=font_size, bgcolor=table_header_bg, text_halign=text.align_center)
+    
+    // Row 1: MA Type with icon
+    table.cell(info_table, 0, 1, "🌊 MA Type", text_color=table_label_text, text_size=font_size)
+    table.cell(info_table, 1, 1, best_ma_type, text_color=table_value_text, text_size=font_size, bgcolor=color.new(color.rgb(40, 40, 60, 90), 0))
+    
+    // Row 2: MA Length with custom styling
+    table.cell(info_table, 0, 2, "📏 Length", text_color=table_label_text, text_size=font_size)
+    table.cell(info_table, 1, 2, str.tostring(best_length), text_color=table_value_text, text_size=font_size, bgcolor=color.new(color.rgb(35, 35, 50, 90), 0))
+    
+    // Row 3: Score with custom coloring based on value
+    table.cell(info_table, 0, 3, "🎯 Score", text_color=table_label_text, text_size=font_size)
+    score_val = array.max(final_scores)
+    score_color = score_val > 0 ? color.rgb(100, 255, 100) : score_val < 0 ? color.rgb(255, 100, 100) : color.rgb(200, 200, 200)
+    table.cell(info_table, 1, 3, str.tostring(score_val, "#.####"), text_color=score_color, text_size=font_size, bgcolor=color.new(color.rgb(40, 40, 60, 90), 0))
+    
+    // Row 4: Trend with dynamic color
+    table.cell(info_table, 0, 4, "📈 Trend", text_color=table_label_text, text_size=font_size)
+    trend_color = trend_direction == "Bullish" ? color.rgb(76, 175, 80) : trend_direction == "Bearish" ? color.rgb(239, 83, 80) : color.rgb(255, 235, 59)
+    table.cell(info_table, 1, 4, trend_direction, text_color=trend_color, text_size=font_size, bgcolor=color.new(color.rgb(35, 35, 50, 90), 0))
+    
+    // Row 5: R-Squared with gradient color based on value
+    table.cell(info_table, 0, 5, "📊 R²", text_color=table_label_text, text_size=font_size)
+    r2_color = r_squared_val > 0.7 ? color.rgb(76, 175, 80) : r_squared_val > 0.4 ? color.rgb(255, 193, 7) : color.rgb(239, 83, 80)
+    table.cell(info_table, 1, 5, str.tostring(r_squared_val, "#.####"), text_color=r2_color, text_size=font_size, bgcolor=color.new(color.rgb(40, 40, 60, 90), 0))
+    
+    // Row 6: Signal with dynamic styling
+    table.cell(info_table, 0, 6, "🚦 Signal", text_color=table_label_text, text_size=font_size)
+    signal_icon = signal_status == "Buy" ? "🔼 " : signal_status == "Sell" ? "🔽 " : "◼ "
+    signal_color = signal_status == "Buy" ? color.rgb(76, 175, 80) : signal_status == "Sell" ? color.rgb(239, 83, 80) : color.rgb(158, 158, 158)
+    table.cell(info_table, 1, 6, signal_icon + signal_status, text_color=signal_color, text_size=font_size, bgcolor=color.new(color.rgb(35, 35, 50, 90), 0))
+    
+    // Row 7: Performance metrics (optional)
+    if show_performance
+        table.cell(info_table, 0, 7, "💹 Change", text_color=table_label_text, text_size=font_size)
+        change_color = price_change > 0 ? color.rgb(76, 175, 80) : price_change < 0 ? color.rgb(239, 83, 80) : color.rgb(158, 158, 158)
+        change_icon = price_change > 0 ? "△ " : price_change < 0 ? "▽ " : "○ "
+        table.cell(info_table, 1, 7, change_icon + str.tostring(price_change, "#.##") + "%", text_color=change_color, text_size=font_size, bgcolor=color.new(color.rgb(40, 40, 60, 90), 0))

@@ -1,0 +1,15 @@
+{
+  "name": "pinescript-to-javascript",
+  "version": "1.0.0",
+  "description": "A transpiler that converts PineScript to JavaScript",
+  "main": "src/transpiler.js",
+  "type": "module",
+  "scripts": {
+    "transpile": "node src/transpiler.js",
+    "test": "node test/test.js",
+    "test:indicators": "node test/indicator_tests.js"
+  },
+  "keywords": ["pinescript", "javascript", "transpiler", "tradingview"],
+  "author": "",
+  "license": "MIT"
+}

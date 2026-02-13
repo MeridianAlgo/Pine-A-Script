@@ -1,0 +1,284 @@
+//@version=5
+indicator("ZenAlgo – ABC", overlay=true, max_lines_count=500, max_labels_count=500, max_boxes_count=200, max_bars_back=5000)
+//=============================================================================
+// ► Colors (matched to Grid)
+//=============================================================================
+bullC = color.rgb(63,192,220)
+bearC = color.rgb(97,15,220)
+//=============================================================================
+// ► Manual anchors
+//=============================================================================
+useManual = input.bool(false, "Use Manual Anchors?")
+timeX = input.time(timestamp("2025-01-01 02:00"), "X: Time", confirm=false)
+timeA = input.time(timestamp("2025-01-01 12:00"), "A: Time", confirm=false)
+timeB = input.time(timestamp("2025-01-01 23:59"), "B: Time", confirm=false)
+// Store bar indices and prices like in Grid
+var int Xi_m = na
+var float X_m = na
+var float X_high_m = na
+var float X_low_m = na
+var int Ai_m = na
+var float A_m = na
+var float A_high_m = na
+var float A_low_m = na
+var int Bi_m = na
+var float B_m = na
+var float B_high_m = na
+var float B_low_m = na
+var bool adjustedXA = false
+var bool adjustedB = false
+if useManual
+    if na(Xi_m) and time >= timeX
+        Xi_m := bar_index
+        X_m := close
+        X_high_m := high
+        X_low_m := low
+        adjustedXA := false
+    if na(Ai_m) and time >= timeA
+        Ai_m := bar_index
+        A_m := close
+        A_high_m := high
+        A_low_m := low
+        adjustedXA := false
+    if na(Bi_m) and time >= timeB
+        Bi_m := bar_index
+        B_m := close
+        B_high_m := high
+        B_low_m := low
+        adjustedB := false
+    
+    if not na(X_m) and not na(A_m) and not adjustedXA
+        adjustedXA := true
+        if A_m > X_m  
+            X_m := X_low_m
+            A_m := A_high_m
+        else
+            X_m := X_high_m
+            A_m := A_low_m
+    
+    if not na(B_m) and adjustedXA and not adjustedB
+        adjustedB := true
+        if A_m > X_m  
+            B_m := B_low_m
+        else
+            B_m := B_high_m
+//=============================================================================
+// ► Auto pivot detection (using built-in ta.pivothigh/low to avoid future refs)
+//=============================================================================
+leftBars = 6  // Hard-coded as per your preference
+rightBars = 3  // Hard-coded as per your preference
+var float X = na
+var float A = na
+var float B = na
+var int Xi = na
+var int Ai = na
+var int Bi = na
+var int lastType = 0
+minBarsForPivot = leftBars + rightBars
+ph = ta.pivothigh(leftBars, rightBars)
+if bar_index >= minBarsForPivot and not na(ph) and lastType != 1
+    X := A
+    Xi := Ai
+    A := B
+    Ai := Bi
+    B := ph
+    Bi := bar_index - rightBars
+    lastType := 1
+pl = ta.pivotlow(leftBars, rightBars)
+if bar_index >= minBarsForPivot and not na(pl) and lastType != -1
+    X := A
+    Xi := Ai
+    A := B
+    Ai := Bi
+    B := pl
+    Bi := bar_index - rightBars
+    lastType := -1
+//=============================================================================
+// ► Safe XAB return
+//=============================================================================
+getXAB() =>
+    float _X = na
+    float _A = na
+    float _B = na
+    int _Xi = na
+    int _Ai = na
+    int _Bi = na
+    if useManual
+        if na(Xi_m) or na(Ai_m) or na(Bi_m)
+            _X := X
+            _A := A
+            _B := B
+            _Xi := Xi
+            _Ai := Ai
+            _Bi := Bi
+        else
+            _X := X_m
+            _A := A_m
+            _B := B_m
+            _Xi := Xi_m
+            _Ai := Ai_m
+            _Bi := Bi_m
+    else
+        _X := X
+        _A := A
+        _B := B
+        _Xi := Xi
+        _Ai := Ai
+        _Bi := Bi
+    [_X, _A, _B, _Xi, _Ai, _Bi]
+//=============================================================================
+// ► Core logic
+//=============================================================================
+[Xuse, Ause, Buse, Xidx, Aidx, Bidx] = getXAB()
+haveAll = not na(Xuse) and not na(Ause) and not na(Buse)
+isBull = haveAll and (Ause > Xuse)
+baseLen = haveAll ? math.abs(Ause - Xuse) : na
+projY(level) => isBull ? Buse + (Ause - Xuse) * level : Buse - (Xuse - Ause) * level
+//=============================================================================
+// ► Display options (matched to Grid)
+//=============================================================================
+showLabelsAsNames = input.bool(true, "Show Names (TP1/Target) instead of numeric", group="Display")
+extendRightBars = input.int(5, "Extend to Right (bars)", group="Display")  // Matched to Grid +5
+showGoldenPocket = input.bool(true, "Show Golden Pocket (0.618–0.65)", group="Zones")
+showTargetZone = input.bool(true, "Show C Zone (1.0–1.272)", group="Zones")
+showBeyond = input.bool(true, "Show Extended Levels (1.618–3.618)", group="Zones")
+//=============================================================================
+// ► Levels & Labels (made customizable like Grid)
+//=============================================================================
+show0 = input.bool(true, "Show 0.0", inline="fib0", group="Fib Levels")
+fib0 = input.float(0.0, "", inline="fib0", minval=0, step=0.001, group="Fib Levels")
+col0 = input.color(color.new(color.white, 30), "", inline="fib0", group="Fib Levels")
+
+show146 = input.bool(true, "Show 0.146", inline="fib146", group="Fib Levels")
+fib146 = input.float(0.146, "", inline="fib146", minval=0, step=0.001, group="Fib Levels")
+col146 = input.color(color.new(bullC, 30), "", inline="fib146", group="Fib Levels")
+
+show236 = input.bool(true, "Show 0.236", inline="fib236", group="Fib Levels")
+fib236 = input.float(0.236, "", inline="fib236", minval=0, step=0.001, group="Fib Levels")
+col236 = input.color(color.new(bullC, 20), "", inline="fib236", group="Fib Levels")
+
+show382 = input.bool(true, "Show 0.382", inline="fib382", group="Fib Levels")
+fib382 = input.float(0.382, "", inline="fib382", minval=0, step=0.001, group="Fib Levels")
+col382 = input.color(color.new(bullC, 15), "", inline="fib382", group="Fib Levels")
+
+show5 = input.bool(true, "Show 0.5", inline="fib5", group="Fib Levels")
+fib5 = input.float(0.5, "", inline="fib5", minval=0, step=0.001, group="Fib Levels")
+col5 = input.color(color.new(bullC, 15), "", inline="fib5", group="Fib Levels")
+
+show618 = input.bool(true, "Show 0.618", inline="fib618", group="Fib Levels")
+fib618 = input.float(0.618, "", inline="fib618", minval=0, step=0.001, group="Fib Levels")
+col618 = input.color(color.new(color.yellow, 20), "", inline="fib618", group="Fib Levels")
+
+show65 = input.bool(true, "Show 0.65", inline="fib65", group="Fib Levels")
+fib65 = input.float(0.65, "", inline="fib65", minval=0, step=0.001, group="Fib Levels")
+col65 = input.color(color.new(color.yellow, 20), "", inline="fib65", group="Fib Levels")
+
+show786 = input.bool(true, "Show 0.786", inline="fib786", group="Fib Levels")
+fib786 = input.float(0.786, "", inline="fib786", minval=0, step=0.001, group="Fib Levels")
+col786 = input.color(color.new(bullC, 25), "", inline="fib786", group="Fib Levels")
+
+show1 = input.bool(true, "Show 1.0", inline="fib1", group="Fib Levels")
+fib1 = input.float(1.0, "", inline="fib1", minval=0, step=0.001, group="Fib Levels")
+col1 = input.color(color.new(color.white, 30), "", inline="fib1", group="Fib Levels")
+
+show1272 = input.bool(true, "Show 1.272", inline="fib1272", group="Fib Levels")
+fib1272 = input.float(1.272, "", inline="fib1272", minval=0, step=0.001, group="Fib Levels")
+col1272 = input.color(color.new(bullC, 0), "", inline="fib1272", group="Fib Levels")
+
+show1618 = input.bool(true, "Show 1.618", inline="fib1618", group="Fib Levels")
+fib1618 = input.float(1.618, "", inline="fib1618", minval=0, step=0.001, group="Fib Levels")
+col1618 = input.color(color.new(bullC, 0), "", inline="fib1618", group="Fib Levels")
+
+show2 = input.bool(true, "Show 2.0", inline="fib2", group="Fib Levels")
+fib2 = input.float(2.0, "", inline="fib2", minval=0, step=0.001, group="Fib Levels")
+col2 = input.color(color.new(bullC, 10), "", inline="fib2", group="Fib Levels")
+
+show2618 = input.bool(true, "Show 2.618", inline="fib2618", group="Fib Levels")
+fib2618 = input.float(2.618, "", inline="fib2618", minval=0, step=0.001, group="Fib Levels")
+col2618 = input.color(color.new(bullC, 15), "", inline="fib2618", group="Fib Levels")
+
+show3618 = input.bool(true, "Show 3.618", inline="fib3618", group="Fib Levels")
+fib3618 = input.float(3.618, "", inline="fib3618", minval=0, step=0.001, group="Fib Levels")
+col3618 = input.color(color.new(bullC, 20), "", inline="fib3618", group="Fib Levels")
+names = array.from("BASE", "ENTRY", "TP1", "TP2", "TP3", "TP4", "", "TP5", "Target", "TP6", "Continual", "x2", "x2.618", "x3.618")
+//=============================================================================
+// ► Draw engine (matched to Grid style: lines at 75 trans, boxes at 95/85/80)
+//=============================================================================
+var array<line> fibLines = array.new_line()
+var array<label> fibLabs = array.new_label()
+var array<box> fibBoxes = array.new_box()
+clrAll() =>
+    if array.size(fibLines) > 0
+        for i = 0 to array.size(fibLines) - 1
+            line.delete(array.get(fibLines, i))
+    if array.size(fibLabs) > 0
+        for i = 0 to array.size(fibLabs) - 1
+            label.delete(array.get(fibLabs, i))
+    if array.size(fibBoxes) > 0
+        for i = 0 to array.size(fibBoxes) - 1
+            box.delete(array.get(fibBoxes, i))
+    array.clear(fibLines)
+    array.clear(fibLabs)
+    array.clear(fibBoxes)
+drawLine(x1, y, x2, col) =>
+    array.push(fibLines, line.new(x1, y, x2, y, color=color.new(col, 75), width=1))  // Grid-style trans
+drawLabel(x, y, txt, col, style) =>
+    array.push(fibLabs, label.new(x, y, text=txt, textcolor=col, color=#00000000, style=style, size=size.small))
+drawBox(x1, top, x2, bottom, col, trans=95) =>
+    array.push(fibBoxes, box.new(x1, top, x2, bottom, xloc=xloc.bar_index, bgcolor=color.new(col, trans), border_color=color.new(col, 100)))
+//=============================================================================
+// ► Main draw (matched to Grid)
+//=============================================================================
+if barstate.islast and haveAll and not na(baseLen)
+    clrAll()
+    colMain = isBull ? bullC : bearC
+    
+    line.new(Xidx, Xuse, Aidx, Ause, color=color.new(colMain, 40), style=line.style_dashed)
+    line.new(Aidx, Ause, Bidx, Buse, color=color.new(colMain, 40), style=line.style_dashed)
+    
+    // Position labels based on bull/bear
+    labelStyleX = isBull ? label.style_label_up : label.style_label_down
+    labelStyleA = isBull ? label.style_label_down : label.style_label_up
+    labelStyleB = isBull ? label.style_label_up : label.style_label_down
+    
+    drawLabel(Xidx, Xuse, "X", colMain, labelStyleX)
+    drawLabel(Aidx, Ause, "A", colMain, labelStyleA)
+    drawLabel(Bidx, Buse, "B", colMain, labelStyleB)
+    
+    lvls = array.from(fib0, fib146, fib236, fib382, fib5, fib618, fib65, fib786, fib1, fib1272, fib1618, fib2, fib2618, fib3618)
+    cols = array.from(col0, col146, col236, col382, col5, col618, col65, col786, col1, col1272, col1618, col2, col2618, col3618)
+    shows = array.from(show0, show146, show236, show382, show5, show618, show65, show786, show1, show1272, show1618, show2, show2618, show3618)
+    
+    for i = 0 to array.size(lvls) - 1
+        if array.get(shows, i)
+            lv = array.get(lvls, i)
+            colNow = array.get(cols, i)
+            nameNow = array.get(names, i)
+            y = projY(lv)
+            x1 = Bidx
+            x2 = bar_index + extendRightBars
+            drawLine(x1, y, x2, colNow)
+            string txt = ""
+            if showLabelsAsNames
+                txt := nameNow + " (" + str.tostring(lv) + ")"
+            else
+                txt := str.tostring(lv) + " (" + str.tostring(y) + ")"
+            drawLabel(x2, y, txt, colNow, label.style_label_left)
+    if showGoldenPocket
+        y1 = projY(fib618)
+        y2 = projY(fib65)
+        x1 = Bidx
+        x2 = bar_index + extendRightBars
+        drawBox(x1, math.max(y1, y2), x2, math.min(y1, y2), color.rgb(253, 255, 122), 95)  // Yellow for GP
+    if showTargetZone
+        y1 = projY(fib1)
+        y2 = projY(fib1272)
+        x1 = Bidx
+        x2 = bar_index + extendRightBars
+        drawBox(x1, math.max(y1, y2), x2, math.min(y1, y2), colMain, 80)  // Grid target trans
+    if showBeyond
+        y3 = projY(fib1618)
+        y4 = projY(fib3618)
+        x1 = Bidx
+        x2 = bar_index + extendRightBars
+        drawBox(x1, math.max(y3, y4), x2, math.min(y3, y4), colMain, 80)

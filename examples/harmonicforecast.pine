@@ -1,0 +1,253 @@
+// This work is licensed under a Attribution-NonCommercial-ShareAlike 4.0 International (CC BY-NC-SA 4.0) https://creativecommons.org/licenses/by-nc-sa/4.0/
+// © LuxAlgo
+
+//@version=6
+indicator("Adaptive Harmonic Forecast [LuxAlgo]", "LuxAlgo - Adaptive Harmonic Forecast", overlay = true, max_labels_count = 500, max_polylines_count = 100)
+
+//---------------------------------------------------------------------------------------------------------------------}
+// Constants
+//---------------------------------------------------------------------------------------------------------------------{
+color BULL_COLOR = #089981
+color BEAR_COLOR = #f23645
+
+// Size mapping constants
+TINY    = "Tiny"
+SMALL   = "Small"
+NORMAL  = "Normal"
+LARGE   = "Large"
+HUGE    = "Huge"
+
+//---------------------------------------------------------------------------------------------------------------------}
+// Inputs
+//---------------------------------------------------------------------------------------------------------------------{
+int    lenInput        = input.int(100, "Fit Lookback (N)", minval = 5, group = "Settings", tooltip = "Max Period is automatically set to this value.")
+int    extrapInput     = input.int(50, "Extrapolation Bars", minval = 1, group = "Settings")
+int    numSinesInput   = input.int(5, "Number of Sinusoids", minval = 1, maxval = 10, group = "Settings")
+
+group_auto = "Automatic Cycle Detection"
+int    minPInput       = input.int(10, "Min Period", minval = 5, group = group_auto)
+
+group_visuals = "Visuals"
+bool   showMarkerInput = input.bool(true, "Show Reversal Dots", group = group_visuals)
+string markerSizeInput = input.string(LARGE, "Dot Size", options = [TINY, SMALL, NORMAL, LARGE, HUGE], group = group_visuals)
+bool   showTableInput  = input.bool(true, "Show Detected Periods", group = group_visuals)
+
+group_trend = "Trend Line"
+bool   showTrendInput  = input.bool(true, "Show Trend Line", group = group_trend)
+color  trendColorInput = input.color(color.gray, "Trend Line Color", group = group_trend)
+
+//---------------------------------------------------------------------------------------------------------------------}
+// Calculations
+//---------------------------------------------------------------------------------------------------------------------{
+var parsedSize = switch markerSizeInput
+    TINY   => size.tiny
+    SMALL  => size.small
+    NORMAL => size.normal
+    LARGE  => size.large
+    HUGE   => size.huge
+
+// Function to find dominant cycles using a Periodogram approach on detrended data
+get_dominant_periods(int len, int min_p, int max_p, int num_waves) =>
+    float sumX  = 0.0
+    float sumY  = 0.0
+    float sumXY = 0.0
+    float sumX2 = 0.0
+    for i = 0 to len - 1
+        float val = close[len - 1 - i]
+        sumX  += i
+        sumY  += val
+        sumXY += i * val
+        sumX2 += i * i
+    
+    float slope = (len * sumXY - sumX * sumY) / (len * sumX2 - sumX * sumX)
+    float intercept = (sumY - slope * sumX) / len
+    
+    array<float> powers  = array.new_float()
+    array<int>   periods = array.new_int()
+    
+    for p = min_p to max_p
+        float sumS = 0.0
+        float sumC = 0.0
+        float w    = 2.0 * math.pi / p
+        for i = 0 to len - 1
+            float detrended_val = close[len - 1 - i] - (slope * i + intercept)
+            sumS += detrended_val * math.sin(w * i)
+            sumC += detrended_val * math.cos(w * i)
+        
+        float pwr = math.pow(sumS, 2) + math.pow(sumC, 2)
+        array.push(powers, pwr)
+        array.push(periods, p)
+        
+    array<int>   peak_periods = array.new_int()
+    array<float> peak_powers  = array.new_float()
+    
+    for i = 1 to array.size(powers) - 2
+        float curr = array.get(powers, i)
+        float prev = array.get(powers, i - 1)
+        float next = array.get(powers, i + 1)
+        
+        if curr > prev and curr > next
+            array.push(peak_periods, array.get(periods, i))
+            array.push(peak_powers, curr)
+            
+    array<float> sorted_periods = array.new_float()
+    if array.size(peak_powers) > 0
+        int count = math.min(num_waves, array.size(peak_powers))
+        for k = 1 to count
+            float max_pwr = -1.0
+            int   max_idx = -1
+            for m = 0 to array.size(peak_powers) - 1
+                float pwr = array.get(peak_powers, m)
+                if pwr > max_pwr
+                    max_pwr := pwr
+                    max_idx := m
+            
+            if max_idx != -1
+                array.push(sorted_periods, float(array.get(peak_periods, max_idx)))
+                array.remove(peak_powers, max_idx)
+                array.remove(peak_periods, max_idx)
+                
+    sorted_periods
+
+get_composite_fit(int len, array<float> periods) =>
+    int num_waves = array.size(periods)
+    int num_cols  = num_waves * 2 + 2 
+    matrix<float> X = matrix.new<float>(len, num_cols)
+    matrix<float> Y = matrix.new<float>(len, 1)
+    
+    for i = 0 to len - 1
+        float val = close[len - 1 - i]
+        matrix.set(Y, i, 0, val)
+        float t = float(i)
+        for j = 0 to num_waves - 1
+            float w = 2.0 * math.pi / array.get(periods, j)
+            matrix.set(X, i, j * 2,     math.sin(w * t))
+            matrix.set(X, i, j * 2 + 1, math.cos(w * t))
+        
+        matrix.set(X, i, num_cols - 2, t)   
+        matrix.set(X, i, num_cols - 1, 1.0) 
+        
+    matrix<float> XT   = matrix.transpose(X)
+    matrix<float> XTX  = matrix.mult(XT, X)
+    matrix<float> XTY  = matrix.mult(XT, Y)
+    matrix<float> XTXi = matrix.inv(XTX)
+    matrix<float> Beta = na
+    if not na(XTXi)
+        Beta := matrix.mult(XTXi, XTY)
+    Beta
+
+get_y_hat(float t, matrix<float> Beta, array<float> periods) =>
+    float y_hat = 0.0
+    if not na(Beta)
+        int num_waves = array.size(periods)
+        for j = 0 to num_waves - 1
+            float w = 2.0 * math.pi / array.get(periods, j)
+            float a = matrix.get(Beta, j * 2, 0)
+            float b = matrix.get(Beta, j * 2 + 1, 0)
+            y_hat += a * math.sin(w * t) + b * math.cos(w * t)
+        
+        int rows = matrix.rows(Beta)
+        y_hat += matrix.get(Beta, rows - 2, 0) * t   
+        y_hat += matrix.get(Beta, rows - 1, 0)       
+    y_hat
+
+// Persistent objects
+var polyline _polyHist      = na
+var polyline _polyTrend     = na
+var polyline _polyTrendExt  = na
+var polyline[] _forePolys   = array.new<polyline>()
+var label[]  _revMarkers    = array.new_label()
+var table    _infoTable     = table.new(position.top_right, 2, 11, bgcolor = #161616, border_width = 1, frame_color = #2E2E2E)
+
+if barstate.islast
+    array<float> best_periods = get_dominant_periods(lenInput, minPInput, lenInput, numSinesInput)
+    matrix<float> Beta = get_composite_fit(lenInput, best_periods)
+    
+    if not na(Beta)
+        int base_idx = bar_index - (lenInput - 1)
+        int rows = matrix.rows(Beta)
+        float slope = matrix.get(Beta, rows - 2, 0)
+        float intercept = matrix.get(Beta, rows - 1, 0)
+        
+        // 1. History Points
+        array<chart.point> pointsHist = array.new<chart.point>()
+        array<chart.point> pointsTrend = array.new<chart.point>()
+        for i = 0 to lenInput - 1
+            float y_hat = get_y_hat(float(i), Beta, best_periods)
+            pointsHist.push(chart.point.from_index(base_idx + i, y_hat))
+            if showTrendInput
+                pointsTrend.push(chart.point.from_index(base_idx + i, slope * i + intercept))
+
+        // 2. Extrapolation Points & Forecast Segments
+        for p in _forePolys
+            p.delete()
+        array.clear(_forePolys)
+        
+        array<chart.point> pointsTrendExt = array.new<chart.point>()
+        if showTrendInput
+            pointsTrendExt.push(chart.point.from_index(bar_index, slope * (lenInput - 1) + intercept))
+
+        float prev_y = get_y_hat(float(lenInput - 1), Beta, best_periods)
+        array<chart.point> segPoints = array.new<chart.point>()
+        segPoints.push(chart.point.from_index(bar_index, prev_y))
+        
+        bool is_up = true
+        bool is_up_set = false
+        
+        for i = 1 to extrapInput
+            float t_rel = float(lenInput - 1 + i)
+            float y = get_y_hat(t_rel, Beta, best_periods)
+            bool current_up = y >= prev_y
+            
+            if showTrendInput
+                pointsTrendExt.push(chart.point.from_index(bar_index + i, slope * t_rel + intercept))
+
+            if not is_up_set
+                is_up := current_up
+                is_up_set := true
+            
+            if current_up != is_up
+                array.push(_forePolys, polyline.new(segPoints, line_color = is_up ? BULL_COLOR : BEAR_COLOR, line_width = 2, line_style = line.style_dotted))
+                chart.point last_pt = array.get(segPoints, array.size(segPoints)-1)
+                array.clear(segPoints)
+                array.push(segPoints, last_pt)
+                is_up := current_up
+                
+            segPoints.push(chart.point.from_index(bar_index + i, y))
+            prev_y := y
+            
+        if array.size(segPoints) > 1
+            array.push(_forePolys, polyline.new(segPoints, line_color = is_up ? BULL_COLOR : BEAR_COLOR, line_width = 2, line_style = line.style_dotted))
+
+        // 3. Drawing Final Refresh
+        _polyHist.delete(), _polyTrend.delete(), _polyTrendExt.delete()
+        for l in _revMarkers
+            l.delete()
+        array.clear(_revMarkers)
+
+        _polyHist := polyline.new(pointsHist, line_color = slope >= 0 ? BULL_COLOR : BEAR_COLOR, line_width = 2)
+        if showTrendInput
+            _polyTrend    := polyline.new(pointsTrend, line_color = trendColorInput, line_width = 1)
+            _polyTrendExt := polyline.new(pointsTrendExt, line_color = trendColorInput, line_width = 1, line_style = line.style_dotted)
+
+        // 4. Markers
+        if showMarkerInput
+            for i = 1 to extrapInput - 1
+                float t_rel = float(lenInput - 1 + i)
+                float curr  = get_y_hat(t_rel, Beta, best_periods)
+                float prev  = get_y_hat(t_rel - 1, Beta, best_periods)
+                float next  = get_y_hat(t_rel + 1, Beta, best_periods)
+                if (curr > prev and curr > next) or (curr < prev and curr < next)
+                    color mCol = (curr > prev) ? BEAR_COLOR : BULL_COLOR
+                    array.push(_revMarkers, label.new(bar_index + i, curr, "•", color = #00000000, textcolor = mCol, style = label.style_label_center, size = parsedSize))
+
+        // 5. Table
+        if showTableInput
+            table.cell(_infoTable, 0, 0, "Detected Cycles", text_color = color.white, text_size = size.small)
+            table.merge_cells(_infoTable, 0, 0, 1, 0)
+            for i = 0 to numSinesInput - 1
+                string p_str = i < array.size(best_periods) ? str.tostring(array.get(best_periods, i), "#.#") : "-"
+                table.cell(_infoTable, 0, i + 1, "Period " + str.tostring(i + 1), text_color = #808080, text_halign = text.align_left)
+                table.cell(_infoTable, 1, i + 1, p_str, text_color = color.white, text_halign = text.align_right)
+
+//---------------------------------------------------------------------------------------------------------------------}
