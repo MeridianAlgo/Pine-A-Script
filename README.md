@@ -2,6 +2,12 @@
 
 This repository contains a PineScript (v5/v6-ish) to JavaScript transpiler, plus a small runtime shim so converted indicators can execute in Node.js.
 
+It is designed for:
+
+- Converting real-world public scripts that mostly use Pine v5/v6 syntax.
+- Producing JavaScript that is runnable in a plain Node.js environment (ESM).
+- Preserving Pine “series” semantics well enough to run indicators over synthetic or real OHLCV bar arrays.
+
 ## Features
 
 - Transpile PineScript to runnable JavaScript (ESM).
@@ -15,6 +21,13 @@ This repository contains a PineScript (v5/v6-ish) to JavaScript transpiler, plus
   - `var` / `varip` are persisted across bars via a `state` object.
 - Multi-timeframe baseline:
   - `request.security()` resamples/aligned series using `time[]` when available.
+
+Additional runtime coverage:
+
+- Strategy API (lightweight stubs): `strategy.entry`, `strategy.exit`, `strategy.close`, `strategy.order`, `strategy.long`, `strategy.short`.
+- Pine v6 containers: `map.*` and `matrix.*` (minimal-but-working implementations).
+- Drawing primitives (runtime objects captured in `globalThis.__pineRuntime`): `line.*`, `label.*`, `polyline.*`, `linefill.*`.
+- Formatting constants for tooltips/options: `format.*` (baseline).
 
 ## Project layout
 
@@ -41,6 +54,27 @@ npm install
 
 ```bash
 node src/cli.js examples/example.pine converts/example.js
+```
+
+### Execute converted code
+
+Converted indicators expect OHLCV and `time` arrays to be available on `globalThis`.
+
+Minimal runner pattern:
+
+```js
+import { main } from './converts/example.js';
+
+globalThis.open = [1, 2, 3];
+globalThis.high = [1, 2, 3];
+globalThis.low = [1, 2, 3];
+globalThis.close = [1, 2, 3];
+globalThis.volume = [100, 100, 100];
+globalThis.time = [1, 2, 3];
+
+main();
+
+console.log(globalThis.__pineRuntime.plots);
 ```
 
 ### Run the indicator runtime tests
@@ -142,6 +176,13 @@ npm run test:indicators
 | `label.new`, `label.delete`, `label.settext` | ✅ Supported | Label primitives |
 | `box.new`, `box.delete` | ✅ Supported | Box primitives |
 | `polyline.new`, `polyline.delete` | ✅ Supported | Polyline primitives |
+| `polyline.set_points`, `polyline.set_color`, `polyline.set_width`, `polyline.set_style` | ✅ Supported | Baseline animation/mutation support |
+| `linefill.new`, `linefill.delete` | ✅ Supported | Baseline line fill support |
+
+Notes:
+
+- Drawing objects are stored in `globalThis.__pineRuntime` collections (`lines`, `labels`, `polylines`, `linefills`) as plain JS objects.
+- This project does not render actual charts. The goal is “run without crashing” and “capture intent” so you can export, replay, or render elsewhere.
 
 #### Multi-Timeframe (`request`, `timeframe`, `barmerge`)
 
@@ -163,6 +204,11 @@ npm run test:indicators
 | `bgcolor`, `hline`, `fill` | ✅ Supported | Visual output |
 | `alertcondition` | ✅ Supported | Alert registration |
 | `barstate.islast`, `barstate.islastconfirmedhistory` | ✅ Supported | Bar state checks |
+
+Formatting/tooltip baseline:
+
+- `format.price`, `format.percent`, `format.volume`, `format.inherit` are provided.
+- `plot(..., format=...)` is currently treated as an option passthrough; the runtime stores the format value in `__pineRuntime.plots[].args`.
 
 ### Series Semantics
 
@@ -202,10 +248,10 @@ The following PineScript features are not yet implemented or are partially suppo
 
 ### Core Language Features
 
-- **Strategy functions**: `strategy.entry`, `strategy.close`, `strategy.long`, `strategy.short`, `strategy.order` are not implemented.
-- **Matrix operations**: `matrix.new`, `matrix.mult`, `matrix.inv`, `matrix.transpose` are stubbed with basic placeholder implementations.
-- **Chart point objects**: `chart.point.from_index`, `chart.point.new` are stubbed.
-- **Map data type**: Pine v6 `map` type declarations and operations (`map.new`, `map.get`, `map.set`) are not implemented.
+- **Strategy functions**: runtime is currently stubbed (calls are captured/logged), but there is no backtest engine.
+- **Matrix operations**: baseline implementation exists; `matrix.inv` is currently implemented for 2x2 only.
+- **Chart point objects**: baseline object stubs exist.
+- **Map data type**: baseline implementation exists using JS `Map`.
 - **User-defined types with methods**: `type Foo` with `method` blocks have limited support.
 - **Library imports**: `@version` semantics beyond v5/v6 detection are not enforced.
 
@@ -218,9 +264,14 @@ The following PineScript features are not yet implemented or are partially suppo
 
 ### Drawing / Visualization
 
-- **Polyline animations**: `polyline.set_*` methods are not implemented.
-- **Line fill**: `linefill.new` and related functions are not implemented.
-- **Tooltip formatting**: `format.*` options for `plot` are not fully mapped.
+- **Polyline animations**: baseline `polyline.set_*` methods are implemented as object mutations.
+- **Line fill**: baseline `linefill.new/delete` exists.
+- **Tooltip formatting**: `format.*` constants are provided; more TV-accurate behavior (precision/locale/format strings) is future work.
+
+Remaining gaps in this area:
+
+- No real rendering.
+- Many drawing APIs are still missing (`box.*`, full `label.*`, `line.*` property setters/getters, etc.).
 
 ### Testing / Verification
 
@@ -279,6 +330,33 @@ alertcondition(ta.crossunder(fastMA, slowMA), "MA Crossunder", "Fast crossed bel
 ```bash
 node src/cli.js test_script.pine converts/test_script.js
 node converts/test_script.js   # Requires synthetic OHLCV data setup
+```
+
+## Additional examples
+
+### Example: polyline creation + mutation
+
+```pine
+//@version=5
+indicator("Polyline Demo", overlay=true)
+
+var polyline pl = na
+
+if bar_index == 0
+    pts = array.from(chart.point.new(time, close), chart.point.new(time + 1, close + 1))
+    pl := polyline.new(pts, line_width = 2)
+
+if not na(pl)
+    polyline.set_width(pl, 3)
+    polyline.set_style(pl, line.style_dotted)
+```
+
+### Example: format options
+
+```pine
+//@version=5
+indicator("Format Demo", overlay=false, format=format.price, precision=2)
+plot(close, "Close", format=format.price)
 ```
 
 ## Contributing

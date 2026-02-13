@@ -19,7 +19,8 @@ class CodeGenerator {
 
     this.reservedNamespaces = new Set([
       'ta', 'math', 'array', 'str',
-      'color', 'table', 'position', 'location', 'shape', 'size', 'text'
+      'color', 'table', 'position', 'location', 'shape', 'size', 'text',
+      'line', 'polyline', 'linefill', 'format'
     ]);
   }
 
@@ -136,6 +137,31 @@ class CodeGenerator {
 
     this.write('globalThis.__pineRuntime = globalThis.__pineRuntime || { plots: [], plotshapes: [], alerts: [] };\n');
     this.write('globalThis.pinescript = pinescript;\n\n');
+
+    this.write('pinescript.line = pinescript.line || { style_dotted: "style_dotted", style_solid: "style_solid", style_dashed: "style_dashed" };\n');
+    this.write('pinescript.polyline = pinescript.polyline || {\n');
+    this.write('  new: function(points, opts) { return pinescript.polylineNew(points, opts); },\n');
+    this.write('  delete: function(poly) { return pinescript.polylineDelete(poly); },\n');
+    this.write('  set_points: function(poly, points) { return pinescript.polylineSetPoints(poly, points); },\n');
+    this.write('  set_color: function(poly, color) { return pinescript.polylineSetColor(poly, color); },\n');
+    this.write('  set_width: function(poly, width) { return pinescript.polylineSetWidth(poly, width); },\n');
+    this.write('  set_style: function(poly, style) { return pinescript.polylineSetStyle(poly, style); }\n');
+    this.write('};\n');
+    this.write('pinescript.linefill = pinescript.linefill || {\n');
+    this.write('  new: function(line1, line2, color) { return pinescript.linefillNew(line1, line2, color); },\n');
+    this.write('  delete: function(lf) { return pinescript.linefillDelete(lf); }\n');
+    this.write('};\n');
+    this.write('pinescript.format = pinescript.format || {\n');
+    this.write('  price: "price",\n');
+    this.write('  percent: "percent",\n');
+    this.write('  volume: "volume",\n');
+    this.write('  inherit: "inherit"\n');
+    this.write('};\n\n');
+
+    this.write('globalThis.line = globalThis.line || pinescript.line;\n');
+    this.write('globalThis.polyline = globalThis.polyline || pinescript.polyline;\n');
+    this.write('globalThis.linefill = globalThis.linefill || pinescript.linefill;\n');
+    this.write('globalThis.format = globalThis.format || pinescript.format;\n\n');
 
     // Provide `input.timeframe()` for scripts that declare timeframe inputs.
     this.write('globalThis.input = globalThis.input || {};\n');
@@ -694,6 +720,14 @@ class CodeGenerator {
       'label.delete': 'pinescript.labelDelete',
       'label.settext': 'pinescript.labelSetText',
       'label.gettext': 'pinescript.labelGetText',
+      'polyline.new': 'pinescript.polylineNew',
+      'polyline.delete': 'pinescript.polylineDelete',
+      'polyline.set_points': 'pinescript.polylineSetPoints',
+      'polyline.set_color': 'pinescript.polylineSetColor',
+      'polyline.set_width': 'pinescript.polylineSetWidth',
+      'polyline.set_style': 'pinescript.polylineSetStyle',
+      'linefill.new': 'pinescript.linefillNew',
+      'linefill.delete': 'pinescript.linefillDelete',
       'alert': 'pinescript.alert',
       'strategy.entry': 'pinescript.strategyEntry',
       'strategy.exit': 'pinescript.strategyExit',

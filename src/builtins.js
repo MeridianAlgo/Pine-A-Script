@@ -634,6 +634,130 @@ export const builtins = new Map([
     return { args };
   }],
 
+  ['lineNew', function(x1, y1, x2, y2, opts) {
+    const obj = { type: 'line', x1, y1, x2, y2, opts: opts || {} };
+    obj.delete = function() {
+      obj.__deleted = true;
+      return null;
+    };
+    obj.setxy = function(nx1, ny1, nx2, ny2) {
+      obj.x1 = nx1;
+      obj.y1 = ny1;
+      obj.x2 = nx2;
+      obj.y2 = ny2;
+      return null;
+    };
+    if (globalThis.__pineRuntime) {
+      globalThis.__pineRuntime.lines = globalThis.__pineRuntime.lines || [];
+      globalThis.__pineRuntime.lines.push(obj);
+    }
+    return obj;
+  }],
+
+  ['lineDelete', function(line) {
+    if (line && typeof line.delete === 'function') return line.delete();
+    if (line) line.__deleted = true;
+    return null;
+  }],
+
+  ['lineSetXY', function(line, x1, y1, x2, y2) {
+    if (!line) return null;
+    if (typeof line.setxy === 'function') return line.setxy(x1, y1, x2, y2);
+    line.x1 = x1;
+    line.y1 = y1;
+    line.x2 = x2;
+    line.y2 = y2;
+    return null;
+  }],
+
+  ['polylineNew', function(points, opts) {
+    const obj = { type: 'polyline', points: points || [], opts: opts || {} };
+    obj.delete = function() {
+      obj.__deleted = true;
+      return null;
+    };
+    obj.set_points = function(newPoints) {
+      obj.points = newPoints || [];
+      return null;
+    };
+    obj.set_color = function(color) {
+      obj.opts = obj.opts || {};
+      obj.opts.line_color = color;
+      return null;
+    };
+    obj.set_width = function(width) {
+      obj.opts = obj.opts || {};
+      obj.opts.line_width = width;
+      return null;
+    };
+    obj.set_style = function(style) {
+      obj.opts = obj.opts || {};
+      obj.opts.line_style = style;
+      return null;
+    };
+    if (globalThis.__pineRuntime) {
+      globalThis.__pineRuntime.polylines = globalThis.__pineRuntime.polylines || [];
+      globalThis.__pineRuntime.polylines.push(obj);
+    }
+    return obj;
+  }],
+
+  ['polylineDelete', function(poly) {
+    if (poly && typeof poly.delete === 'function') return poly.delete();
+    if (poly) poly.__deleted = true;
+    return null;
+  }],
+
+  ['polylineSetPoints', function(poly, points) {
+    if (!poly) return null;
+    if (typeof poly.set_points === 'function') return poly.set_points(points);
+    poly.points = points || [];
+    return null;
+  }],
+
+  ['polylineSetColor', function(poly, color) {
+    if (!poly) return null;
+    if (typeof poly.set_color === 'function') return poly.set_color(color);
+    poly.opts = poly.opts || {};
+    poly.opts.line_color = color;
+    return null;
+  }],
+
+  ['polylineSetWidth', function(poly, width) {
+    if (!poly) return null;
+    if (typeof poly.set_width === 'function') return poly.set_width(width);
+    poly.opts = poly.opts || {};
+    poly.opts.line_width = width;
+    return null;
+  }],
+
+  ['polylineSetStyle', function(poly, style) {
+    if (!poly) return null;
+    if (typeof poly.set_style === 'function') return poly.set_style(style);
+    poly.opts = poly.opts || {};
+    poly.opts.line_style = style;
+    return null;
+  }],
+
+  ['linefillNew', function(line1, line2, color) {
+    const obj = { type: 'linefill', line1: line1 || null, line2: line2 || null, color: color || null };
+    obj.delete = function() {
+      obj.__deleted = true;
+      return null;
+    };
+    if (globalThis.__pineRuntime) {
+      globalThis.__pineRuntime.linefills = globalThis.__pineRuntime.linefills || [];
+      globalThis.__pineRuntime.linefills.push(obj);
+    }
+    return obj;
+  }],
+
+  ['linefillDelete', function(lf) {
+    if (lf && typeof lf.delete === 'function') return lf.delete();
+    if (lf) lf.__deleted = true;
+    return null;
+  }],
+
   ['bgcolor', function(color, title, editable, showLast) {
     return null;
   }],
@@ -641,6 +765,11 @@ export const builtins = new Map([
   ['fill', function(series1, series2, color, title, editable) {
     return null;
   }],
+
+  ['formatPrice', 'price'],
+  ['formatPercent', 'percent'],
+  ['formatVolume', 'volume'],
+  ['formatInherit', 'inherit'],
 
   // Alert Functions
   ['alert', function(condition, message, frequency) {
