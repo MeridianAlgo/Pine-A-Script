@@ -911,6 +911,36 @@ export const builtins = new Map([
     return null;
   }],
 
+  ['arrayInsert', function(arr, index, value) {
+    if (!arr) return value;
+    const i = Math.max(0, Math.min(arr.length, Number(index) || 0));
+    arr.splice(i, 0, value);
+    return value;
+  }],
+
+  ['arrayRemove', function(arr, index) {
+    if (!arr) return null;
+    const i = Number(index) || 0;
+    if (i < 0 || i >= arr.length) return null;
+    const removed = arr.splice(i, 1);
+    return removed.length ? removed[0] : null;
+  }],
+
+  ['arrayFill', function(arr, value, startIndex = 0, endIndex = null) {
+    if (!arr) return arr;
+    const start = Number(startIndex) || 0;
+    const end = endIndex === null || endIndex === undefined ? arr.length : Number(endIndex) || 0;
+    arr.fill(value, start, end);
+    return arr;
+  }],
+
+  ['arraySlice', function(arr, startIndex = 0, endIndex = null) {
+    if (!arr) return [];
+    const start = Number(startIndex) || 0;
+    const end = endIndex === null || endIndex === undefined ? arr.length : Number(endIndex) || 0;
+    return arr.slice(start, end);
+  }],
+
   ['arraySort', function(arr, order = 'ascending') {
     if (arr) arr.sort((a, b) => order === 'ascending' ? a - b : b - a);
     return arr;

@@ -25,8 +25,6 @@ This repository contains a PineScript (v5/v6-ish) to JavaScript transpiler, plus
   - `builtins.js` - JavaScript implementations of Pine built-in functions
   - `transpiler.js` - Main entry point (lexer → parser → generator)
   - `cli.js` - Command-line interface for transpilation
-- `examples/` - Sample Pine scripts for testing and reference
-- `converts/` - Generated JavaScript output files
 - `test/indicator_tests.js` - Bar-by-bar runtime smoke tests
 
 ## Quick start
@@ -40,8 +38,61 @@ npm install
 ### Convert a Pine script
 
 ```bash
-node src/cli.js examples/example.pine converts/example.js
+node src/cli.js path/to/script.pine path/to/output.js
 ```
+
+### Post-conversion reviewer (recommended)
+
+By default, the CLI runs a lightweight reviewer after conversion.
+
+- **Syntax check**: best-effort parse check for the generated JS.
+- **Optional smoke import**: tries to `import()` the generated module to catch obvious runtime errors.
+
+Disable it if you only want the raw output:
+
+```bash
+node src/cli.js path/to/script.pine path/to/output.js --no-review
+```
+
+Disable only the runtime `import()` smoke test:
+
+```bash
+node src/cli.js path/to/script.pine path/to/output.js --no-review-import
+```
+
+Environment variables:
+
+- `PINE_REVIEW=0` disables the reviewer
+- `PINE_REVIEW_IMPORT=0` disables the import smoke test
+
+#### Optional AI review hook (local HuggingFace model)
+
+This repo includes a fully local optional reviewer (no server) that runs a laptop-friendly code model via Python.
+
+- **Default model**: `Qwen/Qwen2.5-Coder-0.5B-Instruct`
+- **Optional larger model** (slower / more RAM): `Qwen/Qwen2.5-Coder-1.5B-Instruct`
+
+Note: small models may produce low-quality or repetitive text. The reviewer will sanitize unusable outputs and suggest switching models via `PINE_REVIEWER_MODEL`.
+
+Setup and run (Python):
+
+```bash
+pip install -r ai_reviewer/requirements.txt
+```
+
+Then enable AI review in the CLI:
+
+```bash
+set PINE_REVIEW_AI=1
+node src/cli.js path/to/script.pine path/to/output.js --review-ai
+```
+
+Model selection:
+
+- `PINE_REVIEWER_MODEL=Qwen/Qwen2.5-Coder-0.5B-Instruct`
+- `PINE_REVIEWER_PYTHON=python` (optional)
+- `PINE_REVIEWER_SCRIPT=ai_reviewer/review.py` (optional)
+- `PINE_REVIEWER_USE_CUDA=1` (optional)
 
 ### Run the indicator runtime tests
 
@@ -277,8 +328,8 @@ alertcondition(ta.crossunder(fastMA, slowMA), "MA Crossunder", "Fast crossed bel
 ### Convert and run:
 
 ```bash
-node src/cli.js test_script.pine converts/test_script.js
-node converts/test_script.js   # Requires synthetic OHLCV data setup
+node src/cli.js test_script.pine test_script.js
+node test_script.js   # Requires synthetic OHLCV data setup
 ```
 
 ## Contributing

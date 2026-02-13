@@ -99,8 +99,8 @@ Pine-A-Script/
 │   ├── builtins.js      # JavaScript implementations of Pine built-ins
 │   ├── transpiler.js    # Main entry point (lexer -> parser -> generator)
 │   └── cli.js           # Command-line interface
-├── examples/            # Sample Pine scripts for testing
-├── converts/            # Generated JavaScript output files
+├── examples/            # Optional local Pine fixtures (not tracked)
+├── converts/            # Optional local converted outputs (not tracked)
 ├── test/
 │   └── indicator_tests.js  # Bar-by-bar runtime smoke tests
 ├── CONTRIBUTING.md      # This file
@@ -283,13 +283,13 @@ node test/indicator_tests.js
 
 ### Adding New Test Fixtures
 
-1. Place the `.pine` file in `examples/`
-2. Add it to the fixtures list in `test/indicator_tests.js`:
+1. Place the `.pine` file anywhere locally (you can use `examples/` if you want)
+2. Add its path to the fixtures list in `test/indicator_tests.js`:
 
 ```javascript
 const fixtures = [
-  'examples/existing_fixture.pine',
-  'examples/your_new_fixture.pine',
+  'path/to/existing_fixture.pine',
+  'path/to/your_new_fixture.pine',
 ];
 ```
 

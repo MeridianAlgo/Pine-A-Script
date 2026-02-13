@@ -3,6 +3,7 @@
  */
 
 import { transpile } from './transpiler.js';
+import { formatReviewReport, reviewGeneratedCode } from './reviewer.js';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
@@ -23,6 +24,9 @@ Options:
   --no-comments        Remove comments from output
   --ast                Output AST instead of generated code
   --tokens             Output tokens instead of generated code
+  --no-review          Disable post-conversion review
+  --no-review-import   Disable runtime import smoke test
+  --review-ai          Enable optional local AI review (requires optional Python deps)
 
 Examples:
   node cli.js script.pine output.js
@@ -31,7 +35,7 @@ Examples:
 `);
 }
 
-function main() {
+async function main() {
   const args = process.argv.slice(2);
   let inputFile = null;
   let outputFile = null;
@@ -40,7 +44,10 @@ function main() {
     prettyPrint: true,
     wrapInModule: true,
     verbose: false,
-    outputMode: 'code'
+    outputMode: 'code',
+    review: process.env.PINE_REVIEW !== '0',
+    reviewImport: process.env.PINE_REVIEW_IMPORT !== '0',
+    reviewAI: process.env.PINE_REVIEW_AI === '1'
   };
 
   for (let i = 0; i < args.length; i++) {
@@ -76,6 +83,21 @@ function main() {
       continue;
     }
 
+    if (arg === '--no-review') {
+      options.review = false;
+      continue;
+    }
+
+    if (arg === '--no-review-import') {
+      options.reviewImport = false;
+      continue;
+    }
+
+    if (arg === '--review-ai') {
+      options.reviewAI = true;
+      continue;
+    }
+
     if (!arg.startsWith('-')) {
       if (!inputFile) {
         inputFile = arg;
@@ -104,7 +126,9 @@ function main() {
     console.log(`Lines: ${source.split('\n').length}`);
   }
 
+  if (options.verbose || options.reviewAI) console.log('Transpiling...');
   const result = transpile(source, options);
+  if (options.verbose || options.reviewAI) console.log('Transpile done.');
 
   if (!result.success) {
     console.error(`Error: ${result.error}`);
@@ -118,6 +142,18 @@ function main() {
   } else {
     const output = result.code;
 
+    if (options.review) {
+      if (options.verbose || options.reviewAI) console.log('Reviewing generated code...');
+      if (options.reviewAI) console.log('Running local AI review (this can take a while on first run)...');
+      const report = await reviewGeneratedCode(output, {
+        executeImport: options.reviewImport,
+        ai: options.reviewAI
+      });
+      console.log(formatReviewReport(report));
+      if (options.verbose || options.reviewAI) console.log('Review done.');
+      if (!report.ok) process.exitCode = 1;
+    }
+
     if (outputFile) {
       fs.writeFileSync(outputFile, output);
       if (options.verbose) {
@@ -130,4 +166,7 @@ function main() {
   }
 }
 
-main();
+main().catch((e) => {
+  console.error(`Error: ${e?.message || String(e)}`);
+  process.exit(1);
+});
