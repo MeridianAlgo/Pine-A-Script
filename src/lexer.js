@@ -265,6 +265,10 @@ class Lexer {
     const char = this.currentChar;
 
     switch (char) {
+      case ';':
+        // Pine allows semicolons as statement separators (often inside `{ ... }` blocks).
+        this.advance();
+        return new Token(TokenType.NEWLINE, '\n', this.line, startColumn);
       case '+':
         this.advance();
         if (this.currentChar === '=') {

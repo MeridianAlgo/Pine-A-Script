@@ -178,7 +178,11 @@ class Parser {
       }
     }
     this.expect(TokenType.RBRACKET, 'Expected ]');
-    this.expect(TokenType.EQUAL, 'Expected =');
+    if (this.match(TokenType.EQUAL) || this.match(TokenType.COLON_EQUAL)) {
+      this.advance();
+    } else {
+      this.expect(TokenType.EQUAL, 'Expected =');
+    }
     const value = this.parseExpression();
     return new ASTNode('DestructuringAssignment', { targets, value });
   }
@@ -243,7 +247,7 @@ class Parser {
         depth--;
         if (depth === 0) {
           const next = this.peek(i + 1);
-          return !!next && next.type === TokenType.EQUAL;
+          return !!next && (next.type === TokenType.EQUAL || next.type === TokenType.COLON_EQUAL);
         }
       }
     }
@@ -400,16 +404,48 @@ class Parser {
       }
     }
 
-    const name = this.expect(TokenType.IDENTIFIER, 'Expected variable name').value;
-    this.expect(TokenType.EQUAL, 'Expected =');
-    const value = this.parseExpression();
-    return new ASTNode('VariableDeclaration', {
-      name,
-      isVarip,
-      isVar,
-      declaredType,
-      value
-    });
+    const parseOneDecl = (baseIsVar, baseIsVarip) => {
+      let localIsVar = baseIsVar;
+      let localIsVarip = baseIsVarip;
+      let localDeclaredType = declaredType;
+
+      // Allow repeating `var`/`varip` in the same statement: `var float a=na, var float b=na`
+      if (this.match(TokenType.VAR) || this.match(TokenType.VARIP)) {
+        localIsVarip = this.match(TokenType.VARIP);
+        localIsVar = this.match(TokenType.VAR);
+        this.advance();
+        localDeclaredType = null;
+        if (this.match(TokenType.IDENTIFIER) && (this.peek(1)?.type === TokenType.IDENTIFIER || this.peek(1)?.type === TokenType.LESS || this.peek(1)?.type === TokenType.LBRACKET)) {
+          const startPos = this.pos;
+          const maybeType = this.parseTypeAnnotation();
+          if (maybeType && this.match(TokenType.IDENTIFIER)) {
+            localDeclaredType = maybeType;
+          } else {
+            this.pos = startPos;
+            this.currentToken = this.tokens[this.pos];
+          }
+        }
+      }
+
+      const name = this.expect(TokenType.IDENTIFIER, 'Expected variable name').value;
+      this.expect(TokenType.EQUAL, 'Expected =');
+      const value = this.parseExpression();
+      return new ASTNode('VariableDeclaration', { name, isVarip: localIsVarip, isVar: localIsVar, declaredType: localDeclaredType, value });
+    };
+
+    const firstDecl = parseOneDecl(isVar, isVarip);
+
+    if (!this.match(TokenType.COMMA)) {
+      return firstDecl;
+    }
+
+    const declarations = [firstDecl];
+    while (this.match(TokenType.COMMA)) {
+      this.advance();
+      declarations.push(parseOneDecl(isVar, isVarip));
+    }
+
+    return new ASTNode('MultiDeclaration', { declarations });
   }
 
   parseIfStatement() {

@@ -6,15 +6,16 @@ import { builtins } from './builtins.js';
 
 class CodeGenerator {
   constructor() {
-    this.indent = '  ';
-    this.level = 0;
     this.output = [];
+    this.level = 0;
     this.context = {
-      inputs: [],
       variables: new Set(),
-      functions: new Map(),
-      inStrategy: false
+      inputs: [],
+      inStrategy: false,
+      stateVars: new Set()
     };
+    this.indent = '  ';
+    this.functions = new Map();
 
     this.reservedNamespaces = new Set([
       'ta', 'math', 'array', 'str',
@@ -136,6 +137,10 @@ class CodeGenerator {
     this.write('globalThis.__pineRuntime = globalThis.__pineRuntime || { plots: [], plotshapes: [], alerts: [] };\n');
     this.write('globalThis.pinescript = pinescript;\n\n');
 
+    // Provide `input.timeframe()` for scripts that declare timeframe inputs.
+    this.write('globalThis.input = globalThis.input || {};\n');
+    this.write('globalThis.input.timeframe = globalThis.input.timeframe || ((defval) => defval);\n\n');
+
     this.write('globalThis.array = globalThis.array || {\n');
     this.write('  from: (...items) => items,\n');
     this.write('  size: (arr) => pinescript.arraySize(arr),\n');
@@ -163,9 +168,48 @@ class CodeGenerator {
     this.write('};\n\n');
 
     this.write('globalThis.timeframe = globalThis.timeframe || { period: "D" };\n');
+    this.write('pinescript._parseTimeframeMs = function(tf) {\n');
+    this.write('  if (tf === null || tf === undefined) return null;\n');
+    this.write('  const s = String(tf).trim().toUpperCase();\n');
+    this.write('  if (/^\\d+$/.test(s)) return parseInt(s, 10) * 60 * 1000;\n');
+    this.write('  if (s.endsWith("S")) return parseInt(s.slice(0, -1), 10) * 1000;\n');
+    this.write('  if (s.endsWith("H")) return parseInt(s.slice(0, -1), 10) * 60 * 60 * 1000;\n');
+    this.write('  if (s === "D") return 24 * 60 * 60 * 1000;\n');
+    this.write('  if (s === "W") return 7 * 24 * 60 * 60 * 1000;\n');
+    this.write('  if (s === "M") return 30 * 24 * 60 * 60 * 1000;\n');
+    this.write('  return null;\n');
+    this.write('};\n\n');
+
+    this.write('pinescript.requestSecurity = function(symbol, tf, series, opts) {\n');
+    this.write('  const timeSeries = globalThis.time;\n');
+    this.write('  if (!Array.isArray(timeSeries) || !Array.isArray(series)) return series;\n');
+    this.write('  const ms = pinescript._parseTimeframeMs(tf);\n');
+    this.write('  if (!ms) return series;\n');
+    this.write('  const lookahead = opts?.lookahead ?? false;\n');
+    this.write('  const gaps = opts?.gaps ?? false;\n');
+    this.write('  const out = [];\n');
+    this.write('  let bucket = null;\n');
+    this.write('  let bucketVal = null;\n');
+    this.write('  for (let i = 0; i < timeSeries.length; i++) {\n');
+    this.write('    const t = timeSeries[i];\n');
+    this.write('    const b = Math.floor(t / ms);\n');
+    this.write('    if (bucket === null) { bucket = b; bucketVal = series[i]; }\n');
+    this.write('    if (b !== bucket) { bucket = b; bucketVal = series[i]; } else { bucketVal = series[i]; }\n');
+    this.write('    if (lookahead) out.push(bucketVal); else out.push(gaps ? null : bucketVal);\n');
+    this.write('  }\n');
+    this.write('  return pinescript.asSeries(out);\n');
+    this.write('};\n\n');
+
     this.write('globalThis.request = globalThis.request || {\n');
-    this.write('  security: function(_symbol, _tf, series, _opts) { return series; },\n');
+    this.write('  security: function(symbol, tf, series, opts) { return pinescript.requestSecurity(symbol, tf, series, opts); },\n');
     this.write('  financial: function() { return null; }\n');
+    this.write('};\n\n');
+
+    this.write('globalThis.barmerge = globalThis.barmerge || {\n');
+    this.write('  gaps_off: false,\n');
+    this.write('  gaps_on: true,\n');
+    this.write('  lookahead_off: false,\n');
+    this.write('  lookahead_on: true,\n');
     this.write('};\n\n');
 
     this.write('pinescript.color = {\n');
@@ -235,11 +279,15 @@ class CodeGenerator {
     this.write('function main() {\n');
     this.pushIndent();
 
+    this.writeln('globalThis.__pineState = globalThis.__pineState || {};');
+    this.writeln('const state = globalThis.__pineState["main"] = globalThis.__pineState["main"] || {};');
+
     this.writeln('open = pinescript.asSeries(globalThis.open);');
     this.writeln('high = pinescript.asSeries(globalThis.high);');
     this.writeln('low = pinescript.asSeries(globalThis.low);');
     this.writeln('close = pinescript.asSeries(globalThis.close);');
     this.writeln('volume = pinescript.asSeries(globalThis.volume);');
+    this.writeln('time = pinescript.asSeries(globalThis.time);');
 
     for (const statement of node.body) {
       this.generate(statement);
@@ -266,6 +314,13 @@ class CodeGenerator {
 
   generateVariableDeclaration(node) {
     const prefix = (node.isVarip || node.isVar || node.declaredType) ? 'let' : 'const';
+    if (node.isVarip || node.isVar) {
+      this.context.stateVars.add(node.name);
+      this.context.variables.add(node.name);
+      this.writeln(`if (state.${node.name} === undefined) state.${node.name} = ${this.generate(node.value)};`);
+      return;
+    }
+
     this.context.variables.add(node.name);
     this.writeln(`${prefix} ${node.name} = ${this.generate(node.value)};`);
   }
@@ -274,6 +329,10 @@ class CodeGenerator {
     // Pine allows implicit declaration on first assignment.
     if (node.target && node.target.type === 'Identifier') {
       const name = node.target.name;
+      if (this.context.stateVars.has(name)) {
+        this.writeln(`state.${name} = ${this.generate(node.value)};`);
+        return;
+      }
       if (!this.context.variables.has(name) && !this.reservedNamespaces.has(name)) {
         this.context.variables.add(name);
         this.writeln(`let ${name} = ${this.generate(node.value)};`);
@@ -464,6 +523,9 @@ class CodeGenerator {
   generateIdentifier(node) {
     if (this.reservedNamespaces.has(node.name) && !this.context.variables.has(node.name)) {
       return `pinescript.${node.name}`;
+    }
+    if (this.context.stateVars.has(node.name)) {
+      return `state.${node.name}`;
     }
     return node.name;
   }

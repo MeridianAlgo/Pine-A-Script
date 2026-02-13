@@ -1,0 +1,79 @@
+//@version=6
+indicator("Complex MTF SuperTrend [v6]", overlay=true, max_lines_count=500, max_labels_count=500)
+
+// Inputs
+atrPeriod   = input.int(10, "ATR Period")
+factor      = input.float(3.0, "Multiplier", step=0.1)
+tf1         = input.timeframe("60", "Higher TF 1")
+tf2         = input.timeframe("240", "Higher TF 2")
+tf3         = input.timeframe("D", "Higher TF 3")
+tf4         = input.timeframe("W", "Higher TF 4")
+tf5         = input.timeframe("", "Higher TF 5 (optional)")
+
+// SuperTrend function (same heavy timeseries logic)
+f_supertrend(_factor, _atrPeriod) =>
+    float atr   = ta.atr(_atrPeriod)
+    float up    = hl2 - _factor * atr
+    float dn    = hl2 + _factor * atr
+    float up_   = nz(up[1], up)
+    up          := close[1] > up_ ? math.max(up, up_) : up
+    float dn_   = nz(dn[1], dn)
+    dn          := close[1] < dn_ ? math.min(dn, dn_) : dn
+    int dir     = nz(dir[1], 1)
+    dir         := close > dn_ ? 1 : close < up_ ? -1 : dir
+    float st    = dir == 1 ? up : dn
+    [st, dir]
+
+// Current TF
+[stCurr, dirCurr] = f_supertrend(factor, atrPeriod)
+
+// Higher TFs – dynamic, only fetch if TF provided
+var float st1 = na, var float st2 = na, var float st3 = na, var float st4 = na, var float st5 = na
+var int dir1 = na, var int dir2 = na, var int dir3 = na, var int dir4 = na, var int dir5 = na
+
+if tf1 != ""
+    [st1, dir1] := request.security(syminfo.tickerid, tf1, f_supertrend(factor, atrPeriod), gaps=barmerge.gaps_off, lookahead=barmerge.lookahead_off)
+if tf2 != ""
+    [st2, dir2] := request.security(syminfo.tickerid, tf2, f_supertrend(factor, atrPeriod), gaps=barmerge.gaps_off, lookahead=barmerge.lookahead_off)
+if tf3 != ""
+    [st3, dir3] := request.security(syminfo.tickerid, tf3, f_supertrend(factor, atrPeriod), gaps=barmerge.gaps_off, lookahead=barmerge.lookahead_off)
+if tf4 != ""
+    [st4, dir4] := request.security(syminfo.tickerid, tf4, f_supertrend(factor, atrPeriod), gaps=barmerge.gaps_off, lookahead=barmerge.lookahead_off)
+if tf5 != ""
+    [st5, dir5] := request.security(syminfo.tickerid, tf5, f_supertrend(factor, atrPeriod), gaps=barmerge.gaps_off, lookahead=barmerge.lookahead_off)
+
+// Plots (only show if active)
+pCurr = plot(stCurr, "Current SuperTrend", color=dirCurr == 1 ? color.lime : color.red, linewidth=2)
+plot(tf1 != "" ? st1 : na, "ST " + tf1, color=tf1 != "" and dir1 == 1 ? color.green : color.maroon, linewidth=2)
+plot(tf2 != "" ? st2 : na, "ST " + tf2, color=tf2 != "" and dir2 == 1 ? color.green : color.maroon, linewidth=2)
+plot(tf3 != "" ? st3 : na, "ST " + tf3, color=tf3 != "" and dir3 == 1 ? color.green : color.maroon, linewidth=2)
+plot(tf4 != "" ? st4 : na, "ST " + tf4, color=tf4 != "" and dir4 == 1 ? color.green : color.maroon, linewidth=2)
+plot(tf5 != "" ? st5 : na, "ST " + tf5, color=tf5 != "" and dir5 == 1 ? color.green : color.maroon, linewidth=2)
+
+// Alignment background (counts only active TFs)
+int activeCount = (tf1 != "" ? 1 : 0) + (tf2 != "" ? 1 : 0) + (tf3 != "" ? 1 : 0) + (tf4 != "" ? 1 : 0) + (tf5 != "" ? 1 : 0)
+int bullCount = (tf1 != "" and dir1 == 1 ? 1 : 0) + (tf2 != "" and dir2 == 1 ? 1 : 0) + (tf3 != "" and dir3 == 1 ? 1 : 0) + (tf4 != "" and dir4 == 1 ? 1 : 0) + (tf5 != "" and dir5 == 1 ? 1 : 0)
+bgcolor(activeCount > 0 and bullCount == activeCount ? color.new(color.green, 90) : activeCount > 0 and bullCount == 0 ? color.new(color.red, 90) : na)
+
+// Dashboard (dynamic rows)
+var table dash = table.new(position.top_right, 6, 2, bgcolor=color.new(color.black, 80))
+if barstate.islastconfirmedhistory
+    table.cell(dash, 0, 0, "Timeframe", text_color=color.white)
+    table.cell(dash, 0, 1, "Trend", text_color=color.white)
+    int row = 1
+    table.cell(dash, row, 0, timeframe.period, text_color=color.gray)
+    table.cell(dash, row, 1, dirCurr == 1 ? "Bullish" : "Bearish", text_color=dirCurr == 1 ? color.lime : color.red)
+    row += 1
+    if tf1 != "" { table.cell(dash, row, 0, tf1); table.cell(dash, row, 1, dir1 == 1 ? "Bullish" : "Bearish", text_color=dir1 == 1 ? color.green : color.maroon); row += 1 }
+    if tf2 != "" { table.cell(dash, row, 0, tf2); table.cell(dash, row, 1, dir2 == 1 ? "Bullish" : "Bearish", text_color=dir2 == 1 ? color.green : color.maroon); row += 1 }
+    if tf3 != "" { table.cell(dash, row, 0, tf3); table.cell(dash, row, 1, dir3 == 1 ? "Bullish" : "Bearish", text_color=dir3 == 1 ? color.green : color.maroon); row += 1 }
+    if tf4 != "" { table.cell(dash, row, 0, tf4); table.cell(dash, row, 1, dir4 == 1 ? "Bullish" : "Bearish", text_color=dir4 == 1 ? color.green : color.maroon); row += 1 }
+    if tf5 != "" { table.cell(dash, row, 0, tf5); table.cell(dash, row, 1, dir5 == 1 ? "Bullish" : "Bearish", text_color=dir5 == 1 ? color.green : color.maroon) }
+
+// Alerts
+alertcondition(ta.change(dirCurr), "Current TF Trend Flip", "SuperTrend flipped on current TF")
+alertcondition(tf1 != "" and ta.change(dir1), "TF1 Trend Flip", "SuperTrend flipped on " + tf1)
+alertcondition(tf2 != "" and ta.change(dir2), "TF2 Trend Flip", "SuperTrend flipped on " + tf2)
+alertcondition(tf3 != "" and ta.change(dir3), "TF3 Trend Flip", "SuperTrend flipped on " + tf3)
+alertcondition(tf4 != "" and ta.change(dir4), "TF4 Trend Flip", "SuperTrend flipped on " + tf4)
+alertcondition(tf5 != "" and ta.change(dir5), "TF5 Trend Flip", "SuperTrend flipped on " + tf5)

@@ -1,0 +1,61 @@
+//@version=5
+indicator("Complex MTF SuperTrend [v5]", overlay=true, max_lines_count=500, max_labels_count=500)
+
+// Inputs
+atrPeriod   = input.int(10, "ATR Period")
+factor      = input.float(3.0, "Multiplier", step=0.1)
+tf1         = input.timeframe("60", "Higher TF 1")
+tf2         = input.timeframe("240", "Higher TF 2")
+tf3         = input.timeframe("D", "Higher TF 3")
+
+// SuperTrend function (timeseries-heavy with historical refs)
+f_supertrend(_factor, _atrPeriod) =>
+    float atr   = ta.atr(_atrPeriod)
+    float up    = hl2 - _factor * atr
+    float dn    = hl2 + _factor * atr
+    float up_   = nz(up[1], up)
+    up          := close[1] > up_ ? math.max(up, up_) : up
+    float dn_   = nz(dn[1], dn)
+    dn          := close[1] < dn_ ? math.min(dn, dn_) : dn
+    int dir     = nz(dir[1], 1)
+    dir         := close > dn_ ? 1 : close < up_ ? -1 : dir
+    float st    = dir == 1 ? up : dn
+    [st, dir]
+
+// Current TF
+[stCurr, dirCurr] = f_supertrend(factor, atrPeriod)
+
+// Higher TFs
+[st1, dir1] = request.security(syminfo.tickerid, tf1, f_supertrend(factor, atrPeriod), gaps=barmerge.gaps_off, lookahead=barmerge.lookahead_off)
+[st2, dir2] = request.security(syminfo.tickerid, tf2, f_supertrend(factor, atrPeriod), gaps=barmerge.gaps_off, lookahead=barmerge.lookahead_off)
+[st3, dir3] = request.security(syminfo.tickerid, tf3, f_supertrend(factor, atrPeriod), gaps=barmerge.gaps_off, lookahead=barmerge.lookahead_off)
+
+// Plots
+pCurr = plot(stCurr, "Current SuperTrend", color=dirCurr == 1 ? color.lime : color.red, linewidth=2)
+plot(st1, "ST " + tf1, color=dir1 == 1 ? color.green : color.maroon, linewidth=2)
+plot(st2, "ST " + tf2, color=dir2 == 1 ? color.green : color.maroon, linewidth=2)
+plot(st3, "ST " + tf3, color=dir3 == 1 ? color.green : color.maroon, linewidth=2)
+
+// Alignment background
+int bullCount = (dir1 == 1 ? 1 : 0) + (dir2 == 1 ? 1 : 0) + (dir3 == 1 ? 1 : 0)
+bgcolor(bullCount == 3 ? color.new(color.green, 90) : bullCount == 0 ? color.new(color.red, 90) : na)
+
+// Dashboard table
+var table dash = table.new(position.top_right, 5, 2, bgcolor=color.new(color.black, 80))
+if barstate.islastconfirmedhistory
+    table.cell(dash, 0, 0, "Timeframe", text_color=color.white)
+    table.cell(dash, 0, 1, "Trend", text_color=color.white)
+    table.cell(dash, 1, 0, timeframe.period, text_color=color.gray)
+    table.cell(dash, 1, 1, dirCurr == 1 ? "Bullish" : "Bearish", text_color=dirCurr == 1 ? color.lime : color.red)
+    table.cell(dash, 2, 0, tf1, text_color=color.gray)
+    table.cell(dash, 2, 1, dir1 == 1 ? "Bullish" : "Bearish", text_color=dir1 == 1 ? color.green : color.maroon)
+    table.cell(dash, 3, 0, tf2, text_color=color.gray)
+    table.cell(dash, 3, 1, dir2 == 1 ? "Bull Bullish" : "Bearish", text_color=dir2 == 1 ? color.green : color.maroon)
+    table.cell(dash, 4, 0, tf3, text_color=color.gray)
+    table.cell(dash, 4, 1, dir3 == 1 ? "Bullish" : "Bearish", text_color=dir3 == 1 ? color.green : color.maroon)
+
+// Alerts
+alertcondition(ta.change(dirCurr), "Current TF Trend Flip", "SuperTrend flipped on current TF")
+alertcondition(ta.change(dir1), "TF1 Trend Flip", "SuperTrend flipped on " + tf1)
+alertcondition(ta.change(dir2), "TF2 Trend Flip", "SuperTrend flipped on " + tf2)
+alertcondition(ta.change(dir3), "TF3 Trend Flip", "SuperTrend flipped on " + tf3)
