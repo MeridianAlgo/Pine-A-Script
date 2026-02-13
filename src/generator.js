@@ -19,7 +19,8 @@ class CodeGenerator {
 
     this.reservedNamespaces = new Set([
       'ta', 'math', 'array', 'str',
-      'color', 'table', 'position', 'location', 'shape', 'size', 'text'
+      'color', 'table', 'position', 'location', 'shape', 'size', 'text',
+      'strategy'
     ]);
   }
 
@@ -136,6 +137,9 @@ class CodeGenerator {
 
     this.write('globalThis.__pineRuntime = globalThis.__pineRuntime || { plots: [], plotshapes: [], alerts: [] };\n');
     this.write('globalThis.pinescript = pinescript;\n\n');
+
+    this.write('pinescript.strategy.long = pinescript.strategyLong();\n');
+    this.write('pinescript.strategy.short = pinescript.strategyShort();\n\n');
 
     // Provide `input.timeframe()` for scripts that declare timeframe inputs.
     this.write('globalThis.input = globalThis.input || {};\n');
@@ -696,8 +700,13 @@ class CodeGenerator {
       'label.gettext': 'pinescript.labelGetText',
       'alert': 'pinescript.alert',
       'strategy.entry': 'pinescript.strategyEntry',
+      'strategy.close': 'pinescript.strategyClose',
       'strategy.exit': 'pinescript.strategyExit',
       'strategy.order': 'pinescript.strategyOrder',
+      'strategy.long': 'pinescript.strategyLong',
+      'strategy.short': 'pinescript.strategyShort',
+      'chart.point.from_index': 'pinescript.chartPointFromIndex',
+      'chart.point.new': 'pinescript.chartPointNew',
       'request.security': 'pinescript.requestSecurity',
       'year': 'pinescript.year',
       'month': 'pinescript.month',
