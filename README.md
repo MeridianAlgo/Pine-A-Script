@@ -43,6 +43,61 @@ npm install
 node src/cli.js examples/example.pine converts/example.js
 ```
 
+### Post-conversion reviewer (recommended)
+
+By default, the CLI runs a lightweight reviewer after conversion.
+
+- **Syntax check**: best-effort parse check for the generated JS.
+- **Optional smoke import**: tries to `import()` the generated module to catch obvious runtime errors.
+
+Disable it if you only want the raw output:
+
+```bash
+node src/cli.js examples/example.pine converts/example.js --no-review
+```
+
+Disable only the runtime `import()` smoke test:
+
+```bash
+node src/cli.js examples/example.pine converts/example.js --no-review-import
+```
+
+Environment variables:
+
+- `PINE_REVIEW=0` disables the reviewer
+- `PINE_REVIEW_IMPORT=0` disables the import smoke test
+
+#### Optional AI review hook (local HuggingFace model)
+
+The reviewer can optionally call an HTTP endpoint (keeps the main repo dependency-free):
+
+- Set `PINE_REVIEWER_URL` to an endpoint that accepts `POST { code }` and returns:
+  - `{ ok: boolean, errors: string[], warnings: string[], notes: string[] }`
+
+This repo includes a simple local server you can run with a small HuggingFace model (**<100M params**):
+
+- **Default model**: `Salesforce/codet5-small`
+
+Setup and run (Python):
+
+```bash
+pip install -r local_reviewer/requirements.txt
+python local_reviewer/server.py
+```
+
+Then enable AI review in the CLI:
+
+```bash
+set PINE_REVIEWER_URL=http://127.0.0.1:8765/review
+set PINE_REVIEW_AI=1
+node src/cli.js examples/example.pine converts/example.js --review-ai
+```
+
+Model selection:
+
+- `PINE_REVIEWER_MODEL=Salesforce/codet5-small`
+- `PINE_REVIEWER_PORT=8765`
+
 ### Run the indicator runtime tests
 
 ```bash
