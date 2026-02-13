@@ -74,9 +74,11 @@ The reviewer can optionally call an HTTP endpoint (keeps the main repo dependenc
 - Set `PINE_REVIEWER_URL` to an endpoint that accepts `POST { code }` and returns:
   - `{ ok: boolean, errors: string[], warnings: string[], notes: string[] }`
 
-This repo includes a simple local server you can run with a small HuggingFace model (**<100M params**):
+This repo includes a simple local server you can run with a small HuggingFace model (**<100M params**).
 
-- **Default model**: `Salesforce/codet5-small`
+- **Default model**: `chathuranga-jayanath/codet5-small-v2` (safetensors)
+
+Note: small models may produce low-quality or repetitive text. The reviewer will sanitize unusable outputs and suggest switching models via `PINE_REVIEWER_MODEL`.
 
 Setup and run (Python):
 
@@ -95,7 +97,7 @@ node src/cli.js examples/example.pine converts/example.js --review-ai
 
 Model selection:
 
-- `PINE_REVIEWER_MODEL=Salesforce/codet5-small`
+- `PINE_REVIEWER_MODEL=chathuranga-jayanath/codet5-small-v2`
 - `PINE_REVIEWER_PORT=8765`
 
 ### Run the indicator runtime tests

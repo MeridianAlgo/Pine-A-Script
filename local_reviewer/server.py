@@ -7,7 +7,9 @@ from http.server import BaseHTTPRequestHandler, HTTPServer
 # Exposes POST /review with JSON body: {"code": "..."}
 # Returns: {"ok": bool, "errors": [], "warnings": [], "notes": []}
 
-MODEL_ID = os.environ.get("PINE_REVIEWER_MODEL", "Salesforce/codet5-small")
+# Prefer a safetensors-backed small CodeT5 variant by default to avoid torch.load restrictions.
+# You can override via PINE_REVIEWER_MODEL.
+MODEL_ID = os.environ.get("PINE_REVIEWER_MODEL", "chathuranga-jayanath/codet5-small-v2")
 HOST = os.environ.get("PINE_REVIEWER_HOST", "127.0.0.1")
 PORT = int(os.environ.get("PINE_REVIEWER_PORT", "8765"))
 MAX_NEW_TOKENS = int(os.environ.get("PINE_REVIEWER_MAX_NEW_TOKENS", "192"))
@@ -29,7 +31,14 @@ def get_generator():
         ) from e
 
     tokenizer = AutoTokenizer.from_pretrained(MODEL_ID)
-    model = AutoModelForSeq2SeqLM.from_pretrained(MODEL_ID)
+    try:
+        model = AutoModelForSeq2SeqLM.from_pretrained(MODEL_ID, use_safetensors=True)
+    except TypeError:
+        # Older transformers might not accept use_safetensors.
+        model = AutoModelForSeq2SeqLM.from_pretrained(MODEL_ID)
+    except Exception:
+        # As a fallback, try the default loader.
+        model = AutoModelForSeq2SeqLM.from_pretrained(MODEL_ID)
 
     device = "cpu"
     if torch.cuda.is_available() and os.environ.get("PINE_REVIEWER_USE_CUDA", "0") == "1":
@@ -53,13 +62,49 @@ def get_generator():
 
 
 def build_prompt(code: str) -> str:
-    # Keep it short: small models are not chat models.
-    # We ask for a small checklist-style output.
+    # CodeT5-style models often work better with an explicit task prefix.
+    # Keep it short: this is a small model.
     return (
-        "You are a strict code reviewer. Review the following JavaScript code produced from PineScript. "
-        "Return: (1) any likely runtime errors, (2) suspicious undefined identifiers, (3) a short overall verdict.\n\n"
-        "CODE:\n" + code[:12000]
+        "summarize: Provide a short code review for this JavaScript module generated from PineScript. "
+        "List likely runtime errors, suspicious undefined identifiers, and a brief verdict.\n\n"
+        "code:\n" + code[:12000]
     )
+
+
+def sanitize_model_text(text: str) -> str:
+    t = (text or "").strip()
+    if not t:
+        return "(empty)"
+
+    # Detect degenerate outputs without spaces (e.g. 'deletedelete...').
+    # Heuristic: very low diversity of 3-grams or extremely repetitive prefix.
+    if len(t) >= 120:
+        grams = set(t[i : i + 3] for i in range(0, min(len(t) - 2, 600)))
+        if len(grams) <= 8:
+            return "(model output was highly repetitive/unusable; try a different PINE_REVIEWER_MODEL)"
+
+        # Repeated prefix check
+        prefix = t[:12]
+        if prefix and t.count(prefix) >= 8:
+            return "(model output was highly repetitive/unusable; try a different PINE_REVIEWER_MODEL)"
+
+    # Detect extreme repetition like "delete delete delete ..."
+    words = t.split()
+    if len(words) >= 40:
+        first = words[0]
+        same_prefix = 0
+        for w in words[:80]:
+            if w == first:
+                same_prefix += 1
+            else:
+                break
+        if same_prefix >= 30:
+            return "(model output was highly repetitive/unusable; try a different PINE_REVIEWER_MODEL)"
+
+    # Cap note length so logs stay readable.
+    if len(t) > 800:
+        t = t[:800] + " ..."
+    return t
 
 
 def heuristic_checks(code: str):
@@ -114,7 +159,7 @@ class Handler(BaseHTTPRequestHandler):
             gen = get_generator()
             prompt = build_prompt(code)
             review_text = gen(prompt)
-            notes.append(f"Model({MODEL_ID}) review: {review_text.strip()}")
+            notes.append(f"Model({MODEL_ID}) review: {sanitize_model_text(review_text)}")
         except Exception as e:
             notes.append(f"Model review unavailable: {e}")
 
