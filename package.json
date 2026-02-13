@@ -1,6 +1,6 @@
 {
   "name": "pinescript-to-javascript",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "A transpiler that converts PineScript to JavaScript",
   "main": "src/transpiler.js",
   "type": "module",
