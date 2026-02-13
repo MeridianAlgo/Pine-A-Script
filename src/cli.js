@@ -126,7 +126,9 @@ async function main() {
     console.log(`Lines: ${source.split('\n').length}`);
   }
 
+  console.log('Transpiling...');
   const result = transpile(source, options);
+  console.log('Transpile done.');
 
   if (!result.success) {
     console.error(`Error: ${result.error}`);
@@ -141,11 +143,14 @@ async function main() {
     const output = result.code;
 
     if (options.review) {
+      console.log('Reviewing generated code...');
+      if (options.reviewAI) console.log('Running local AI review (this can take a while on first run)...');
       const report = await reviewGeneratedCode(output, {
         executeImport: options.reviewImport,
         ai: options.reviewAI
       });
       console.log(formatReviewReport(report));
+      console.log('Review done.');
       if (!report.ok) process.exitCode = 1;
     }
 

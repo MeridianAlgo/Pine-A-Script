@@ -67,9 +67,10 @@ Environment variables:
 
 #### Optional AI review hook (local HuggingFace model)
 
-This repo includes a fully local optional reviewer (no server) that runs a small HuggingFace model (**<100M params**) via Python.
+This repo includes a fully local optional reviewer (no server) that runs a laptop-friendly code model via Python.
 
-- **Default model**: `chathuranga-jayanath/codet5-small-v2` (safetensors)
+- **Default model**: `Qwen/Qwen2.5-Coder-0.5B-Instruct`
+- **Optional larger model** (slower / more RAM): `Qwen/Qwen2.5-Coder-1.5B-Instruct`
 
 Note: small models may produce low-quality or repetitive text. The reviewer will sanitize unusable outputs and suggest switching models via `PINE_REVIEWER_MODEL`.
 
@@ -88,9 +89,10 @@ node src/cli.js path/to/script.pine path/to/output.js --review-ai
 
 Model selection:
 
-- `PINE_REVIEWER_MODEL=chathuranga-jayanath/codet5-small-v2`
+- `PINE_REVIEWER_MODEL=Qwen/Qwen2.5-Coder-0.5B-Instruct`
 - `PINE_REVIEWER_PYTHON=python` (optional)
 - `PINE_REVIEWER_SCRIPT=ai_reviewer/review.py` (optional)
+- `PINE_REVIEWER_USE_CUDA=1` (optional)
 
 ### Run the indicator runtime tests
 

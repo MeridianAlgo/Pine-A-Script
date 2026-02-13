@@ -1,9 +1,6 @@
 import vm from 'node:vm';
-import { execFile } from 'node:child_process';
-import { promisify } from 'node:util';
+import { spawn } from 'node:child_process';
 import { builtins as runtimeBuiltins } from './builtins.js';
-
-const execFileAsync = promisify(execFile);
 
 const uniq = (arr) => Array.from(new Set(arr));
 
@@ -33,6 +30,21 @@ function allowedMembers() {
     'strategy',
     'indicator'
   ]);
+}
+
+function buildAiReviewSnippet(code) {
+  const lines = code.split(/\r?\n/);
+  if (lines.length <= 240) return code;
+
+  // The generator emits a marker right before the user's script body.
+  const marker = '// Main script logic';
+  const idx = lines.findIndex((l) => l.includes(marker));
+  if (idx >= 0) {
+    return lines.slice(idx, idx + 420).join('\n');
+  }
+
+  // Fallback: last N lines.
+  return lines.slice(-300).join('\n');
 }
 
 export async function reviewGeneratedCode(code, opts = {}) {
@@ -102,9 +114,43 @@ export async function reviewGeneratedCode(code, opts = {}) {
     const python = process.env.PINE_REVIEWER_PYTHON || 'python';
     const script = process.env.PINE_REVIEWER_SCRIPT || 'ai_reviewer/review.py';
     try {
-      const input = JSON.stringify({ code });
-      const { stdout } = await execFileAsync(python, [script], { input, maxBuffer: 10 * 1024 * 1024 });
-      const payload = JSON.parse(stdout || '{}');
+      const input = JSON.stringify({ code: buildAiReviewSnippet(code) });
+
+      const payload = await new Promise((resolve, reject) => {
+        const child = spawn(python, [script], { stdio: ['pipe', 'pipe', 'pipe'] });
+        let stdout = '';
+        let stderr = '';
+
+        child.stdout.setEncoding('utf8');
+        child.stderr.setEncoding('utf8');
+
+        child.stdout.on('data', (d) => {
+          stdout += d;
+        });
+        child.stderr.on('data', (d) => {
+          stderr += d;
+          process.stderr.write(d);
+        });
+
+        child.on('error', (err) => reject(err));
+        child.on('close', (code) => {
+          if (code !== 0) {
+            const msg = `AI reviewer exited with code ${code}${stderr ? `\n${stderr}` : ''}`;
+            reject(new Error(msg));
+            return;
+          }
+
+          try {
+            resolve(JSON.parse(stdout || '{}'));
+          } catch (e) {
+            reject(new Error(`AI reviewer returned invalid JSON: ${e?.message || String(e)}${stdout ? `\n${stdout}` : ''}`));
+          }
+        });
+
+        child.stdin.write(input);
+        child.stdin.end();
+      });
+
       if (payload && typeof payload === 'object') {
         if (Array.isArray(payload.errors)) report.errors.push(...payload.errors.map(String));
         if (Array.isArray(payload.warnings)) report.warnings.push(...payload.warnings.map(String));
