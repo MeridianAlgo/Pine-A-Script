@@ -2,6 +2,17 @@ import json
 import os
 import sys
 import re
+import warnings
+
+# Reduce noise from optional TF/JAX backends and other warnings.
+os.environ.setdefault("TRANSFORMERS_NO_TF", "1")
+os.environ.setdefault("TRANSFORMERS_NO_FLAX", "1")
+os.environ.setdefault("TF_CPP_MIN_LOG_LEVEL", "3")
+os.environ.setdefault("TOKENIZERS_PARALLELISM", "false")
+os.environ.setdefault("HF_HUB_DISABLE_SYMLINKS_WARNING", "1")
+os.environ.setdefault("TRANSFORMERS_VERBOSITY", "error")
+
+warnings.filterwarnings("ignore")
 
 def main():
     def log(msg: str):

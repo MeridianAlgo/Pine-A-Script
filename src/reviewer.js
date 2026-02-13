@@ -117,9 +117,35 @@ export async function reviewGeneratedCode(code, opts = {}) {
       const input = JSON.stringify({ code: buildAiReviewSnippet(code) });
 
       const payload = await new Promise((resolve, reject) => {
-        const child = spawn(python, [script], { stdio: ['pipe', 'pipe', 'pipe'] });
+        const child = spawn(python, [script], {
+          stdio: ['pipe', 'pipe', 'pipe'],
+          env: {
+            ...process.env,
+            HF_HUB_DISABLE_SYMLINKS_WARNING: process.env.HF_HUB_DISABLE_SYMLINKS_WARNING ?? '1',
+            TRANSFORMERS_VERBOSITY: process.env.TRANSFORMERS_VERBOSITY ?? 'error',
+            TF_CPP_MIN_LOG_LEVEL: process.env.TF_CPP_MIN_LOG_LEVEL ?? '3',
+            TOKENIZERS_PARALLELISM: process.env.TOKENIZERS_PARALLELISM ?? 'false',
+            PYTHONWARNINGS: process.env.PYTHONWARNINGS ?? 'ignore',
+            TRANSFORMERS_NO_TF: process.env.TRANSFORMERS_NO_TF ?? '1',
+            TRANSFORMERS_NO_FLAX: process.env.TRANSFORMERS_NO_FLAX ?? '1'
+          }
+        });
         let stdout = '';
         let stderr = '';
+
+        const start = Date.now();
+        const spinnerFrames = ['|', '/', '-', '\\'];
+        let spinnerIdx = 0;
+        const spinner = setInterval(() => {
+          const elapsedSec = Math.floor((Date.now() - start) / 1000);
+          const frame = spinnerFrames[spinnerIdx++ % spinnerFrames.length];
+          process.stderr.write(`\r[ai-review] ${frame} running... ${elapsedSec}s`);
+        }, 250);
+
+        const clearSpinnerLine = () => {
+          // Clear current line (best-effort) so progress text doesn't mix with logs.
+          process.stderr.write('\r\x1b[2K');
+        };
 
         child.stdout.setEncoding('utf8');
         child.stderr.setEncoding('utf8');
@@ -129,11 +155,14 @@ export async function reviewGeneratedCode(code, opts = {}) {
         });
         child.stderr.on('data', (d) => {
           stderr += d;
+          clearSpinnerLine();
           process.stderr.write(d);
         });
 
         child.on('error', (err) => reject(err));
         child.on('close', (code) => {
+          clearInterval(spinner);
+          clearSpinnerLine();
           if (code !== 0) {
             const msg = `AI reviewer exited with code ${code}${stderr ? `\n${stderr}` : ''}`;
             reject(new Error(msg));

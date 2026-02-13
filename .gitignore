@@ -1,0 +1,16 @@
+# local artifacts
+__tmp_*
+out.js
+*.log
+
+# optional local fixtures/outputs (not tracked)
+examples/
+converts/
+
+# python
+__pycache__/
+*.pyc
+.venv/
+
+# huggingface cache (optional)
+.hf_cache/
