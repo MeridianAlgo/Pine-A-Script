@@ -41,6 +41,30 @@ npm install
 node src/cli.js path/to/script.pine path/to/output.js
 ```
 
+### Batch convert all PineScript files
+
+You can batch convert all `.pine` files in the `examples/` directory to JavaScript:
+
+```bash
+npm run convert:all
+```
+
+This will:
+- Convert all `examples/*.pine` files to `converted/*.js`
+- Generate error logs (`.err.txt`) for any failed conversions
+- Output a summary showing pass/fail counts
+- Write a status report to `converted/status.json`
+
+### Check conversion status
+
+View the current conversion status across all files:
+
+```bash
+npm run convert:status
+```
+
+This displays a summary table of all conversions with their current status.
+
 ### Post-conversion reviewer (recommended)
 
 By default, the CLI runs a lightweight reviewer after conversion.

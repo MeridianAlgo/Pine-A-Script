@@ -1,0 +1,77 @@
+//@version=6
+strategy("Crossing Moving Averages with ADX Filter)", overlay=true, pyramiding=0)
+
+// === INPUTS ===
+fastLen = input.int(20, title="Fast MA Length")
+slowLen = input.int(120, title="Slow MA Length")
+
+maType = input.string("SMA", title="Moving Average Type", options=["SMA", "EMA", "WMA", "LMA"])
+
+//useATRStop = input.bool(true, title="Enable ATR Trailing Stop")
+//atrLen  = input.int(20, title="ATR Length")
+//atrMult = input.float(2.0, title="ATR Multiplier")
+
+useADX       = input.bool(true, title="Enable ADX Filter")
+adxLen       = input.int(14, title="ADX Length")
+adxThreshold = input.float(20.0, title="ADX Threshold")
+
+// === MA FUNCTION ===
+ma(src, len) =>
+    float out = na
+    if maType == "SMA"
+        out := ta.sma(src, len)
+    else if maType == "EMA"
+        out := ta.ema(src, len)
+    else if maType == "WMA"
+        out := ta.wma(src, len)
+    else
+        out := ta.rma(src, len)
+    out
+
+// === MOVING AVERAGES ===
+fastMA = ma(close, fastLen)
+slowMA = ma(close, slowLen)
+
+longBias  = fastMA > slowMA
+shortBias = fastMA < slowMA
+
+// === ATR ===
+//atr = ta.atr(atrLen)
+
+// === MANUAL ADX ===
+upMove   = high - high[1]
+downMove = low[1] - low
+
+plusDM  = (upMove > downMove and upMove > 0) ? upMove : 0.0
+minusDM = (downMove > upMove and downMove > 0) ? downMove : 0.0
+
+trur = ta.rma(ta.tr(true), adxLen)
+plusDI  = 100 * ta.rma(plusDM, adxLen) / trur
+minusDI = 100 * ta.rma(minusDM, adxLen) / trur
+
+dx  = 100 * math.abs(plusDI - minusDI) / (plusDI + minusDI)
+adx = ta.rma(dx, adxLen)
+
+adxOK = not useADX or adx >= adxThreshold
+
+// === ENTRY CONDITIONS ===
+enterLong  = longBias and adxOK and strategy.position_size <= 0
+enterShort = shortBias and adxOK and strategy.position_size >= 0
+
+// === ENTRIES ===
+if enterLong
+    strategy.entry("Long", strategy.long)
+
+if enterShort
+    strategy.entry("Short", strategy.short)
+
+// === ATR TRAILING STOPS (✅ CORRECT PAIRS) ===
+//if useATRStop
+ //   strategy.exit("Long ATR Exit", from_entry="Long", trail_points=atrMult * atr, trail_offset=atrMult * atr)
+
+//if useATRStop
+ //   strategy.exit("Short ATR Exit", from_entry="Short", trail_points=atrMult * atr, trail_offset=atrMult * atr)
+
+// === PLOTS ===
+plot(fastMA, "Fast MA", color=color.blue, linewidth=1)
+plot(slowMA, "Slow MA", color=color.orange, linewidth=3)

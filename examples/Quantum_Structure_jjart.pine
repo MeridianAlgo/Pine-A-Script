@@ -1,0 +1,1628 @@
+//@version=6 
+indicator('Quantum Structure | jjart', overlay = true, max_boxes_count = 500, max_lines_count = 500, max_labels_count = 500)
+// Base v2026-02-12a
+//Автор: jjart
+// ============================================================================
+// TIMEFRAME AUTO-DETECTION & SMART DEFAULTS
+// ============================================================================
+
+// Get current timeframe in minutes
+
+current_tf_minutes = timeframe.in_seconds() / 60
+bool is_ltf_15 = current_tf_minutes <= 15
+
+// User-facing default (what you normally use)
+input_htf = input.timeframe(
+    "60",
+    "Base Higher Timeframe (Auto-adjusts)",
+    group="Multi-Timeframe"
+)
+
+
+// Future-proof: if chart is 1H or higher, force HTF to 4H
+resolved_htf = current_tf_minutes >= 240 ? "D" : current_tf_minutes >= 60  ? "240" : input_htf
+
+profile = input.string(
+     'Scalping',
+     'Auto Profile',
+     options = ['Scalping', 'Intraday', 'Swing'],
+     group = 'Core Settings',
+     tooltip = 'Scalping - my default. Intraday = longer trades. Swing = slower, cleaner structure - multi day trades.'
+)
+
+// Profiled swing length per timeframe
+get_profiled_swing_length() =>
+    if profile == 'Scalping'
+        // Faster, more sensitive structure (more alerts), good for 1–5m
+        switch
+            current_tf_minutes <= 5   => 4
+            current_tf_minutes <= 15  => 5
+            current_tf_minutes <= 30  => 8
+            current_tf_minutes <= 60  => 5
+            current_tf_minutes <= 240 => 3
+            => 2  // Daily and higher
+    else if profile == 'Swing'
+        // Slower, stronger structure (fewer alerts), better for 30m+
+        switch
+            current_tf_minutes <= 5   => 4
+            current_tf_minutes <= 15  => 5
+            current_tf_minutes <= 30  => 17
+            current_tf_minutes <= 60  => 10
+            current_tf_minutes <= 240 => 7
+            => 4  // Daily and higher
+    else
+        // Intraday (your current default ICC behavior)
+        switch
+            current_tf_minutes <= 5   => 4
+            current_tf_minutes <= 15  => 5
+            current_tf_minutes <= 30  => 12
+            current_tf_minutes <= 60  => 7
+            current_tf_minutes <= 240 => 5
+            => 3  // Daily and higher
+
+// Profiled consolidation bars per timeframe
+get_profiled_consolidation_bars() =>
+    if profile == 'Scalping'
+        // Recognize corrections / neutral ranges faster
+        switch
+            current_tf_minutes <= 5   => 35
+            current_tf_minutes <= 15  => 21
+            current_tf_minutes <= 30  => 13
+            current_tf_minutes <= 60  => 8
+            current_tf_minutes <= 240 => 6
+            => 3
+    else if profile == 'Swing'
+        // Require more bars before calling it a deeper correction / neutral range
+        switch
+            current_tf_minutes <= 5   => 70
+            current_tf_minutes <= 15  => 42
+            current_tf_minutes <= 30  => 25
+            current_tf_minutes <= 60  => 17
+            current_tf_minutes <= 240 => 11
+            => 7
+    else
+        // Intraday (your current defaults)
+        switch
+            current_tf_minutes <= 5   => 50
+            current_tf_minutes <= 15  => 30
+            current_tf_minutes <= 30  => 18
+            current_tf_minutes <= 60  => 12
+            current_tf_minutes <= 240 => 8
+            => 5
+
+// ============================================================================
+// UTILITIES
+// ============================================================================
+
+f_tfPretty(string tf) =>
+    switch tf
+        "1"    => "1m"
+        "3"    => "3m"
+        "5"    => "5m"
+        "15"   => "15m"
+        "30"   => "30m"
+        "45"   => "45m"
+        "60"   => "1H"
+        "120"  => "2H"
+        "180"  => "3H"
+        "240"  => "4H"
+        "D"    => "1D"
+        "W"    => "1W"
+        "M"    => "1M"
+        => tf
+
+
+
+// ============================================================================
+// INPUT PARAMETERS
+// ============================================================================
+
+// Multi-Timeframe Settings
+use_htf = input.bool(false, 'Show Higher Timeframe Support/Resistance Boxes', group='Multi-Timeframe')
+align_entries_with_htf = input.bool(
+     false,
+     'Filter Entries by HTF Direction',
+     group   = 'Multi-Timeframe',
+     tooltip = 'When enabled, continuation entries only count as valid if they align with the HTF ICC direction.'
+)
+
+// Auto or Manual Settings
+use_manual_settings = input.bool(
+     false,
+     'Use Manual Timeframe Settings',
+     group = 'Core Settings',
+     tooltip = 'Override Auto Profile --when checked, uses the manual Swing Length / Consolidation Bars (adjust below) instead of the Auto Profile values.'
+)
+
+manual_swing_length = input.int(7, 'Manual Swing Length', minval = 3, maxval = 50, group='Core Settings')
+manual_consolidation_bars = input.int(20, 'Manual Consolidation Bars', minval = 3, maxval = 100, group='Core Settings')
+consol_wiggle_pct = input.float(0.2, 'Consolidation Wiggle (%)', minval = 0.0, maxval = 5.0, group='Core Settings', tooltip='Extra % wiggle around last swing high/low for consolidation detection')
+
+// Apply settings
+swing_length       = use_manual_settings ? manual_swing_length       : get_profiled_swing_length()
+consolidation_bars = use_manual_settings ? manual_consolidation_bars : get_profiled_consolidation_bars()
+
+// Auto wiggle based on Profile (used only when NOT in manual mode)
+get_profiled_wiggle_pct() =>
+    if profile =='Entry'
+        0.40
+    else if profile == 'Scalping'
+        0.30
+    else if profile == 'Intraday'
+        0.20
+    else if profile == 'Swing'
+        0.10
+    else
+        0.20
+
+// Use manual wiggle only when manual settings are ON; otherwise profile-based wiggle
+wiggle_pct = use_manual_settings ? consol_wiggle_pct : get_profiled_wiggle_pct()
+
+// Risk Management
+
+show_tp_sl = input.bool(true, 'Show TP/SL Lines', group='Risk Management', tooltip='TP/SL lines preview live intrabar and may change until the bar closes. After a confirmed continuation entry, the TP/SL levels are frozen for a short window.')
+use_structure_stop = input.bool(
+     true,
+     'Use Structure Based Stop and Take Profit',
+     group   = 'Risk Management',
+     tooltip = 'If true, SL is below last swing low for longs and above last swing high for shorts. If false or unavailable, ATR-based stop is used.'
+)
+
+// 1.0 = full distance to swing high/low, 0.5 = halfway, etc.
+structure_sl_factor = input.float(
+     1.0,
+     ' - Structure SL Tightness',
+     minval  = 0.1,
+     maxval  = 1.0,
+     step    = 0.05,
+     group   = 'Risk Management',
+     tooltip = '1.0 = SL at swing high/low. 0.5 = halfway between entry and swing. Smaller = tighter structure stop.'
+)
+
+// Max allowed distance from entry to structure stop, in ATR units
+max_structure_atr_mult = input.float(
+     2.0,
+     ' - Max Structure SL (ATR)',
+     minval  = 0.1,
+     maxval  = 10.0,
+     step    = 0.1,
+     group   = 'Risk Management',
+     tooltip = 'Caps the structure-based SL so it is never farther than this many ATRs away from the entry price.'
+)
+
+sl_atr_mult = input.float(1.0, 'ATR SL Multiple', minval = 0.1, step = 0.1, group='Risk Management', tooltip='Only in effect if Structure Based is unchecked above - stop loss and take profit based on multiples of the current Average True Range (ATR)')
+tp1_r_mult = input.float(1.0, ' - ATR Take Profit 1 (R)', minval = 0.1, step = 0.1, group='Risk Management')
+tp2_r_mult = input.float(2.0, ' - ATR Take Profit 2 (R)', minval = 0.1, step = 0.1, group='Risk Management')
+
+// Visual Settings
+
+show_reversal_entries = input.bool(false, 'Show Reversal Entries', group='Display', tooltip='Show counter-trend reversal entries (⚠BUY / ⚠SELL) when price breaks out of correction range in opposite direction. - Flag display only, does not show TP/SL lines or change overall structure until it confirms itself.')
+// How many historical zones we support (index 0 is "current", 1..MAX are history)
+int MAX_HIST_ZONES = 10
+
+bool show_indication_labels = true
+bool show_zones             = true
+
+num_historical_zones = input.int(
+     5,
+     'Number of Historical S/R Zones',
+     minval = 0,
+     maxval = MAX_HIST_ZONES,
+     group  = 'Display',
+     tooltip = 'Number of additional historical zones in addition to the current zone'
+)
+
+bool show_signals = true
+show_phase_background = input.bool(
+     true,
+     'Show Phase Background',
+     group = 'Display',
+     tooltip = 'Toggle ICC phase background shading (bull-green, bear-red, neutral-grey, entry-white) on or off.'
+)
+phase_bg_transparency = input.int(90, 'Phase Background Transparency', minval = 80, maxval = 99, group='Display', tooltip='Transparency of background zone colors, set to 99 for no background shading')
+
+// Auto-hide phase background on execution timeframes (5m / 15m)
+bool auto_hide_phase_bg = current_tf_minutes <= 15
+
+// ============================================================================
+// ALERT SETTINGS
+// ============================================================================
+alert_freq_opt = input.string(
+     'Once Per Bar Close',
+     'Alert Frequency',
+     options = ['Every Tick', 'Once Per Bar', 'Once Per Bar Close'],
+     group   = 'Alerts',
+     tooltip = 'Controls how often ICC entry alerts can fire.'
+)
+// =====================
+// ALERT TIME SETTINGS
+// =====================
+alert_tz = input.string("America/Chicago", "Alert Timezone", options = ["America/Chicago", "America/New_York", "Etc/UTC", "Exchange"], group="Alerts")
+
+f_pad2(v) =>
+    str.format("{0,number,00}", v)
+
+f_ts(ts) =>
+    string tz = alert_tz == "Exchange" ? syminfo.timezone : alert_tz
+    str.tostring(year(ts, tz)) + "-" +
+     f_pad2(month(ts, tz)) + "-" +
+     f_pad2(dayofmonth(ts, tz)) + " " +
+     f_pad2(hour(ts, tz)) + ":" +
+     f_pad2(minute(ts, tz)) + ":" +
+     f_pad2(second(ts, tz))
+
+// HTF Color Settings
+htf_bullish_color = input.color(color.new(color.blue, 0), 'HTF Bullish Color', group='Multi-Timeframe')
+htf_bearish_color = input.color(color.new(color.purple, 0), 'HTF Bearish Color', group='Multi-Timeframe')
+
+// ============================================================================
+// COLORS
+// ============================================================================
+int zone_transparency = 75  // or whatever value you like
+bullish_color   = color.new(color.green, 0)
+bearish_color   = color.new(color.red, 0)
+zone_bull_color = color.new(color.green, zone_transparency)
+zone_bear_color = color.new(color.red, zone_transparency)
+cont_bg_tan     = color.new(color.rgb(243, 212, 164), phase_bg_transparency)  // tan for continuation entry bar
+
+// ============================================================================
+// CURRENT TIMEFRAME LOGIC
+// ============================================================================
+
+// Swing High/Low Detection
+swing_high = ta.pivothigh(high, swing_length, swing_length)
+swing_low  = ta.pivotlow(low, swing_length, swing_length)
+
+// ATR for volatility-based zones and risk
+atr_value  = ta.atr(14)
+atr_percent = atr_value / close
+
+get_zone_buffer(price) =>
+    base_buffer = price * 0.0003
+    base_buffer * (1 + atr_percent * 10)
+
+// Variables to track market structure
+var float last_swing_high = na
+var float last_swing_low  = na
+var float prev_swing_high = na
+var float prev_swing_low  = na
+var float prev_bullish_indication = na
+var float prev_bearish_indication = na
+var int   last_high_bar = na
+var int   last_low_bar  = na
+var int   bars_since_last_structure = 0
+var int   bars_in_correction = 0
+var int   bars_in_continuation = 0
+var float correction_range_high = na
+var float correction_range_low  = na
+var string market_structure = 'no_setup'
+// --- No-Setup labeling (table-only) ---
+var string no_setup_label = 'No Setup'
+
+// Track last known trend direction for "Trend Drift"
+var string last_trend_dir = na   // 'bullish' or 'bearish'
+
+var bool   indication_detected = false
+var float  indication_level = na
+var string indication_type = na
+var bool   correction_phase = false
+var string last_entry_type = na
+
+// ============================================================
+// RESET CORRECTION STATE WHEN PROFILE CHANGES
+// Ensures correction/consolidation box recalculates with new
+// swing_length + consolidation_bars values.
+// ============================================================
+
+var string prev_profile = profile
+profile_changed = profile != prev_profile
+
+if profile_changed
+    prev_profile := profile
+
+    // Reset correction state
+    correction_phase       := false
+    correction_range_high  := na
+    correction_range_low   := na
+    bars_in_correction     := 0
+    bars_in_continuation   := 0
+    indication_detected    := false
+    market_structure       := 'no_setup'
+
+// TP / SL tracking
+var float last_entry_price = na
+var float last_stop_loss   = na
+var float last_tp1_price   = na
+var float last_tp2_price   = na
+
+var line  sl_line  = na
+var line  tp1_line = na
+var line  tp2_line = na
+
+var label sl_label  = na
+var label tp1_label = na
+var label tp2_label = na
+var line  entry_line  = na
+var label entry_label = na
+
+// Continuation trade state
+var bool cont_active = false  // true only while a continuation trade is active
+
+// Update swing levels
+if not na(swing_high)
+    prev_swing_high := last_swing_high
+    last_swing_high := swing_high
+    last_high_bar := bar_index - swing_length
+    bars_since_last_structure := 0
+else
+    bars_since_last_structure += 1
+
+if not na(swing_low)
+    prev_swing_low := last_swing_low
+    last_swing_low := swing_low
+    last_low_bar := bar_index - swing_length
+    bars_since_last_structure := 0
+
+// Market Structure Analysis
+higher_high = not na(prev_swing_high) and not na(swing_high) and swing_high > prev_swing_high
+lower_low   = not na(prev_swing_low)  and not na(swing_low)  and swing_low  < prev_swing_low
+lower_high  = not na(prev_swing_high) and not na(swing_high) and swing_high < prev_swing_high
+higher_low  = not na(prev_swing_low)  and not na(swing_low)  and swing_low  > prev_swing_low
+
+// Detect Indications
+bullish_indication = not na(swing_high) and higher_high
+bearish_indication = not na(swing_low)  and lower_low
+
+// Neutral consolidation (between last swing high/low)
+in_consolidation = bars_since_last_structure >= consolidation_bars and not na(last_swing_high) and not na(last_swing_low)
+
+// Allow a little wiggle around S/R for consolidation
+upper_band = na(last_swing_high) ? na : last_swing_high * (1 + wiggle_pct / 100.0)
+lower_band = na(last_swing_low)  ? na : last_swing_low  * (1 - wiggle_pct / 100.0)
+
+price_in_range   = not na(upper_band) and not na(lower_band) and close <= upper_band and close >= lower_band
+is_consolidating = in_consolidation and price_in_range
+
+// Track ICC Phases
+if bullish_indication
+    prev_bullish_indication := last_swing_high
+    indication_detected := true
+    indication_level := last_swing_high
+    indication_type := 'bullish'
+    correction_phase := false
+    market_structure := 'bullish_indication'
+
+    bars_in_correction := 0
+    correction_range_high := na
+    correction_range_low  := na
+    last_entry_type := na
+    last_trend_dir := 'bullish'
+    no_setup_label := 'No Setup'
+
+
+if bearish_indication
+    prev_bearish_indication := last_swing_low
+    indication_detected := true
+    indication_level := last_swing_low
+    indication_type := 'bearish'
+    correction_phase := false
+    market_structure := 'bearish_indication'
+    bars_in_correction := 0
+    correction_range_high := na
+    correction_range_low  := na
+    last_entry_type := na
+    last_trend_dir := 'bearish'
+    no_setup_label := 'No Setup'
+
+// INVALIDATION LOGIC - Detect failed setups
+if correction_phase and indication_type == 'bearish'
+    if not na(prev_bullish_indication) and close > prev_bullish_indication
+        indication_detected := false
+        correction_phase := false
+        market_structure := 'no_setup'
+        no_setup_label := 'Breaking Structure'
+        bars_in_correction := 0
+        correction_range_high := na
+        correction_range_low  := na
+    else if not na(swing_high) and not na(prev_bullish_indication) and swing_high > prev_bullish_indication
+        prev_bullish_indication := last_swing_high
+        indication_detected := true
+        indication_level := last_swing_high
+        indication_type := 'bullish'
+        correction_phase := false
+        market_structure := 'bullish_indication'
+        bars_in_correction := 0
+        correction_range_high := na
+        correction_range_low  := na
+
+if correction_phase and indication_type == 'bullish'
+    if not na(prev_bearish_indication) and close < prev_bearish_indication
+        indication_detected := false
+        correction_phase := false
+        market_structure := 'no_setup'
+        no_setup_label := 'Breaking Structure'
+        bars_in_correction := 0
+        correction_range_high := na
+        correction_range_low  := na
+    else if not na(swing_low) and not na(prev_bearish_indication) and swing_low < prev_bearish_indication
+        prev_bearish_indication := last_swing_low
+        indication_detected := true
+        indication_level := last_swing_low
+        indication_type := 'bearish'
+        correction_phase := false
+        market_structure := 'bearish_indication'
+        bars_in_correction := 0
+        correction_range_high := na
+        correction_range_low  := na
+
+// Neutral consolidation (only when no active indication)
+if is_consolidating and not indication_detected
+    market_structure := 'consolidation'
+    indication_detected := false
+    correction_phase := false
+    indication_level := na
+    indication_type := na
+    last_entry_type := na
+// Define this early so it can be used below
+bool neutral_consolidation = market_structure == 'consolidation'
+
+// ============================================================================
+// LIVE TABLE OVERRIDES (No logic change to market_structure, table wording only)
+// ============================================================================
+
+// Small buffer to prevent 1-tick flicker
+live_buf = math.max(syminfo.mintick * 2.0, atr_value * 0.05)
+
+// We only want these overrides when we are "idle" (no active ICC engine state)
+idle_state = not indication_detected and not correction_phase and not cont_active
+
+// Live Breaking Structure (priority 1)
+// Use CLOSE beyond last swing level, not just wick, to reduce noise
+break_struct_live =
+     idle_state and (
+         (last_trend_dir == 'bullish' and not na(last_swing_low)  and close < (last_swing_low  - live_buf)) or
+         (last_trend_dir == 'bearish' and not na(last_swing_high) and close > (last_swing_high + live_buf))
+     )
+
+// Live Trend Drift (priority 2)
+trend_drift_live =
+     idle_state and not break_struct_live and (
+         (last_trend_dir == 'bullish' and not na(last_swing_high) and close > (last_swing_high + live_buf)) or
+         (last_trend_dir == 'bearish' and not na(last_swing_low)  and close < (last_swing_low  - live_buf))
+     )
+
+// Single override string used by the table for both no_setup and consolidation
+string phase_display_override = na
+if break_struct_live
+    phase_display_override := 'Breaking Structure (Live)'
+else if trend_drift_live
+    phase_display_override := last_trend_dir == 'bullish' ? 'Trend Drift (Live Bull)' : 'Trend Drift (Live Bear)'
+
+// --- Trend Drift (table-only) ---
+in_no_setup_state = not indication_detected and not correction_phase and not neutral_consolidation and not cont_active
+
+if in_no_setup_state
+    if not na(swing_high) and higher_high and last_trend_dir == 'bullish'
+        no_setup_label := 'Trend Drift (Bull)'
+
+    if not na(swing_low) and lower_low and last_trend_dir == 'bearish'
+        no_setup_label := 'Trend Drift (Bear)'
+
+// Reset label when we are clearly not in no_setup anymore
+if market_structure != 'no_setup'
+    no_setup_label := 'No Setup'
+
+// Detect Correction Phase - initialize correction range
+if indication_detected and not correction_phase
+    if indication_type == 'bullish' and close < indication_level
+        correction_phase := true
+        market_structure := 'bullish_correction'
+        bars_in_correction := 0
+        correction_range_high := last_swing_high
+        correction_range_low  := last_swing_low
+    if indication_type == 'bearish' and close > indication_level
+        correction_phase := true
+        market_structure := 'bearish_correction'
+        bars_in_correction := 0
+        correction_range_high := last_swing_high
+        correction_range_low  := last_swing_low
+
+// Track consolidation range during correction phase and continuation bars
+if correction_phase
+    if not na(last_swing_high) and not na(last_swing_low)
+        correction_range_high := last_swing_high
+        correction_range_low  := last_swing_low
+
+    bars_in_correction    += 1
+    bars_in_continuation := 0
+
+else if cont_active
+    bars_in_continuation += 1
+    bars_in_correction   := 0
+else
+    bars_in_correction    := 0
+    bars_in_continuation := 0
+
+// Track whether price has permanently left the current correction box
+var bool left_correction_box = false
+
+if not correction_phase
+    left_correction_box := false
+else
+    if not na(correction_range_high) and not na(correction_range_low)
+        if high > correction_range_high or low < correction_range_low
+            left_correction_box := true
+
+correction_consolidation =
+     correction_phase and
+     not left_correction_box and
+     bars_in_correction >= consolidation_bars and
+     not na(correction_range_high) and
+     not na(correction_range_low)
+
+// ============================================================================
+// ENTRY SIGNALS (raw ICC logic)
+// ============================================================================
+
+// 1. Traditional: cross back through indication level (same direction)
+// 2. Breakout: break out of correction range (same direction)
+// 3. Reversal: break correction range in opposite direction
+
+bullish_entry_traditional = indication_detected and correction_phase and indication_type == 'bullish' and close > indication_level and close[1] <= indication_level
+bearish_entry_traditional = indication_detected and correction_phase and indication_type == 'bearish' and close < indication_level and close[1] >= indication_level
+
+bullish_entry_breakout = indication_detected and correction_phase and indication_type == 'bullish' and not na(correction_range_high) and close > correction_range_high and close[1] <= correction_range_high
+bearish_entry_breakout = indication_detected and correction_phase and indication_type == 'bearish' and not na(correction_range_low)  and close < correction_range_low  and close[1] >= correction_range_low
+
+bullish_entry_reversal = indication_detected and correction_phase and indication_type == 'bearish' and not na(correction_range_high) and close > correction_range_high and close[1] <= correction_range_high
+bearish_entry_reversal = indication_detected and correction_phase and indication_type == 'bullish' and not na(correction_range_low)  and close < correction_range_low  and close[1] >= correction_range_low
+
+// Combined CONTINUATION entries (no reversals)
+bullish_entry_cont = bullish_entry_traditional or bullish_entry_breakout
+bearish_entry_cont = bearish_entry_traditional or bearish_entry_breakout
+
+// ============================================================================
+// HIGHER TIMEFRAME REQUEST + DIRECTIONAL BIAS (for ENTRIES)
+// ============================================================================
+
+[htf_indication_level_entry, htf_indication_type_entry] = request.security(syminfo.tickerid, resolved_htf, [indication_level, indication_type], lookahead = barmerge.lookahead_off)
+
+
+// HTF directional bias for entries
+htf_bullish = htf_indication_type_entry == 'bullish'
+htf_bearish = htf_indication_type_entry == 'bearish'
+
+// HTF filters (only active when ALIGN is on)
+htf_ok_bull = not align_entries_with_htf or htf_bullish
+htf_ok_bear = not align_entries_with_htf or htf_bearish
+
+// HTF-filtered CONTINUATION entries used for continuation trade state
+bullish_entry_cont_allowed = bullish_entry_cont and htf_ok_bull
+bearish_entry_cont_allowed = bearish_entry_cont and htf_ok_bear
+
+/// ============================================================================
+// ENTRY STATE MACHINE + TP/SL CALC  (CONTINUATIONS ONLY)
+// Preview intrabar (lines can appear/disappear), but only CONSUME setup on close.
+// ============================================================================
+
+var int last_cont_entry_bar    = na
+
+tp_visible_bars = 2
+
+// Continuations (use HTF-allowed so it matches what you plot)
+bool bull_cont_fire = bullish_entry_cont_allowed and show_signals
+bool bear_cont_fire = bearish_entry_cont_allowed and show_signals
+
+// Candidate entry for TP/SL preview should be CONTINUATIONS ONLY
+bool any_entry_candidate = bull_cont_fire or bear_cont_fire
+
+// Helper: compute TP/SL preview values (PURE function: returns values only)
+f_calc_preview_tpsl(_dir) =>
+    float _entry = close
+    float _sl = na
+    float _tp1 = na
+    float _tp2 = na
+
+    if use_structure_stop
+        if _dir == 'bullish' and not na(last_swing_low)
+            float raw_dist    = math.abs(_entry - last_swing_low)
+            float struct_dist = raw_dist * structure_sl_factor
+            float max_dist    = atr_value * max_structure_atr_mult
+            float final_dist  = math.min(struct_dist, max_dist)
+            _sl := _entry - final_dist
+        else if _dir == 'bearish' and not na(last_swing_high)
+            float raw_dist    = math.abs(last_swing_high - _entry)
+            float struct_dist = raw_dist * structure_sl_factor
+            float max_dist    = atr_value * max_structure_atr_mult
+            float final_dist  = math.min(struct_dist, max_dist)
+            _sl := _entry + final_dist
+
+    if na(_sl)
+        _sl := _dir == 'bullish' ? (_entry - atr_value * sl_atr_mult) : (_entry + atr_value * sl_atr_mult)
+
+    float _risk = math.abs(_entry - _sl)
+
+    if _dir == 'bullish'
+        _tp1 := _entry + _risk * tp1_r_mult
+        _tp2 := _entry + _risk * tp2_r_mult
+    else
+        _tp1 := _entry - _risk * tp1_r_mult
+        _tp2 := _entry - _risk * tp2_r_mult
+
+    [_entry, _sl, _tp1, _tp2]
+
+// ------------------------------
+// INTRABAR PREVIEW (no state consume)
+// ------------------------------
+var bool preview_active = false
+
+if any_entry_candidate
+    string cand_dir = bull_cont_fire ? 'bullish' : 'bearish'
+
+    [p_entry, p_sl, p_tp1, p_tp2] = f_calc_preview_tpsl(cand_dir)
+
+    last_entry_price := p_entry
+    last_stop_loss   := p_sl
+    last_tp1_price   := p_tp1
+    last_tp2_price   := p_tp2
+
+    if show_tp_sl
+        if not preview_active
+            if not na(entry_line)
+                line.delete(entry_line)
+            if not na(sl_line)
+                line.delete(sl_line)
+            if not na(tp1_line)
+                line.delete(tp1_line)
+            if not na(tp2_line)
+                line.delete(tp2_line)
+
+            if not na(entry_label)
+                label.delete(entry_label)
+            if not na(sl_label)
+                label.delete(sl_label)
+            if not na(tp1_label)
+                label.delete(tp1_label)
+            if not na(tp2_label)
+                label.delete(tp2_label)
+
+            entry_line := line.new(bar_index, last_entry_price, bar_index + 50, last_entry_price, color=color.new(color.blue, 0), width=2)
+            entry_label := label.new(bar_index + 50, last_entry_price, 'ENTRY', style=label.style_label_right, textcolor=color.white, color=color.new(color.blue, 70), size=size.small)
+
+            sl_line := line.new(bar_index, last_stop_loss, bar_index + 50, last_stop_loss, color=color.new(color.red, 0), width=2, style=line.style_dashed)
+            sl_label := label.new(bar_index + 50, last_stop_loss, 'SL', style=label.style_label_right, textcolor=color.white, color=color.new(color.red, 80), size=size.small)
+
+            tp1_line := line.new(bar_index, last_tp1_price, bar_index + 50, last_tp1_price, color=color.new(color.green, 0), width=2, style=line.style_dashed)
+            tp1_label := label.new(bar_index + 50, last_tp1_price, 'TP1', style=label.style_label_right, textcolor=color.black, color=color.new(color.green, 70), size=size.small)
+
+            tp2_line := line.new(bar_index, last_tp2_price, bar_index + 50, last_tp2_price, color=color.new(color.green, 0), width=2, style=line.style_dotted)
+            tp2_label := label.new(bar_index + 50, last_tp2_price, 'TP2', style=label.style_label_right, textcolor=color.black, color=color.new(color.green, 85), size=size.small)
+
+            preview_active := true
+
+        line.set_x1(entry_line, bar_index)
+        line.set_x2(entry_line, bar_index + 50)
+        line.set_y1(entry_line, last_entry_price)
+        line.set_y2(entry_line, last_entry_price)
+        label.set_x(entry_label, bar_index + 50)
+        label.set_y(entry_label, last_entry_price)
+
+        line.set_x1(sl_line, bar_index)
+        line.set_x2(sl_line, bar_index + 50)
+        line.set_y1(sl_line, last_stop_loss)
+        line.set_y2(sl_line, last_stop_loss)
+        label.set_x(sl_label, bar_index + 50)
+        label.set_y(sl_label, last_stop_loss)
+
+        line.set_x1(tp1_line, bar_index)
+        line.set_x2(tp1_line, bar_index + 50)
+        line.set_y1(tp1_line, last_tp1_price)
+        line.set_y2(tp1_line, last_tp1_price)
+        label.set_x(tp1_label, bar_index + 50)
+        label.set_y(tp1_label, last_tp1_price)
+
+        line.set_x1(tp2_line, bar_index)
+        line.set_x2(tp2_line, bar_index + 50)
+        line.set_y1(tp2_line, last_tp2_price)
+        line.set_y2(tp2_line, last_tp2_price)
+        label.set_x(tp2_label, bar_index + 50)
+        label.set_y(tp2_label, last_tp2_price)
+
+else
+    if preview_active
+        if not na(entry_line)
+            line.delete(entry_line)
+            entry_line := na
+        if not na(sl_line)
+            line.delete(sl_line)
+            sl_line := na
+        if not na(tp1_line)
+            line.delete(tp1_line)
+            tp1_line := na
+        if not na(tp2_line)
+            line.delete(tp2_line)
+            tp2_line := na
+
+        if not na(entry_label)
+            label.delete(entry_label)
+            entry_label := na
+        if not na(sl_label)
+            label.delete(sl_label)
+            sl_label := na
+        if not na(tp1_label)
+            label.delete(tp1_label)
+            tp1_label := na
+        if not na(tp2_label)
+            label.delete(tp2_label)
+            tp2_label := na
+
+        preview_active := false
+
+// ------------------------------
+// CONFIRM AND CONSUME (bar close only)
+// ------------------------------
+bool any_entry_confirmed = (bull_cont_fire or bear_cont_fire) and barstate.isconfirmed
+
+if any_entry_confirmed
+    indication_detected := false
+    correction_phase    := false
+    cont_active         := true
+    last_cont_entry_bar := bar_index
+    last_entry_type := bull_cont_fire ? 'bullish' : 'bearish'
+    last_trend_dir  := last_entry_type
+
+    no_setup_label := 'No Setup'
+    bars_in_correction    := 0
+    bars_in_continuation  := 0
+    correction_range_high := na
+    correction_range_low  := na
+
+    preview_active := false
+
+// EXIT CONTINUATION TRADE - on opposite indication or SL / TP2 hit
+if cont_active and not na(last_entry_type)
+    bool exit_now = false
+
+    if last_entry_type == 'bullish'
+        hit_sl  = not na(last_stop_loss) and low  <= last_stop_loss
+        hit_tp2 = not na(last_tp2_price) and high >= last_tp2_price
+
+        if bearish_indication or hit_sl or hit_tp2
+            exit_now := true
+
+    else if last_entry_type == 'bearish'
+        hit_sl  = not na(last_stop_loss) and high >= last_stop_loss
+        hit_tp2 = not na(last_tp2_price) and low  <= last_tp2_price
+
+        if bullish_indication or hit_sl or hit_tp2
+            exit_now := true
+
+    if exit_now
+        cont_active     := false
+        last_entry_type := na
+
+// -----------------------------------------------------------------
+// TP/SL visibility: snapshot (no re-compute), slide with right edge
+// -----------------------------------------------------------------
+bool tp_window_active = show_tp_sl and not na(last_cont_entry_bar) and (bar_index - last_cont_entry_bar <= tp_visible_bars)
+
+if tp_window_active
+    if not na(entry_line)
+        line.set_x1(entry_line, bar_index)
+        line.set_x2(entry_line, bar_index + 50)
+        line.set_y1(entry_line, last_entry_price)
+        line.set_y2(entry_line, last_entry_price)
+        if not na(entry_label)
+            label.set_x(entry_label, bar_index + 50)
+            label.set_y(entry_label, last_entry_price)
+
+    if not na(sl_line)
+        line.set_x1(sl_line, bar_index)
+        line.set_x2(sl_line, bar_index + 50)
+        line.set_y1(sl_line, last_stop_loss)
+        line.set_y2(sl_line, last_stop_loss)
+        if not na(sl_label)
+            label.set_x(sl_label, bar_index + 50)
+            label.set_y(sl_label, last_stop_loss)
+
+    if not na(tp1_line)
+        line.set_x1(tp1_line, bar_index)
+        line.set_x2(tp1_line, bar_index + 50)
+        line.set_y1(tp1_line, last_tp1_price)
+        line.set_y2(tp1_line, last_tp1_price)
+        if not na(tp1_label)
+            label.set_x(tp1_label, bar_index + 50)
+            label.set_y(tp1_label, last_tp1_price)
+
+    if not na(tp2_line)
+        line.set_x1(tp2_line, bar_index)
+        line.set_x2(tp2_line, bar_index + 50)
+        line.set_y1(tp2_line, last_tp2_price)
+        line.set_y2(tp2_line, last_tp2_price)
+        if not na(tp2_label)
+            label.set_x(tp2_label, bar_index + 50)
+            label.set_y(tp2_label, last_tp2_price)
+
+else
+    if not preview_active
+        if not na(entry_line)
+            line.delete(entry_line)
+            entry_line := na
+        if not na(sl_line)
+            line.delete(sl_line)
+            sl_line := na
+        if not na(tp1_line)
+            line.delete(tp1_line)
+            tp1_line := na
+        if not na(tp2_line)
+            line.delete(tp2_line)
+            tp2_line := na
+
+        if not na(entry_label)
+            label.delete(entry_label)
+            entry_label := na
+        if not na(sl_label)
+            label.delete(sl_label)
+            sl_label := na
+        if not na(tp1_label)
+            label.delete(tp1_label)
+            tp1_label := na
+        if not na(tp2_label)
+            label.delete(tp2_label)
+            tp2_label := na
+
+        last_cont_entry_bar := na
+
+// Waiting arrows (while in correction) - DISABLED on <=15m
+waiting_for_bullish_entry = indication_detected and correction_phase and indication_type == 'bullish' and close <= indication_level
+waiting_for_bearish_entry = indication_detected and correction_phase and indication_type == 'bearish' and close >= indication_level
+
+plotchar(not is_ltf_15 and waiting_for_bullish_entry and show_signals, title = 'Waiting Bullish', char = '↑', location = location.belowbar, color = color.new(color.green, 50), size = size.tiny)
+plotchar(not is_ltf_15 and waiting_for_bearish_entry and show_signals, title = 'Waiting Bearish', char = '↓', location = location.abovebar, color = color.new(color.red, 50), size = size.tiny)
+
+// ============================================================================
+// PLOTTING - CURRENT TIMEFRAME
+// ============================================================================
+
+// Swing Points
+plotshape(swing_high, title = 'Swing High', location = location.abovebar, color = bearish_color, style = shape.triangledown, size = size.small, offset = -swing_length)
+plotshape(swing_low,  title = 'Swing Low',  location = location.belowbar, color = bullish_color, style = shape.triangleup,   size = size.small, offset = -swing_length)
+
+// Indication labels
+if bullish_indication and show_indication_labels
+    label.new(
+         last_high_bar, last_swing_high,
+         'IND',
+         style     = label.style_label_down,
+         textcolor = color.white,
+         color     = bullish_color,
+         size      = size.small)
+
+if bearish_indication and show_indication_labels
+    label.new(
+         last_low_bar, last_swing_low,
+         'IND',
+         style     = label.style_label_up,
+         textcolor = color.white,
+         color     = bearish_color,
+         size      = size.small)
+
+// ============================================================================
+// SUPPORT / RESISTANCE ZONES  (Cleaner + scalable history up to 10)
+// - Index 0 = current zone as FILLED BOX
+// - Index 1..N = historical zones as DOTTED HORIZONTAL LINES
+// - Each historical line ends at: "replacement start + 15% of lifespan"
+// ============================================================================
+
+int ZN = MAX_HIST_ZONES + 1  // total slots including current (0)
+
+var array<box>   resistance_boxes       = array.new<box>(ZN)
+var array<float> resistance_levels      = array.new<float>(ZN, na)
+var array<int>   resistance_start_bars  = array.new<int>(ZN, na)
+var array<line>  resistance_hist_lines  = array.new<line>(ZN)
+
+var array<box>   support_boxes          = array.new<box>(ZN)
+var array<float> support_levels         = array.new<float>(ZN, na)
+var array<int>   support_start_bars     = array.new<int>(ZN, na)
+var array<line>  support_hist_lines     = array.new<line>(ZN)
+
+var box consolidation_box = na
+
+// Track last zone-edge entry (<=15m table uses this)
+var string last_zone_edge_entry = na  // 'BULL' or 'BEAR' or na
+var int    last_zone_edge_entry_bar = na
+
+f_hist_x2(int start_i, int start_prev) =>
+    int baseLen = math.max(1, start_prev - start_i)
+    int extBars = int(math.round(baseLen * 0.15))
+    start_prev + extBars
+
+f_delete_box(box b) =>
+    if not na(b)
+        box.delete(b)
+
+// Shift functions (dynamic) - LEAVE AS-PUBLISHED (by 1)
+shift_resistance_zones() =>
+    int last = array.size(resistance_boxes) - 1
+
+    old_box = array.get(resistance_boxes, last)
+    f_delete_box(old_box)
+
+    old_ln = array.get(resistance_hist_lines, last)
+    if not na(old_ln)
+        line.delete(old_ln)
+        array.set(resistance_hist_lines, last, na)
+
+    for i = last to 1 by 1
+        array.set(resistance_boxes, i, array.get(resistance_boxes, i - 1))
+        array.set(resistance_levels, i, array.get(resistance_levels, i - 1))
+        array.set(resistance_start_bars, i, array.get(resistance_start_bars, i - 1))
+        array.set(resistance_hist_lines, i, array.get(resistance_hist_lines, i - 1))
+
+    array.set(resistance_hist_lines, 0, na)
+
+shift_support_zones() =>
+    int last = array.size(support_boxes) - 1
+
+    old_box = array.get(support_boxes, last)
+    f_delete_box(old_box)
+
+    old_ln = array.get(support_hist_lines, last)
+    if not na(old_ln)
+        line.delete(old_ln)
+        array.set(support_hist_lines, last, na)
+
+    for i = last to 1 by 1
+        array.set(support_boxes, i, array.get(support_boxes, i - 1))
+        array.set(support_levels, i, array.get(support_levels, i - 1))
+        array.set(support_start_bars, i, array.get(support_start_bars, i - 1))
+        array.set(support_hist_lines, i, array.get(support_hist_lines, i - 1))
+
+    array.set(support_hist_lines, 0, na)
+
+// Create new current zones on new swing points
+if show_zones and not na(swing_high)
+    shift_resistance_zones()
+
+    zone_buffer = get_zone_buffer(swing_high)
+
+    new_box = box.new(
+         bar_index - swing_length, swing_high + zone_buffer,
+         bar_index,               swing_high - zone_buffer,
+         bgcolor = zone_bear_color,
+         border_color = bearish_color,
+         border_width = 2
+    )
+
+    ln0 = array.get(resistance_hist_lines, 0)
+    if not na(ln0)
+        line.delete(ln0)
+        array.set(resistance_hist_lines, 0, na)
+
+    array.set(resistance_boxes, 0, new_box)
+    array.set(resistance_levels, 0, swing_high)
+    array.set(resistance_start_bars, 0, bar_index - swing_length)
+
+    // Reset last zone-edge entry when a new zone arrives
+    last_zone_edge_entry := na
+    last_zone_edge_entry_bar := na
+
+if show_zones and not na(swing_low)
+    shift_support_zones()
+
+    zone_buffer = get_zone_buffer(swing_low)
+
+    new_box = box.new(
+         bar_index - swing_length, swing_low + zone_buffer,
+         bar_index,               swing_low - zone_buffer,
+         bgcolor = zone_bull_color,
+         border_color = bullish_color,
+         border_width = 2
+    )
+
+    ln0 = array.get(support_hist_lines, 0)
+    if not na(ln0)
+        line.delete(ln0)
+        array.set(support_hist_lines, 0, na)
+
+    array.set(support_boxes, 0, new_box)
+    array.set(support_levels, 0, swing_low)
+    array.set(support_start_bars, 0, bar_index - swing_length)
+
+    // Reset last zone-edge entry when a new zone arrives
+    last_zone_edge_entry := na
+    last_zone_edge_entry_bar := na
+
+// Update visuals: current boxes + historical lines
+if show_zones
+    res0 = array.get(resistance_boxes, 0)
+    if not na(res0)
+        box.set_right(res0, bar_index)
+        box.set_bgcolor(res0, zone_bear_color)
+        box.set_border_color(res0, bearish_color)
+        box.set_border_width(res0, 2)
+
+    sup0 = array.get(support_boxes, 0)
+    if not na(sup0)
+        box.set_right(sup0, bar_index)
+        box.set_bgcolor(sup0, zone_bull_color)
+        box.set_border_color(sup0, bullish_color)
+        box.set_border_width(sup0, 2)
+
+    int last = array.size(resistance_levels) - 1
+    int maxHist = math.min(num_historical_zones, last)
+
+    for i = 1 to last
+        float r_lvl  = array.get(resistance_levels, i)
+        int   r_x1   = array.get(resistance_start_bars, i)
+        int   r_rep  = array.get(resistance_start_bars, i - 1)
+
+        r_box = array.get(resistance_boxes, i)
+        if not na(r_box)
+            box.delete(r_box)
+            array.set(resistance_boxes, i, na)
+
+        r_ln = array.get(resistance_hist_lines, i)
+        bool r_ok = i <= maxHist and not na(r_lvl) and not na(r_x1) and not na(r_rep)
+
+        if r_ok
+            int r_x2 = f_hist_x2(r_x1, r_rep)
+
+            if na(r_ln)
+                r_ln := line.new(
+                     r_x1, r_lvl,
+                     r_x2, r_lvl,
+                     color = bearish_color,
+                     width = 4,
+                     style = line.style_dotted
+                )
+                array.set(resistance_hist_lines, i, r_ln)
+            else
+                line.set_x1(r_ln, r_x1)
+                line.set_x2(r_ln, r_x2)
+                line.set_y1(r_ln, r_lvl)
+                line.set_y2(r_ln, r_lvl)
+                line.set_color(r_ln, bearish_color)
+                line.set_style(r_ln, line.style_dotted)
+                line.set_width(r_ln, 4)
+        else
+            if not na(r_ln)
+                line.delete(r_ln)
+                array.set(resistance_hist_lines, i, na)
+
+        float s_lvl  = array.get(support_levels, i)
+        int   s_x1   = array.get(support_start_bars, i)
+        int   s_rep  = array.get(support_start_bars, i - 1)
+
+        s_box = array.get(support_boxes, i)
+        if not na(s_box)
+            box.delete(s_box)
+            array.set(support_boxes, i, na)
+
+        s_ln = array.get(support_hist_lines, i)
+        bool s_ok = i <= maxHist and not na(s_lvl) and not na(s_x1) and not na(s_rep)
+
+        if s_ok
+            int s_x2 = f_hist_x2(s_x1, s_rep)
+
+            if na(s_ln)
+                s_ln := line.new(
+                     s_x1, s_lvl,
+                     s_x2, s_lvl,
+                     color = bullish_color,
+                     width = 4,
+                     style = line.style_dotted
+                )
+                array.set(support_hist_lines, i, s_ln)
+            else
+                line.set_x1(s_ln, s_x1)
+                line.set_x2(s_ln, s_x2)
+                line.set_y1(s_ln, s_lvl)
+                line.set_y2(s_ln, s_lvl)
+                line.set_color(s_ln, bullish_color)
+                line.set_style(s_ln, line.style_dotted)
+                line.set_width(s_ln, 4)
+        else
+            if not na(s_ln)
+                line.delete(s_ln)
+                array.set(support_hist_lines, i, na)
+
+else
+    int last = array.size(resistance_boxes) - 1
+    for i = 0 to last
+        b = array.get(resistance_boxes, i)
+        if not na(b)
+            box.delete(b)
+            array.set(resistance_boxes, i, na)
+
+        l = array.get(resistance_hist_lines, i)
+        if not na(l)
+            line.delete(l)
+            array.set(resistance_hist_lines, i, na)
+
+        b2 = array.get(support_boxes, i)
+        if not na(b2)
+            box.delete(b2)
+            array.set(support_boxes, i, na)
+
+        l2 = array.get(support_hist_lines, i)
+        if not na(l2)
+            line.delete(l2)
+            array.set(support_hist_lines, i, na)
+
+// Consolidation Box - overlay during correction consolidation
+is_consolidating_overlay = correction_consolidation
+
+if is_consolidating_overlay and show_zones
+    if na(consolidation_box)
+        consolidation_box := box.new(bar_index - bars_in_correction, correction_range_high, bar_index, correction_range_low, bgcolor = color.new(color.gray, 70), border_color = color.new(color.gray, 20), border_width = 2, border_style = line.style_dashed)
+    else
+        box.set_right(consolidation_box, bar_index)
+        box.set_top(consolidation_box, correction_range_high)
+        box.set_bottom(consolidation_box, correction_range_low)
+else
+    if not na(consolidation_box)
+        box.delete(consolidation_box)
+        consolidation_box := na
+
+// ============================================================================
+// ZONE-EDGE BULL/BEAR ENTRY TRIGGERS (close clears zone)
+// - BULL ENTRY: close breaks ABOVE current resistance zone top
+// - BEAR ENTRY: close breaks BELOW current support zone bottom
+// ============================================================================
+
+box _res0 = array.get(resistance_boxes, 0)
+box _sup0 = array.get(support_boxes, 0)
+
+float res_top = not na(_res0) ? box.get_top(_res0) : na
+float sup_bot = not na(_sup0) ? box.get_bottom(_sup0) : na
+
+bool bull_entry_zone_edge = barstate.isconfirmed and not na(res_top) and close > res_top and close[1] <= res_top
+bool bear_entry_zone_edge = barstate.isconfirmed and not na(sup_bot) and close < sup_bot and close[1] >= sup_bot
+
+if bull_entry_zone_edge
+    last_zone_edge_entry := 'BULL'
+    last_zone_edge_entry_bar := bar_index
+
+if bear_entry_zone_edge
+    last_zone_edge_entry := 'BEAR'
+    last_zone_edge_entry_bar := bar_index
+
+// ============================================================================
+// HTF SERIES FOR VISUALS & TABLE
+// ============================================================================
+
+[htf_indication_level, htf_indication_type, htf_market_structure, htf_last_swing_high, htf_last_swing_low] = request.security(syminfo.tickerid, resolved_htf, [indication_level, indication_type, market_structure, last_swing_high, last_swing_low], lookahead = barmerge.lookahead_off)
+
+
+// ============================================================================
+// HTF VISUAL ZONES (use HTF data)
+// ============================================================================
+
+var label htf_bias_label = na
+
+bool show_htf_bias = use_htf and show_zones and not na(htf_indication_level) and not na(htf_indication_type)
+
+if show_htf_bias
+    float htf_y = htf_indication_level
+
+    string bias_txt =
+         htf_indication_type == 'bullish' ? 'HTF Bull' :
+         htf_indication_type == 'bearish' ? 'HTF Bear' :
+         ''
+
+    if bias_txt == ''
+        if not na(htf_bias_label)
+            label.delete(htf_bias_label)
+            htf_bias_label := na
+    else
+        color bias_bg =
+             htf_indication_type == 'bullish' ? color.new(htf_bullish_color, 75) :
+             color.new(htf_bearish_color, 75)
+
+        color bias_txt_col = color.white
+
+        int x_off = 15
+
+        if na(htf_bias_label)
+            htf_bias_label := label.new(
+                 bar_index + x_off, htf_y,
+                 bias_txt,
+                 style = label.style_label_left,
+                 textcolor = bias_txt_col,
+                 color = bias_bg,
+                 size = size.small
+            )
+        else
+            label.set_x(htf_bias_label, bar_index + x_off)
+            label.set_y(htf_bias_label, htf_y)
+            label.set_text(htf_bias_label, bias_txt)
+            label.set_color(htf_bias_label, bias_bg)
+            label.set_textcolor(htf_bias_label, bias_txt_col)
+else
+    if not na(htf_bias_label)
+        label.delete(htf_bias_label)
+        htf_bias_label := na
+
+var box htf_resistance_box = na
+var box htf_support_box    = na
+
+if use_htf and show_zones and not na(htf_last_swing_high)
+    zone_buffer = get_zone_buffer(htf_last_swing_high)
+    if na(htf_resistance_box)
+        htf_resistance_box := box.new(bar_index - 25, htf_last_swing_high + zone_buffer, bar_index, htf_last_swing_high - zone_buffer,
+            bgcolor = color.new(htf_bearish_color, 90), border_color = htf_bearish_color, border_width = 2, border_style = line.style_dashed)
+    else
+        box.set_left(htf_resistance_box, bar_index - 25)
+        box.set_right(htf_resistance_box, bar_index)
+        box.set_top(htf_resistance_box, htf_last_swing_high + zone_buffer)
+        box.set_bottom(htf_resistance_box, htf_last_swing_high - zone_buffer)
+
+if use_htf and show_zones and not na(htf_last_swing_low)
+    zone_buffer = get_zone_buffer(htf_last_swing_low)
+    if na(htf_support_box)
+        htf_support_box := box.new(bar_index - 25, htf_last_swing_low + zone_buffer, bar_index, htf_last_swing_low - zone_buffer,
+            bgcolor = color.new(htf_bullish_color, 90), border_color = htf_bullish_color, border_width = 2, border_style = line.style_dashed)
+    else
+        box.set_left(htf_support_box, bar_index - 25)
+        box.set_right(htf_support_box, bar_index)
+        box.set_top(htf_support_box, htf_last_swing_low + zone_buffer)
+        box.set_bottom(htf_support_box, htf_last_swing_low - zone_buffer)
+
+if not use_htf or not show_zones
+    if not na(htf_resistance_box)
+        box.delete(htf_resistance_box)
+        htf_resistance_box := na
+    if not na(htf_support_box)
+        box.delete(htf_support_box)
+        htf_support_box := na
+
+    if not na(htf_bias_label)
+        label.delete(htf_bias_label)
+        htf_bias_label := na
+
+// ============================================================================
+// LTF ENTRY BREAK DETECTION (USING CURRENT ARRAY LEVELS)
+// ============================================================================
+
+// Pull the current active levels out of the arrays as floats
+float cur_support    = array.size(support_levels) > 0     ? array.get(support_levels, 0)     : na
+float cur_resistance = array.size(resistance_levels) > 0  ? array.get(resistance_levels, 0)  : na
+
+// Use prior bar’s confirmed level if available (avoids “level moved on break bar”)
+float sup_break = not na(cur_support[1])    ? cur_support[1]    : cur_support
+float res_break = not na(cur_resistance[1]) ? cur_resistance[1] : cur_resistance
+
+// Stable break conditions
+bool ltf_bear_entry = barstate.isconfirmed and not na(sup_break) and close < sup_break and close[1] >= sup_break
+bool ltf_bull_entry = barstate.isconfirmed and not na(res_break) and close > res_break and close[1] <= res_break
+
+
+// ============================================================================
+// ENTRY VISUALS: CONTINUATION & REVERSAL, HTF-AWARE COLORS
+// ============================================================================
+
+// On <=15m, entries are "did it break the level", not ICC continuation rules
+bullish_cont_raw = show_signals and (is_ltf_15 ? ltf_bull_entry : bullish_entry_cont_allowed)
+bearish_cont_raw = show_signals and (is_ltf_15 ? ltf_bear_entry : bearish_entry_cont_allowed)
+
+// Reversals OFF on <=15m (and still gated by input elsewhere)
+bullish_reversal_vis = (not is_ltf_15) and bullish_entry_reversal and show_signals and show_reversal_entries
+bearish_reversal_vis = (not is_ltf_15) and bearish_entry_reversal and show_signals and show_reversal_entries
+
+// Only apply HTF filter for color on non-LTF. On LTF we want the reminder label regardless.
+use_htf_filter_for_color = align_entries_with_htf and not is_ltf_15
+
+
+bullish_light_vis = bullish_cont_raw and not use_htf_filter_for_color
+bearish_light_vis = bearish_cont_raw and not use_htf_filter_for_color
+
+bullish_dark_vis = bullish_cont_raw and use_htf_filter_for_color and htf_bullish
+bearish_dark_vis = bearish_cont_raw and use_htf_filter_for_color and htf_bearish
+
+// BUY labels (Normal)
+plotshape(bullish_light_vis and is_ltf_15, title='Bullish Entry (Normal) LTF', location=location.belowbar,
+     color=color.new(color.green, 40), style=shape.labelup, size=size.small,
+     text='ENTRY', textcolor=color.white)
+
+plotshape(bullish_light_vis and not is_ltf_15, title='Bullish Entry (Normal)', location=location.belowbar,
+     color=color.new(color.green, 40), style=shape.labelup, size=size.small,
+     text='BUY', textcolor=color.white)
+
+
+// BUY+ labels (HTF Aligned)
+plotshape(bullish_dark_vis and is_ltf_15, title='Bullish Entry (HTF Aligned) LTF', location=location.belowbar,
+     color=color.new(color.green, 0), style=shape.labelup, size=size.small,
+     text='ENTRY+', textcolor=color.white)
+
+plotshape(bullish_dark_vis and not is_ltf_15, title='Bullish Entry (HTF Aligned)', location=location.belowbar,
+     color=color.new(color.green, 0), style=shape.labelup, size=size.small,
+     text='BUY+', textcolor=color.white)
+
+
+// SELL labels (Normal)
+plotshape(bearish_light_vis and is_ltf_15, title='Bearish Entry (Normal) LTF', location=location.abovebar,
+     color=color.new(color.red, 40), style=shape.labeldown, size=size.small,
+     text='ENTRY', textcolor=color.white)
+
+plotshape(bearish_light_vis and not is_ltf_15, title='Bearish Entry (Normal)', location=location.abovebar,
+     color=color.new(color.red, 40), style=shape.labeldown, size=size.small,
+     text='SELL', textcolor=color.white)
+
+
+// SELL+ labels (HTF Aligned)
+plotshape(bearish_dark_vis and is_ltf_15, title='Bearish Entry (HTF Aligned) LTF', location=location.abovebar,
+     color=color.new(color.red, 0), style=shape.labeldown, size=size.small,
+     text='ENTRY+', textcolor=color.white)
+
+plotshape(bearish_dark_vis and not is_ltf_15, title='Bearish Entry (HTF Aligned)', location=location.abovebar,
+     color=color.new(color.red, 0), style=shape.labeldown, size=size.small,
+     text='SELL+', textcolor=color.white)
+
+
+plotshape(bullish_reversal_vis, title = 'Bullish Entry (Reversal)', location = location.belowbar,
+          color = color.new(color.yellow, 0), style = shape.labelup, size = size.small,
+          text = '⚠BUY', textcolor = color.black)
+
+plotshape(bearish_reversal_vis, title = 'Bearish Entry (Reversal)', location = location.abovebar,
+          color = color.new(color.yellow, 0), style = shape.labeldown, size = size.small,
+          text = '⚠SELL', textcolor = color.black)
+
+any_bullish_flag_vis = bullish_light_vis or bullish_dark_vis or bullish_reversal_vis
+any_bearish_flag_vis = bearish_light_vis or bearish_dark_vis or bearish_reversal_vis
+
+var int last_visible_bull_flag_bar = na
+var int last_visible_bear_flag_bar = na
+
+if any_bullish_flag_vis
+    last_visible_bull_flag_bar := bar_index
+
+if any_bearish_flag_vis
+    last_visible_bear_flag_bar := bar_index
+
+// Background by phase
+struct_bg_color = switch market_structure
+    'bullish_indication' => color.new(color.green, phase_bg_transparency)
+    'bullish_correction' => color.new(color.green, math.min(phase_bg_transparency + 3, 99))
+    'bearish_indication' => color.new(color.red,   phase_bg_transparency)
+    'bearish_correction' => color.new(color.red,   math.min(phase_bg_transparency + 3, 99))
+    'consolidation'      => color.new(color.gray,  math.min(phase_bg_transparency + 2, 99))
+    'no_setup'           => color.new(color.gray,  math.min(phase_bg_transparency + 2, 99))
+    => na
+
+cont_bg_bar = bullish_entry_cont_allowed or bearish_entry_cont_allowed
+bool phase_bg_allowed = show_phase_background and not auto_hide_phase_bg
+
+bgcolor_color =
+     phase_bg_allowed
+         ? (cont_bg_bar ? cont_bg_tan : struct_bg_color)
+         : na
+
+bgcolor(bgcolor_color, title = 'Market Structure Phase')
+
+// ============================================================================
+// INFO TABLE (theme-aware + user-position)
+// ============================================================================
+
+// --- User setting: table position ---
+table_pos_in = input.string(
+     defval  = "Top Right",
+     title   = "Info Table Position",
+     options = ["Top Right", "Top Left", "Bottom Right", "Bottom Left", "Middle Right", "Middle Left", "Top Center", "Bottom Center"],
+     group   = "Info Table"
+)
+
+// Build the position value (NO type keyword)
+table_pos =
+     table_pos_in == "Top Right"    ? position.top_right    :
+     table_pos_in == "Top Left"     ? position.top_left     :
+     table_pos_in == "Bottom Right" ? position.bottom_right :
+     table_pos_in == "Bottom Left"  ? position.bottom_left  :
+     table_pos_in == "Middle Right" ? position.middle_right :
+     table_pos_in == "Middle Left"  ? position.middle_left  :
+     table_pos_in == "Top Center"   ? position.top_center   :
+                                      position.bottom_center
+
+// --- Theme detection: infer from chart background brightness (robust) ---
+bg  = chart.bg_color
+lum = (color.r(bg) + color.g(bg) + color.b(bg)) / 3.0
+is_dark = lum < 128
+
+// --- Theme palette ---
+T_TABLE_BG   = is_dark ? color.new(color.black, 85) : color.new(color.white, 90)
+T_HDR_BG     = is_dark ? color.new(color.gray,  80) : color.new(color.gray,  70)
+T_VAL_BG     = is_dark ? color.new(color.black, 70) : color.new(color.white, 10)
+T_ENTRY_BG   = is_dark ? color.new(color.black, 85) : color.new(color.white, 100)
+
+T_TEXT       = is_dark ? color.white : color.black
+
+T_NEUTRAL_BG = is_dark ? color.new(color.gray,  80) : color.new(color.gray,  85)
+T_BULL_BG    = is_dark ? color.new(color.green, 65) : color.new(color.green, 70)
+T_BEAR_BG    = is_dark ? color.new(color.red,   65) : color.new(color.red,   70)
+T_WARN_BG    = is_dark ? color.new(color.orange,55) : color.new(color.orange,65)
+
+f_phase_bg(_is_bull, _is_bear) =>
+    _is_bull ? T_BULL_BG : _is_bear ? T_BEAR_BG : T_NEUTRAL_BG
+
+// --- Table var + recreate on position change (position isn't mutable after table.new) ---
+var table  info_table    = na
+var string _last_pos_in  = na
+
+if barstate.islast
+    pos_changed = na(_last_pos_in) or _last_pos_in != table_pos_in
+    _last_pos_in := table_pos_in
+
+    if na(info_table) or pos_changed
+        info_table := table.new(
+            table_pos,
+            2, 19,
+            bgcolor = T_TABLE_BG,
+            border_width = 1
+        )
+
+    // ---- Row 0: Phase ----
+    bool is_bullish_phase = str.contains(market_structure, "bullish")
+    bool is_bearish_phase = str.contains(market_structure, "bearish")
+    phase_color = f_phase_bg(is_bullish_phase, is_bearish_phase)
+
+    if is_ltf_15
+        table.cell(info_table, 0, 0, "ICC Phase:",     text_color=T_TEXT, bgcolor=T_ENTRY_BG)
+        table.cell(info_table, 1, 0, "ICC ENTRY MODE", text_color=T_TEXT, bgcolor=T_ENTRY_BG)
+    else
+        table.cell(info_table, 0, 0, "ICC Phase:", text_color=T_TEXT, bgcolor=T_HDR_BG)
+
+        struct_phase_display = switch market_structure
+            "no_setup"           => no_setup_label
+            "bullish_indication" => "Bullish Indication"
+            "bullish_correction" => "Bullish Correction"
+            "bearish_indication" => "Bearish Indication"
+            "bearish_correction" => "Bearish Correction"
+            "consolidation"      => "Neutral Range"
+            => market_structure
+
+        phase_display_final = not na(phase_display_override) ? phase_display_override : struct_phase_display
+        phase_bg_final      = not na(phase_display_override) ? T_WARN_BG : phase_color
+
+        table.cell(info_table, 1, 0, phase_display_final, text_color=T_TEXT, bgcolor=phase_bg_final)
+
+    // ---- Row 1: Indication Level ----
+    if is_ltf_15
+        table.cell(info_table, 0, 1, "Indication Level:", text_color=T_TEXT, bgcolor=T_ENTRY_BG)
+        table.cell(info_table, 1, 1, "N/A",              text_color=T_TEXT, bgcolor=T_ENTRY_BG)
+    else
+        table.cell(info_table, 0, 1, "Indication Level:", text_color=T_TEXT, bgcolor=T_HDR_BG)
+
+        indication_color =
+             na(indication_type) ? T_NEUTRAL_BG :
+             indication_type == "bullish" ? T_BULL_BG : T_BEAR_BG
+
+        table.cell(
+            info_table, 1, 1,
+            na(indication_level) ? "None" : str.tostring(indication_level, "#.####"),
+            text_color=T_TEXT, bgcolor=indication_color
+        )
+
+    // ---- Row 2: Last Swing High ----
+    table.cell(info_table, 0, 2, "Last Swing High:", text_color=T_TEXT, bgcolor=T_HDR_BG)
+    table.cell(info_table, 1, 2, str.tostring(last_swing_high, "#.####"), text_color=T_TEXT, bgcolor=T_VAL_BG)
+
+    // ---- Row 3: Last Swing Low ----
+    table.cell(info_table, 0, 3, "Last Swing Low:", text_color=T_TEXT, bgcolor=T_HDR_BG)
+    table.cell(info_table, 1, 3, str.tostring(last_swing_low, "#.####"), text_color=T_TEXT, bgcolor=T_VAL_BG)
+
+    // ---- Row 4: Swing Length ----
+    table.cell(info_table, 0, 4, "Swing Length:", text_color=T_TEXT, bgcolor=T_HDR_BG)
+    table.cell(info_table, 1, 4, str.tostring(swing_length), text_color=T_TEXT, bgcolor=T_VAL_BG)
+
+    // ---- Row 5: Last signal ----
+    table.cell(info_table, 0, 5, "Last Signal:", text_color=T_TEXT, bgcolor=T_HDR_BG)
+
+    if is_ltf_15
+        ztxt = na(last_zone_edge_entry) ? "N/A" : (last_zone_edge_entry == "BULL" ? "BULL ENTRY" : "BEAR ENTRY")
+        zbg  = na(last_zone_edge_entry) ? T_NEUTRAL_BG : (last_zone_edge_entry == "BULL" ? T_BULL_BG : T_BEAR_BG)
+        table.cell(info_table, 1, 5, ztxt, text_color=T_TEXT, bgcolor=zbg)
+    else
+        last_sig_bull = not na(last_visible_bull_flag_bar) and (na(last_visible_bear_flag_bar) or last_visible_bull_flag_bar > last_visible_bear_flag_bar)
+        last_sig_bear = not na(last_visible_bear_flag_bar) and (na(last_visible_bull_flag_bar) or last_visible_bull_flag_bar > last_visible_bull_flag_bar)
+
+        last_signal_text =
+             last_sig_bull ? "Bullish (BUY)" :
+             last_sig_bear ? "Bearish (SELL)" :
+                             "None"
+
+        last_signal_bg =
+             last_sig_bull ? T_BULL_BG :
+             last_sig_bear ? T_BEAR_BG :
+                             T_NEUTRAL_BG
+
+        table.cell(info_table, 1, 5, last_signal_text, text_color=T_TEXT, bgcolor=last_signal_bg)
+
+    // ---- Row 6: HTF Phase ----
+    htfPretty = f_tfPretty(resolved_htf)
+    htfPhaseHeader = "HTF Phase (" + htfPretty + "):"
+
+    table.cell(info_table, 0, 6, htfPhaseHeader, text_color=T_TEXT, bgcolor=T_HDR_BG)
+
+    htf_phase_display = switch htf_market_structure
+        "no_setup"           => "No Setup"
+        "bullish_indication" => "Bullish Indication"
+        "bullish_correction" => "Bullish Correction"
+        "bearish_indication" => "Bearish Indication"
+        "bearish_correction" => "Bearish Correction"
+        "consolidation"      => "Neutral Range"
+        => na(htf_market_structure) ? "None" : htf_market_structure
+
+    htf_is_bull = not na(htf_market_structure) and str.contains(htf_market_structure, "bullish")
+    htf_is_bear = not na(htf_market_structure) and str.contains(htf_market_structure, "bearish")
+
+    htf_phase_bg = f_phase_bg(htf_is_bull, htf_is_bear)
+    table.cell(info_table, 1, 6, htf_phase_display, text_color=T_TEXT, bgcolor=htf_phase_bg)
+
+
+
+// ============================================================================
+// ALERTS (stale-proof, correct price per alert mode)
+// ============================================================================
+
+var float alert_trigger_price = na
+var int   alert_bar_time      = na
+var bool  prev_entry_fire     = false
+
+bool entry_alert_fire = any_bullish_flag_vis or any_bearish_flag_vis
+
+if na(alert_bar_time) or time != alert_bar_time
+    alert_bar_time      := time
+    alert_trigger_price := na
+    prev_entry_fire     := false
+
+bool fire_edge = entry_alert_fire and not prev_entry_fire
+
+if fire_edge and na(alert_trigger_price)
+    alert_trigger_price := close
+
+prev_entry_fire := entry_alert_fire
+
+string entry_dir =
+     bullish_dark_vis      ? (is_ltf_15 ? 'BULL ENTRY+' : 'BUY+')  :
+     bullish_light_vis     ? (is_ltf_15 ? 'BULL ENTRY'  : 'BUY')   :
+     bullish_reversal_vis  ? '⚠BUY'  :
+     bearish_dark_vis      ? (is_ltf_15 ? 'BEAR ENTRY+' : 'SELL+') :
+     bearish_light_vis     ? (is_ltf_15 ? 'BEAR ENTRY'  : 'SELL')  :
+     bearish_reversal_vis  ? '⚠SELL' :
+     'NONE'
+
+
+alert_freq = alert.freq_once_per_bar
+if alert_freq_opt == 'Every Tick'
+    alert_freq := alert.freq_all
+else if alert_freq_opt == 'Once Per Bar'
+    alert_freq := alert.freq_once_per_bar
+else
+    alert_freq := alert.freq_once_per_bar_close
+
+bool is_close_mode = alert_freq_opt == 'Once Per Bar Close'
+
+bool do_alert =
+     is_close_mode ? (entry_alert_fire and barstate.isconfirmed) : fire_edge
+
+if do_alert
+    int ts = is_close_mode ? time_close : (barstate.isrealtime ? timenow : time)
+
+    float px = is_close_mode ? close : alert_trigger_price
+    string time_txt  = f_ts(ts)
+    string price_txt = str.tostring(px, format.mintick)
+    string msg       = "ICC " + entry_dir + " @ " + price_txt + " " + time_txt
+
+    alert(msg, alert_freq)
+
+// Edge detection for correction start
+var bool prev_correction_phase = false
+bool entered_correction = correction_phase and not prev_correction_phase
+prev_correction_phase := correction_phase
+
+alertcondition(
+     entered_correction,
+     title   = "ICC Phase: Entered Correction",
+     message = "ICC ENTERED CORRECTION | {{ticker}} {{interval}} | Close={{close}}"
+
+)

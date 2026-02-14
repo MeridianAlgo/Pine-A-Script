@@ -1,0 +1,49 @@
+// This Pine Script® code is subject to the terms of the Mozilla Public License 2.0 at https://mozilla.org/MPL/2.0/
+// © TheUltimator5
+
+//@version=6
+indicator("Net Buy Volume [theUltimator5]", overlay=false, format=format.volume)
+
+// === Inputs ===
+dataType = input.string("Volume", title="Data Type", options=["Volume", "Dollars", "Delta"])
+priceCalc = input.string("Close", title="Price Calculation (for Dollars)", options=["Close", "Open", "(Open + Close) / 2", "(High + Low + Open + Close) / 4", "(High + Low) / 2"])
+
+footprint fp = request.footprint(10000, 100)
+float buy = na
+float sell = na
+float fpChange = 0
+float net = 0
+float netDollars = 0
+
+if not na(fp)
+    buy := fp.buy_volume()
+    sell := fp.sell_volume()
+    fpChange := buy - sell
+
+// === Calculate price based on user selection ===
+float price = switch priceCalc
+    "Close" => close
+    "Open" => open
+    "(Open + Close) / 2" => (open + close) / 2
+    "(High + Low + Open + Close) / 4" => (high + low + open + close) / 4
+    "(High + Low) / 2" => (high + low) / 2
+    => close  // default
+
+// === Safe initialization on bar 1 ===
+if bar_index == 1
+    net := 0
+    netDollars := 0
+else
+    net := net[1] + fpChange
+    netDollars := netDollars[1] + fpChange * price
+
+// === Delta color logic ===
+color deltaColor = fpChange >= 0 ? color.green : color.red
+
+// === Plot logic - separate plots for each type ===
+plot(dataType == "Volume" ? net : na, "Net Vol", color = color.aqua, style = plot.style_stepline, linewidth=2)
+plot(dataType == "Dollars" ? netDollars : na, "Net $", color = #ef78b7, style = plot.style_stepline, linewidth=2)
+plot(dataType == "Delta" ? fpChange : na, "Delta", color = deltaColor, style = plot.style_columns, linewidth=2)
+
+// === Reference line for Delta ===
+hline(dataType == "Delta" ? 0 : na, "Zero Line", color.gray, linestyle = hline.style_solid)

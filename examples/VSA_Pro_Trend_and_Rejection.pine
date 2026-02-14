@@ -1,0 +1,94 @@
+//@version=5
+strategy("VSA Pro: Trend and Rejection 🚀", overlay=true, initial_capital=100000, default_qty_type=strategy.percent_of_equity, default_qty_value=100, currency=currency.TRY, process_orders_on_close=true)
+
+// --- 1. AYARLAR ---
+group_trend = "Trend Ayarları (SuperTrend)"
+st_period = input.int(10, "ST Periyodu", group=group_trend)
+st_multiplier = input.float(3.0, "ST Çarpanı", step=0.1, group=group_trend)
+
+group_volatility = "Hacim & Volatilite (VSA)"
+atr_length = input.int(14, "ATR Uzunluğu", group=group_volatility)
+min_vol_mult = input.float(1.0, "Min. Hacim Eşiği (Ortalama)", group=group_volatility)
+effort_mult = input.float(2.0, "Yüksek Hacim (Görsel Ekleme)", step=0.1, group=group_volatility)
+result_mult = input.float(1.5, "Gövde Boyu (Görsel Momentum)", step=0.1, group=group_volatility)
+
+group_labels = "Etiket İsimleri"
+txt_start_long = input.string("AL", "Trend Başlangıcı (Long)", group=group_labels)
+txt_start_short = input.string("NAKİT", "Trend Bitişi (Sat)", group=group_labels)
+
+// --- 2. HESAPLAMALAR ---
+
+[superTrendVal, superTrendDir] = ta.supertrend(st_multiplier, st_period)
+
+isTrendNewGreen = superTrendDir == -1 and superTrendDir[1] == 1 
+isTrendNewRed = superTrendDir == 1 and superTrendDir[1] == -1 
+
+isGreenZone = superTrendDir == -1
+isRedZone = superTrendDir == 1
+
+atr = ta.atr(atr_length)
+avgVol = ta.sma(volume, 50)
+bodySize = math.abs(close - open)
+isGreenCandle = close > open
+isRedCandle = close < open
+
+relBodyATR = bodySize / atr 
+relVol = volume / avgVol
+isVolumeValid = volume > (avgVol * min_vol_mult)
+
+// --- 3. MANTIK VE SİNYALLER ---
+
+signal_AL = isTrendNewGreen
+signal_SAT = isTrendNewRed
+
+// VSA Fırsatları (Görünürlük için renkler ve mantık optimize edildi)
+cond_L1 = isGreenCandle and relBodyATR > result_mult
+cond_L2 = isRedCandle and relVol > effort_mult and relBodyATR < 0.8
+signal_EKLE_Gorsel = isGreenZone and (not isTrendNewGreen) and isVolumeValid and (cond_L1 or cond_L2)
+
+cond_S1 = isRedCandle and relBodyATR > result_mult
+cond_S2 = isGreenCandle and relVol > effort_mult and relBodyATR < 0.8
+signal_ZAYIFLIK_Gorsel = isRedZone and (not isTrendNewRed) and isVolumeValid and (cond_S1 or cond_S2)
+
+// --- 4. STRATEJİ EMİRLERİ ---
+
+if signal_AL
+    strategy.entry("Long_Giris", strategy.long, comment="AL %100")
+
+if signal_SAT
+    strategy.close_all(comment="NAKİTE GEÇ 🔴")
+
+// --- 5. GÖRSELLEŞTİRME ---
+
+lineColor = isGreenZone ? color.new(color.green, 0) : color.new(color.red, 0)
+plot(superTrendVal, "Trend Hattı", color = lineColor, linewidth=2)
+bgcolor(isGreenZone ? color.new(color.green, 90) : color.new(color.red, 90), title="Trend Bölgeleri")
+
+// 1. ANA İŞLEM ETİKETLERİ (AL - SAT)
+if signal_AL
+    label.new(bar_index, low, "🟢\n" + txt_start_long, style=label.style_label_up, color=color.green, textcolor=color.white, size=size.normal)
+
+if signal_SAT
+    label.new(bar_index, high, "🔴\n" + txt_start_short, style=label.style_label_down, color=color.red, textcolor=color.white, size=size.normal)
+
+// 2. VSA FIRSAT ETİKETLERİ (Görünürlük Artırıldı)
+// Ekleme Sinyali: Daha koyu Turkuaz (Teal) ve 'label_center' stili ile daha belirgin
+if signal_EKLE_Gorsel
+    label.new(bar_index, low * 0.998, "➕", style=label.style_label_center, color=color.new(#00f2ff, 0), textcolor=color.black, size=size.small, tooltip="Güçlü Alım/Ekleme")
+
+// Zayıflık Sinyali: Daha parlak Turuncu/Sarı ve 'label_center' stili
+if signal_ZAYIFLIK_Gorsel
+    label.new(bar_index, high * 1.002, "⚠️", style=label.style_label_center, color=color.new(#ffea00, 0), textcolor=color.black, size=size.small, tooltip="Trend Zayıf / Dikkat")
+
+// --- TABLO (LEGEND) ---
+var table legend = table.new(position.bottom_right, 2, 2, bgcolor=color.new(color.black, 60), frame_color=color.gray, border_width=1, force_overlay=true)
+
+if barstate.islast
+    table.cell(legend, 0, 0, "STRATEJİ DURUMU", text_color=color.yellow)
+    table.merge_cells(legend, 0, 0, 1, 0)
+    
+    string statusText = isGreenZone ? "ALIMDA (Yükseliş)" : "NAKİTTE (Düşüş)"
+    color statusColor = isGreenZone ? color.green : color.red
+    
+    table.cell(legend, 0, 1, statusText, text_color=statusColor, text_size=size.normal)
+    table.merge_cells(legend, 0, 1, 1, 1)

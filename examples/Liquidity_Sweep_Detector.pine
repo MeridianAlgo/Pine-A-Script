@@ -1,0 +1,416 @@
+// This Pine Script™ code is subject to the terms of the Mozilla Public License 2.0
+// https://mozilla.org/MPL/2.0/
+
+//@version=5
+indicator("Liquidity Sweep Detector [DefinedEdge]",
+     shorttitle = "Sweep Detector",
+     overlay = true,
+     max_boxes_count = 500,
+     max_labels_count = 500,
+     max_lines_count = 500)
+
+// ============================================================================
+//  LIQUIDITY SWEEP DETECTOR
+//  by DefinedEdge
+//
+//  Detects institutional liquidity zones and sweep events.
+//  When smart money hunts stops then reverses — that's a sweep.
+//
+//  ✦ Multi-zone tracking (not just the latest swing)
+//  ✦ Sweep detection: wick through + close back = liquidity grab
+//  ✦ Zone strength scoring based on tests & volume
+//  ✦ Post-sweep performance tracking
+//  ✦ Works on ANY ticker, ANY timeframe
+// ============================================================================
+
+// --- INPUTS ---
+
+string zoneGroup = "⚙️  Zone Detection"
+int    length    = input.int(8, "Pivot Lookback", minval=3, maxval=50, group=zoneGroup, tooltip="Higher = fewer but more significant swing points. Lower = more zones and more sweep signals.")
+int    maxZones  = input.int(8, "Max Active Zones", minval=2, maxval=15, group=zoneGroup, tooltip="How many unbroken zones to track per side")
+string zoneRange = input.string("Wick Rejection", "Zone Range", options=["Wick Rejection", "Full Bar"], group=zoneGroup)
+bool   showInvalidated = input.bool(false, "Show Invalidated Zones (faded)", group=zoneGroup)
+
+string sweepGroup = "🎯  Sweep Detection"
+bool   showSweeps  = input.bool(true, "Show Sweep Signals", group=sweepGroup)
+bool   showSweepBG = input.bool(true, "Highlight Sweep Bars", group=sweepGroup)
+
+string filterGroup = "🔬  Signal Quality Filters"
+bool   useTrendFilter  = input.bool(false, "Trend Filter (EMA)", group=filterGroup, tooltip="Only show bull sweeps above EMA, bear sweeps below EMA. With-trend sweeps = institutional reloading.")
+int    trendEmaLen     = input.int(50, "Trend EMA Length", minval=10, maxval=200, group=filterGroup)
+bool   useVolFilter    = input.bool(false, "Volume Spike Filter", group=filterGroup, tooltip="Sweep bar must have higher-than-average volume. Real liquidity grabs leave a volume footprint.")
+float  volMultiplier   = input.float(1.2, "Volume Multiplier", minval=1.0, maxval=5.0, step=0.1, group=filterGroup)
+int    volAvgLen       = input.int(20, "Volume Avg Length", minval=5, maxval=100, group=filterGroup)
+bool   useWickFilter   = input.bool(false, "Wick Rejection Filter", group=filterGroup, tooltip="Sweep bar must show strong rejection — big wick, small body relative to total range.")
+float  wickMinPct      = input.float(40, "Min Wick %", minval=20, maxval=90, step=5, group=filterGroup, tooltip="Minimum percentage of bar range that must be wick (rejection strength)")
+
+string vizGroup = "🎨  Visual Settings"
+bool   showDash    = input.bool(true, "Show Dashboard", group=vizGroup)
+string dashPos     = input.string("Top Right", "Dashboard Position", options=["Top Right", "Top Left", "Bottom Right", "Bottom Left"], group=vizGroup)
+int    dashSize    = input.int(2, "Dashboard Size (1-3)", minval=1, maxval=3, group=vizGroup)
+color  bullCol     = input.color(#00b8d4, "Support Zones", group=vizGroup)
+color  bearCol     = input.color(#ff6d00, "Resistance Zones", group=vizGroup)
+color  sweepCol    = input.color(#e040fb, "Sweep Signal", group=vizGroup)
+
+// --- ZONE ARRAYS ---
+
+// Resistance zones (from swing highs)
+var float[] rz_top    = array.new_float()
+var float[] rz_btm    = array.new_float()
+var int[]   rz_x1     = array.new_int()
+var bool[]  rz_broken = array.new_bool()
+var bool[]  rz_swept  = array.new_bool()
+var int[]   rz_tests  = array.new_int()
+var box[]   rz_box    = array.new_box()
+var line[]  rz_line   = array.new_line()
+
+// Support zones (from swing lows)
+var float[] sz_top    = array.new_float()
+var float[] sz_btm    = array.new_float()
+var int[]   sz_x1     = array.new_int()
+var bool[]  sz_broken = array.new_bool()
+var bool[]  sz_swept  = array.new_bool()
+var int[]   sz_tests  = array.new_int()
+var box[]   sz_box    = array.new_box()
+var line[]  sz_line   = array.new_line()
+
+// Sweep tracking
+var int totalBullSweeps = 0
+var int totalBearSweeps = 0
+
+// --- HELPER: Add zone ---
+
+addResistanceZone(float top, float btm, int x) =>
+    // Remove oldest if at max
+    if array.size(rz_top) >= maxZones
+        array.shift(rz_top)
+        array.shift(rz_btm)
+        array.shift(rz_x1)
+        array.shift(rz_broken)
+        array.shift(rz_swept)
+        array.shift(rz_tests)
+        box.delete(array.shift(rz_box))
+        line.delete(array.shift(rz_line))
+
+    array.push(rz_top, top)
+    array.push(rz_btm, btm)
+    array.push(rz_x1, x)
+    array.push(rz_broken, false)
+    array.push(rz_swept, false)
+    array.push(rz_tests, 0)
+    array.push(rz_box, box.new(x, top, x, btm, border_color=color.new(bearCol, 60), border_width=1, bgcolor=color.new(bearCol, 88), border_style=line.style_solid))
+    array.push(rz_line, line.new(x, top, x, top, color=bearCol, width=1, style=line.style_dotted))
+
+addSupportZone(float top, float btm, int x) =>
+    if array.size(sz_top) >= maxZones
+        array.shift(sz_top)
+        array.shift(sz_btm)
+        array.shift(sz_x1)
+        array.shift(sz_broken)
+        array.shift(sz_swept)
+        array.shift(sz_tests)
+        box.delete(array.shift(sz_box))
+        line.delete(array.shift(sz_line))
+
+    array.push(sz_top, top)
+    array.push(sz_btm, btm)
+    array.push(sz_x1, x)
+    array.push(sz_broken, false)
+    array.push(sz_swept, false)
+    array.push(sz_tests, 0)
+    array.push(sz_box, box.new(x, top, x, btm, border_color=color.new(bullCol, 60), border_width=1, bgcolor=color.new(bullCol, 88), border_style=line.style_solid))
+    array.push(sz_line, line.new(x, btm, x, btm, color=bullCol, width=1, style=line.style_dotted))
+
+// --- DETECT PIVOTS ---
+
+ph = ta.pivothigh(length, length)
+pl = ta.pivotlow(length, length)
+
+// New swing high → resistance zone
+if ph
+    _top = high[length]
+    _btm = zoneRange == "Wick Rejection" ? math.max(open[length], close[length]) : low[length]
+    addResistanceZone(_top, _btm, bar_index - length)
+
+// New swing low → support zone
+if pl
+    _top = zoneRange == "Wick Rejection" ? math.min(open[length], close[length]) : high[length]
+    _btm = low[length]
+    addSupportZone(_top, _btm, bar_index - length)
+
+// --- UPDATE ZONES EACH BAR ---
+
+var bool bullSweepNow = false
+var bool bearSweepNow = false
+bullSweepNow := false
+bearSweepNow := false
+
+// --- QUALITY FILTER CALCULATIONS ---
+
+float trendEma   = ta.ema(close, trendEmaLen)
+float volAvg     = ta.sma(volume, volAvgLen)
+float barRange   = high - low
+float bodySize   = math.abs(close - open)
+float wickPct    = barRange > 0 ? (barRange - bodySize) / barRange * 100 : 0
+bool  isAboveEma = close > trendEma
+bool  isBelowEma = close < trendEma
+bool  isVolSpike  = volume > volAvg * volMultiplier
+bool  isStrongWick = wickPct >= wickMinPct
+
+// Combined filter checks
+bullFilterOk = (not useTrendFilter or isAboveEma) and (not useVolFilter or isVolSpike) and (not useWickFilter or isStrongWick)
+bearFilterOk = (not useTrendFilter or isBelowEma) and (not useVolFilter or isVolSpike) and (not useWickFilter or isStrongWick)
+
+// Plot trend EMA for context (subtle)
+plot(useTrendFilter ? trendEma : na, "Trend EMA", color=color.new(color.white, 70), linewidth=1)
+
+// Update resistance zones
+if array.size(rz_top) > 0
+    for i = array.size(rz_top) - 1 to 0
+        _top    = array.get(rz_top, i)
+        _btm    = array.get(rz_btm, i)
+        _broken = array.get(rz_broken, i)
+        _swept  = array.get(rz_swept, i)
+        _tests  = array.get(rz_tests, i)
+        _bx     = array.get(rz_box, i)
+        _ln     = array.get(rz_line, i)
+
+        if not _broken
+            // Extend zone
+            box.set_right(_bx, bar_index + 5)
+            line.set_x2(_ln, bar_index + 5)
+
+            // Test: high touches zone but close stays below top
+            if high > _btm and high <= _top and close < _btm
+                array.set(rz_tests, i, _tests + 1)
+                // Strengthen visual
+                _newAlpha = math.max(70, 88 - _tests * 6)
+                box.set_bgcolor(_bx, color.new(bearCol, _newAlpha))
+
+            // Sweep: wick above top but close back below top + quality filters
+            if high > _top and close <= _top and not _swept and bearFilterOk
+                array.set(rz_swept, i, true)
+                bearSweepNow := true
+                totalBearSweeps += 1
+                // Visual: brighten zone border
+                box.set_border_color(_bx, sweepCol)
+                box.set_border_width(_bx, 2)
+                box.set_bgcolor(_bx, color.new(sweepCol, 80))
+
+            // Broken: close firmly above top
+            if close > _top and close[1] > _top
+                array.set(rz_broken, i, true)
+                if showInvalidated
+                    box.set_bgcolor(_bx, color.new(bearCol, 95))
+                    box.set_border_style(_bx, line.style_dashed)
+                    box.set_border_color(_bx, color.new(bearCol, 80))
+                    line.set_style(_ln, line.style_dashed)
+                    line.set_color(_ln, color.new(bearCol, 80))
+                else
+                    box.set_bgcolor(_bx, na)
+                    box.set_border_color(_bx, na)
+                    line.set_color(_ln, na)
+        else
+            // Broken zone — stop extending
+            if not showInvalidated
+                box.set_bgcolor(_bx, na)
+                box.set_border_color(_bx, na)
+                line.set_color(_ln, na)
+
+// Update support zones
+if array.size(sz_top) > 0
+    for i = array.size(sz_top) - 1 to 0
+        _top    = array.get(sz_top, i)
+        _btm    = array.get(sz_btm, i)
+        _broken = array.get(sz_broken, i)
+        _swept  = array.get(sz_swept, i)
+        _tests  = array.get(sz_tests, i)
+        _bx     = array.get(sz_box, i)
+        _ln     = array.get(sz_line, i)
+
+        if not _broken
+            // Extend zone
+            box.set_right(_bx, bar_index + 5)
+            line.set_x2(_ln, bar_index + 5)
+
+            // Test: low dips into zone but close stays above btm
+            if low < _top and low >= _btm and close > _top
+                array.set(sz_tests, i, _tests + 1)
+                _newAlpha = math.max(70, 88 - _tests * 6)
+                box.set_bgcolor(_bx, color.new(bullCol, _newAlpha))
+
+            // Sweep: wick below btm but close back above btm + quality filters
+            if low < _btm and close >= _btm and not _swept and bullFilterOk
+                array.set(sz_swept, i, true)
+                bullSweepNow := true
+                totalBullSweeps += 1
+                box.set_border_color(_bx, sweepCol)
+                box.set_border_width(_bx, 2)
+                box.set_bgcolor(_bx, color.new(sweepCol, 80))
+
+            // Broken: close firmly below btm
+            if close < _btm and close[1] < _btm
+                array.set(sz_broken, i, true)
+                if showInvalidated
+                    box.set_bgcolor(_bx, color.new(bullCol, 95))
+                    box.set_border_style(_bx, line.style_dashed)
+                    box.set_border_color(_bx, color.new(bullCol, 80))
+                    line.set_style(_ln, line.style_dashed)
+                    line.set_color(_ln, color.new(bullCol, 80))
+                else
+                    box.set_bgcolor(_bx, na)
+                    box.set_border_color(_bx, na)
+                    line.set_color(_ln, na)
+        else
+            if not showInvalidated
+                box.set_bgcolor(_bx, na)
+                box.set_border_color(_bx, na)
+                line.set_color(_ln, na)
+
+// --- SWEEP SIGNALS ---
+
+// Plot sweep signals
+plotshape(showSweeps and bullSweepNow, "Bull Sweep", shape.triangleup, location.belowbar, sweepCol, size=size.small)
+plotshape(showSweeps and bearSweepNow, "Bear Sweep", shape.triangledown, location.abovebar, sweepCol, size=size.small)
+
+// Highlight sweep bars
+bgcolor(showSweepBG and (bullSweepNow or bearSweepNow) ? color.new(sweepCol, 85) : na, title="Sweep Bar Highlight")
+
+// Small labels on sweeps
+if showSweeps and bullSweepNow
+    label.new(bar_index, low, "SWEEP", style=label.style_label_up, color=color.new(sweepCol, 20), textcolor=color.white, size=size.tiny)
+
+if showSweeps and bearSweepNow
+    label.new(bar_index, high, "SWEEP", style=label.style_label_down, color=color.new(sweepCol, 20), textcolor=color.white, size=size.tiny)
+
+// --- COUNT ACTIVE ZONES ---
+
+int activeResist  = 0
+int activeSup     = 0
+int sweptResist   = 0
+int sweptSup      = 0
+
+if array.size(rz_broken) > 0
+    for i = 0 to array.size(rz_broken) - 1
+        if not array.get(rz_broken, i)
+            activeResist += 1
+        if array.get(rz_swept, i)
+            sweptResist += 1
+
+if array.size(sz_broken) > 0
+    for i = 0 to array.size(sz_broken) - 1
+        if not array.get(sz_broken, i)
+            activeSup += 1
+        if array.get(sz_swept, i)
+            sweptSup += 1
+
+// --- NEAREST ZONE DISTANCE ---
+
+float nearestResist = na
+float nearestSupport = na
+
+if array.size(rz_top) > 0
+    for i = 0 to array.size(rz_top) - 1
+        if not array.get(rz_broken, i)
+            _dist = array.get(rz_btm, i) - close
+            if _dist > 0 and (na(nearestResist) or _dist < nearestResist)
+                nearestResist := _dist
+
+if array.size(sz_btm) > 0
+    for i = 0 to array.size(sz_btm) - 1
+        if not array.get(sz_broken, i)
+            _dist = close - array.get(sz_top, i)
+            if _dist > 0 and (na(nearestSupport) or _dist < nearestSupport)
+                nearestSupport := _dist
+
+float nearResistPct = not na(nearestResist) ? nearestResist / close * 100 : na
+float nearSupPct    = not na(nearestSupport) ? nearestSupport / close * 100 : na
+
+// --- DASHBOARD ---
+
+dashPosTV = switch dashPos
+    "Top Right"    => position.top_right
+    "Top Left"     => position.top_left
+    "Bottom Right" => position.bottom_right
+    "Bottom Left"  => position.bottom_left
+
+textTitle = switch dashSize
+    1 => size.normal
+    2 => size.large
+    3 => size.huge
+
+textLabel = switch dashSize
+    1 => size.small
+    2 => size.normal
+    3 => size.large
+
+textValue = switch dashSize
+    1 => size.normal
+    2 => size.large
+    3 => size.huge
+
+var table dash = table.new(dashPosTV, 3, 9,
+     bgcolor = color.new(#0a0e17, 5),
+     border_color = color.new(#1e2a3a, 0),
+     border_width = 2,
+     frame_color = color.new(#1e2a3a, 0),
+     frame_width = 3)
+
+if showDash and barstate.islast
+    // Title
+    table.cell(dash, 0, 0, "🎯 SWEEP DETECTOR", text_color=color.white, text_size=textTitle, bgcolor=color.new(sweepCol, 40), text_halign=text.align_center)
+    table.merge_cells(dash, 0, 0, 2, 0)
+
+    // Active zones
+    table.cell(dash, 0, 1, "ZONES", text_color=color.new(color.white, 40), text_size=textLabel, bgcolor=color.new(#0d1117, 0))
+    table.cell(dash, 1, 1, str.tostring(activeResist) + " 🔴", text_color=bearCol, text_size=textValue, bgcolor=color.new(#0d1117, 0), text_halign=text.align_center)
+    table.cell(dash, 2, 1, str.tostring(activeSup) + " 🟢", text_color=bullCol, text_size=textValue, bgcolor=color.new(#0d1117, 0), text_halign=text.align_center)
+
+    // Nearest resistance
+    string nrText = not na(nearResistPct) ? str.tostring(nearResistPct, "#.##") + "% away" : "— none —"
+    color  nrCol  = not na(nearResistPct) ? (nearResistPct < 1 ? bearCol : nearResistPct < 3 ? color.new(bearCol, 40) : color.new(color.white, 40)) : color.new(color.white, 60)
+    table.cell(dash, 0, 2, "RESIST", text_color=color.new(color.white, 40), text_size=textLabel, bgcolor=color.new(#0d1117, 0))
+    table.cell(dash, 1, 2, nrText, text_color=nrCol, text_size=textValue, bgcolor=color.new(#0d1117, 0), text_halign=text.align_center)
+    table.merge_cells(dash, 1, 2, 2, 2)
+
+    // Nearest support
+    string nsText = not na(nearSupPct) ? str.tostring(nearSupPct, "#.##") + "% away" : "— none —"
+    color  nsCol  = not na(nearSupPct) ? (nearSupPct < 1 ? bullCol : nearSupPct < 3 ? color.new(bullCol, 40) : color.new(color.white, 40)) : color.new(color.white, 60)
+    table.cell(dash, 0, 3, "SUPPORT", text_color=color.new(color.white, 40), text_size=textLabel, bgcolor=color.new(#0d1117, 0))
+    table.cell(dash, 1, 3, nsText, text_color=nsCol, text_size=textValue, bgcolor=color.new(#0d1117, 0), text_halign=text.align_center)
+    table.merge_cells(dash, 1, 3, 2, 3)
+
+    // Sweep count
+    table.cell(dash, 0, 4, "SWEEPS", text_color=color.new(color.white, 40), text_size=textLabel, bgcolor=color.new(#0d1117, 0))
+    table.cell(dash, 1, 4, "▼ " + str.tostring(totalBearSweeps), text_color=bearCol, text_size=textValue, bgcolor=color.new(#0d1117, 0), text_halign=text.align_center)
+    table.cell(dash, 2, 4, "▲ " + str.tostring(totalBullSweeps), text_color=bullCol, text_size=textValue, bgcolor=color.new(#0d1117, 0), text_halign=text.align_center)
+
+    // Bias — count-based
+    string biasText = totalBullSweeps > totalBearSweeps ? "🟢 BULLISH BIAS" : totalBearSweeps > totalBullSweeps ? "🔴 BEARISH BIAS" : "⚪ NEUTRAL"
+    color biasBG = totalBullSweeps > totalBearSweeps ? color.new(bullCol, 80) : totalBearSweeps > totalBullSweeps ? color.new(bearCol, 80) : color.new(color.gray, 80)
+    table.cell(dash, 0, 5, biasText, text_color=color.white, text_size=textValue, bgcolor=biasBG, text_halign=text.align_center)
+    table.merge_cells(dash, 0, 5, 2, 5)
+
+    // Filter status
+    string tF = useTrendFilter  ? "✅ Trend" : "❌ Trend"
+    string vF = useVolFilter    ? "✅ Vol"   : "❌ Vol"
+    string wF = useWickFilter   ? "✅ Wick"  : "❌ Wick"
+    int filtersOn = (useTrendFilter ? 1 : 0) + (useVolFilter ? 1 : 0) + (useWickFilter ? 1 : 0)
+    color filterBG = filtersOn == 3 ? color.new(#00e676, 85) : filtersOn >= 1 ? color.new(color.yellow, 85) : color.new(#ff1744, 85)
+    table.cell(dash, 0, 6, "FILTERS", text_color=color.new(color.white, 40), text_size=textLabel, bgcolor=color.new(#0d1117, 0))
+    table.cell(dash, 1, 6, tF + "  " + vF + "  " + wF, text_color=color.new(color.white, 30), text_size=textLabel, bgcolor=filterBG, text_halign=text.align_center)
+    table.merge_cells(dash, 1, 6, 2, 6)
+
+    // Sample info
+    table.cell(dash, 0, 7, "Based on " + str.tostring(totalBullSweeps + totalBearSweeps) + " sweeps detected", text_color=color.new(color.white, 65), text_size=size.tiny, bgcolor=color.new(#0d1117, 0), text_halign=text.align_center)
+    table.merge_cells(dash, 0, 7, 2, 7)
+
+    // Ticker + Footer
+    table.cell(dash, 0, 8, "⚡ DefinedEdge — Sweep Detector  •  " + syminfo.ticker + " • " + timeframe.period, text_color=color.new(color.white, 60), text_size=size.small, bgcolor=color.new(#0d1117, 0), text_halign=text.align_center)
+    table.merge_cells(dash, 0, 8, 2, 8)
+
+// --- ALERTS ---
+
+alertcondition(bullSweepNow, "🟢 Bullish Sweep", "Sweep Detector: Bullish liquidity sweep detected! Smart money grabbed stops below support.")
+alertcondition(bearSweepNow, "🔴 Bearish Sweep", "Sweep Detector: Bearish liquidity sweep detected! Smart money grabbed stops above resistance.")
+alertcondition(bullSweepNow or bearSweepNow, "Any Sweep", "Sweep Detector: Liquidity sweep detected! Check chart for direction.")

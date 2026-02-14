@@ -1,0 +1,72 @@
+//@version=6
+indicator("CE 1M + 3M Buy, Sell, Hold", overlay = true)
+
+// =====================================================
+// Fixed Settings
+// =====================================================
+
+length = 7
+mult   = 2.0
+useClose = true
+
+// =====================================================
+// Chandelier Direction Function
+// =====================================================
+
+f_ce_dir(_length, _mult, _useClose) =>
+    atr = _mult * ta.atr(_length)
+
+    longStop = (_useClose ? ta.highest(close, _length) : ta.highest(high, _length)) - atr
+    longStopPrev = nz(longStop[1], longStop)
+    longStop := close[1] > longStopPrev ? math.max(longStop, longStopPrev) : longStop
+
+    shortStop = (_useClose ? ta.lowest(close, _length) : ta.lowest(low, _length)) + atr
+    shortStopPrev = nz(shortStop[1], shortStop)
+    shortStop := close[1] < shortStopPrev ? math.min(shortStop, shortStopPrev) : shortStop
+
+    var int dir = 1
+    dir := close > shortStopPrev ? 1 : close < longStopPrev ? -1 : dir
+    dir
+
+// =====================================================
+// Timeframe Directions
+// =====================================================
+
+dir_1m = f_ce_dir(length, mult, useClose)
+
+dir_3m = request.security(
+     syminfo.tickerid,
+     "3",
+     f_ce_dir(length, mult, useClose),
+     barmerge.gaps_off,
+     barmerge.lookahead_off)
+
+// =====================================================
+// State Logic
+// =====================================================
+
+int state = 0
+//  1  = BUY
+// -1  = SELL
+//  0  = HOLD
+
+state := dir_3m == 1 and dir_1m == 1  ?  1 :
+         dir_3m == -1 and dir_1m == -1 ? -1 : 0
+
+// Only trigger when state changes
+buySignal  = state == 1  and state[1] != 1
+sellSignal = state == -1 and state[1] != -1
+holdSignal = state == 0  and state[1] != 0
+
+// =====================================================
+// Plot
+// =====================================================
+
+plotshape(buySignal,  title="BUY",  location=location.belowbar,
+          color=color.green, style=shape.labelup, text="BUY")
+
+plotshape(sellSignal, title="SELL", location=location.abovebar,
+          color=color.red, style=shape.labeldown, text="SELL")
+
+plotshape(holdSignal, title="HOLD", location=location.bottom,
+          color=color.yellow, style=shape.labelup, text="HOLD")

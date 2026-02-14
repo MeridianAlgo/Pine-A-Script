@@ -6,12 +6,14 @@ const TokenType = {
   // Keywords
   STUDY: 'STUDY',
   STRATEGY: 'STRATEGY',
+  INDICATOR: 'INDICATOR',
   VERSION: 'VERSION',
   VAR: 'VAR',
   VARIP: 'VARIP',
   IF: 'IF',
   ELSE: 'ELSE',
   FOR: 'FOR',
+  BY: 'BY',
   IN: 'IN',
   FROM: 'FROM',
   TO: 'TO',
@@ -31,13 +33,6 @@ const TokenType = {
   AND: 'AND',
   OR: 'OR',
   NOT: 'NOT',
- plotshape: 'plotshape',
-  plot: 'plot',
-  plotbar: 'plotbar',
-  plotcandle: 'plotcandle',
-  bgcolor: 'bgcolor',
-  alert: 'alert',
-  strategy: 'strategy',
 
   // Identifiers
   IDENTIFIER: 'IDENTIFIER',
@@ -95,11 +90,12 @@ const TokenType = {
 };
 
 const KEYWORDS = new Set([
-  'study', 'strategy', 'version', 'var', 'varip',
+  'study', 'strategy', 'indicator', 'version', 'var', 'varip',
   'if', 'else', 'for', 'in', 'from', 'to', 'while', 'switch', 'case', 'default',
   'type', 'import', 'as',
   'break', 'continue', 'return', 'true', 'false', 'na',
-  'and', 'or', 'not'
+  'and', 'or', 'not',
+  'by'
 ]);
 
 class Token {
@@ -117,17 +113,15 @@ class Token {
 
 class Lexer {
   constructor(source) {
-    this.source = source.replace(/\r\n?/g, '\n');
+    this.source = source;
     this.pos = 0;
     this.line = 1;
     this.column = 0;
     this.currentChar = this.source[0] || null;
-
     this.indentStack = [0];
     this.pendingIndents = [];
-    this.atLineStart = true;
-
     this.groupDepth = 0;
+    this.sawDirectivePrefix = false; // Track if we just saw //@
   }
 
   readColorHex() {
@@ -182,6 +176,12 @@ class Lexer {
   }
 
   skipComments() {
+    // Check for directive-style comments like //@version=5
+    // These are not regular comments - they are directives
+    if (this.currentChar === '/' && this.peek(1) === '/' && this.peek(2) === '@') {
+      // Don't skip - let it be tokenized as a directive
+      return false;
+    }
     if (this.currentChar === '/' && this.peek(1) === '/') {
       while (this.currentChar && this.currentChar !== '\n') {
         this.advance();
@@ -198,6 +198,23 @@ class Lexer {
     while (this.currentChar && /[\d.]/.test(this.currentChar)) {
       value += this.currentChar;
       this.advance();
+    }
+
+    // Handle scientific notation (e.g., 1e-10, 1e6, 1.5e+3)
+    if (this.currentChar && (this.currentChar === 'e' || this.currentChar === 'E')) {
+      const nextChar = this.peek(1);
+      if (nextChar && (/\d/.test(nextChar) || nextChar === '+' || nextChar === '-')) {
+        value += this.currentChar; // add 'e' or 'E'
+        this.advance();
+        if (this.currentChar === '+' || this.currentChar === '-') {
+          value += this.currentChar;
+          this.advance();
+        }
+        while (this.currentChar && /\d/.test(this.currentChar)) {
+          value += this.currentChar;
+          this.advance();
+        }
+      }
     }
 
     return new Token(TokenType.NUMBER, value, this.line, startColumn);
@@ -253,8 +270,26 @@ class Lexer {
     }
 
     if (KEYWORDS.has(lowerValue)) {
+      // Allow variables/constants named VERSION/version in normal code.
+      // Only treat `version` as a keyword when it appears directive-like at column 0
+      // OR when it immediately follows a //@ directive prefix.
+      if (lowerValue === 'version' && startColumn !== 0 && !this.sawDirectivePrefix) {
+        return new Token(TokenType.IDENTIFIER, value, this.line, startColumn);
+      }
+      // Reset the directive flag after reading any identifier
+      this.sawDirectivePrefix = false;
+      // Some words like `strategy`/`indicator` are both:
+      // - statement starters: `strategy(...)`, `indicator(...)`
+      // - namespaces in expressions: `strategy.percent_of_equity`
+      // Only treat them as keywords at statement start.
+      if ((lowerValue === 'strategy' || lowerValue === 'indicator') && startColumn !== 0) {
+        return new Token(TokenType.IDENTIFIER, value, this.line, startColumn);
+      }
+
       const keywordType = lowerValue.toUpperCase();
-      return new Token(TokenType[keywordType] || keywordType, value, this.line, startColumn);
+      const tt = TokenType[keywordType];
+      // Only treat as keyword if we have an explicit TokenType for it.
+      if (tt) return new Token(tt, value, this.line, startColumn);
     }
 
     return new Token(TokenType.IDENTIFIER, value, this.line, startColumn);
@@ -263,6 +298,12 @@ class Lexer {
   readOperator() {
     const startColumn = this.column;
     const char = this.currentChar;
+
+    // Normalize some Unicode variants seen in copy/pasted scripts.
+    // Treat common dash characters as '-'.
+    if (char === '–' || char === '—' || char === '−') {
+      this.currentChar = '-';
+    }
 
     switch (char) {
       case ';':
@@ -436,6 +477,7 @@ class Lexer {
       const contTypes = new Set([
         TokenType.PLUS, TokenType.MINUS, TokenType.MULTIPLY, TokenType.DIVIDE, TokenType.MODULO,
         TokenType.AND_AND, TokenType.OR_OR, TokenType.BITWISE_AND, TokenType.BITWISE_OR, TokenType.BITWISE_XOR,
+        TokenType.AND, TokenType.OR, TokenType.NOT,
         TokenType.EQUAL, TokenType.PLUS_EQUAL, TokenType.MINUS_EQUAL, TokenType.MULTIPLY_EQUAL, TokenType.DIVIDE_EQUAL, TokenType.COLON_EQUAL,
         TokenType.COMMA, TokenType.DOT, TokenType.QUESTION, TokenType.COLON,
       ]);
@@ -451,6 +493,16 @@ class Lexer {
     while (this.currentChar !== null) {
       if (this.pendingIndents.length > 0) {
         flushPendingIndents();
+        continue;
+      }
+
+      // Handle directive-style comments like //@version=5
+      if (this.currentChar === '/' && this.peek(1) === '/' && this.peek(2) === '@') {
+        // Skip the //@ prefix and tokenize the rest as normal
+        this.advance();
+        this.advance();
+        this.advance();
+        this.sawDirectivePrefix = true;
         continue;
       }
 

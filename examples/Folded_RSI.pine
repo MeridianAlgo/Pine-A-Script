@@ -1,0 +1,224 @@
+// This Pine Script® code is subject to the terms of the Mozilla Public License 2.0 at https://mozilla.org/MPL/2.0/
+// © Cmo22
+
+//@version=5
+indicator("Folded RSI (custom RSI, phase-invariant)", shorttitle="Folded RSI", overlay=false, max_lines_count=500, max_labels_count=500)
+
+
+
+//──────────────────────────────────────────────────────────────────────────────
+// Inputs
+//──────────────────────────────────────────────────────────────────────────────
+grp_cycle = "Cycle / Correlation"
+cycle_len     = input.int(40,  "Cycle Window (corr length)", group=grp_cycle, minval=10, maxval=600,
+     tooltip="Bars used to estimate correlation with a pure sine/cos basis.")
+target_period = input.int(20,  "Target Sine Period (bars)", group=grp_cycle, minval=6, maxval=300,
+     tooltip="Assumed dominant cycle length to correlate against.")
+use_harmonic2 = input.bool(true,"Also test 2× harmonic and keep the stronger", group=grp_cycle)
+
+grp_map   = "Correlation → RSI Length Mapping"
+len_min   = input.int(5,   "RSI Length Min", group=grp_map, minval=2, maxval=300)
+len_max   = input.int(33,  "RSI Length Max", group=grp_map, minval=5, maxval=600)
+map_power = input.float(1.0,"Nonlinearity (power)", group=grp_map, minval=0.25, maxval=4.0,
+     tooltip=">1 emphasizes strong correlations; <1 flattens the response.")
+invert_map= input.bool(false, "Invert mapping (strong cycle → longer length)", group=grp_map)
+
+grp_src   = "Source / Smoothing"
+src       = input.source(close, "Price Source", group=grp_src)
+smooth_rsi= input.int(3, "Post Smoothing (EMA on RSI)", group=grp_src, minval=1, maxval=50)
+
+//──────────────────────────────────────────────────────────────────────────────
+// Utilities
+//──────────────────────────────────────────────────────────────────────────────
+f_clamp_float(x, lo, hi) =>
+    x < lo ? lo : x > hi ? hi : x
+
+// Pearson correlation (custom) between series X (price) and on-the-fly synthetic Y basis over `win`
+// Y_k = sin(2π * t/P + phase), implemented by separate sin/cos bases (phase handled elsewhere)
+f_corr_with_basis(_src, int win, int period, bool cosBasis) =>
+    // Accumulate sums over windowx
+    var float sumx  = 0.0
+    var float sumy  = 0.0
+    var float sumx2 = 0.0
+    var float sumy2 = 0.0
+    var float sumxy = 0.0
+    sumx  := 0, sumy := 0, sumx2 := 0, sumy2 := 0, sumxy := 0
+    // prevent degenerate values
+    _win = math.max(win, 2)
+    _per = math.max(period, 2)
+    for i = 0 to _win - 1
+        x  = _src[i]
+        // time coordinate (integer bars ago)
+        t  = (bar_index - i)
+        // angle = 2π * t / period
+        ang = (2.0 * math.pi) * (t % _per) / _per
+        y  = cosBasis ? math.cos(ang) : math.sin(ang)
+        sumx  += x
+        sumy  += y
+        sumx2 += x * x
+        sumy2 += y * y
+        sumxy += x * y
+    n      = _win
+    num    = (n * sumxy) - (sumx * sumy)
+    denL   = (n * sumx2) - (sumx * sumx)
+    denR   = (n * sumy2) - (sumy * sumy)
+    den    = math.sqrt(math.max(denL, 0.0) * math.max(denR, 0.0))
+    corr   = den == 0.0 ? 0.0 : f_clamp_float(num / den, -1.0, 1.0)
+    corr
+
+// Phase-invariant correlation magnitude vs a pure cycle of `period` (uses sin & cos quadrature)
+f_corr_mag_phase_free(_src, int win, int period) =>
+    c_sin = f_corr_with_basis(_src, win, period, false)
+    c_cos = f_corr_with_basis(_src, win, period, true)
+    // Magnitude of the 2D correlation vector
+    mag   = math.sqrt(c_sin * c_sin + c_cos * c_cos)
+    // Clamp to [0,1] (can slightly exceed 1 from numeric noise)
+    f_clamp_float(mag, 0.0, 1.0)
+
+// Map correlation magnitude → current RSI length
+f_corr_to_len(float mag, int lenLo, int lenHi, float pow, bool invert) =>
+    m = math.pow(mag, pow)
+    // Stronger cycle → shorter length (unless inverted)
+    w = invert ? m : 1.0 - m
+    L = lenLo + (lenHi - lenLo) * f_clamp_float(w, 0.0, 1.0)
+    // keep within bounds and at least 1
+    f_clamp_float(L, lenLo, lenHi)
+
+// Custom Wilder-style RSI with dynamic alpha = 1/len_t (no ta.rsi used)
+f_rsi_custom(series float _src, series float len_t) =>
+    // change
+    chg = _src - _src[1]
+    up  = math.max(chg, 0.0)
+    dn  = math.max(-chg, 0.0)
+
+    // dynamic smoothing factors
+    L    = math.max(len_t, 1.0)
+    a    = 1.0 / L
+
+    var float avgU = na
+    var float avgD = na
+
+    // seed on first run
+    avgU := na(avgU[1]) ? up : (1.0 - a) * avgU[1] + a * up
+    avgD := na(avgD[1]) ? dn : (1.0 - a) * avgD[1] + a * dn
+
+    rs  = avgD <= 1e-10 ? 1e6 : avgU / avgD
+    rsi = 100.0 - 100.0 / (1.0 + rs)
+    f_clamp_float(rsi, 0.0, 100.0)
+
+// Simple EMA (custom) for optional smoothing (to avoid using ta.ema)
+f_ema_custom(x, int len) =>
+    L = math.max(len, 1)
+    a = 2.0 / (L + 1.0)
+    var float s = na
+    s := na(s[1]) ? x : (1 - a) * s[1] + a * x
+    s
+
+//──────────────────────────────────────────────────────────────────────────────
+// Core logic
+//──────────────────────────────────────────────────────────────────────────────
+
+// Use returns (demeaned) for correlation so level shifts don't dominate
+ret = math.log(src) - math.log(src[1])
+ret := na(ret) ? 0.0 : ret
+
+// Evaluate correlation magnitude at target period (and 2× if enabled), keep stronger
+mag1  = f_corr_mag_phase_free(ret, cycle_len, target_period)
+mag2  = use_harmonic2 ? f_corr_mag_phase_free(ret, cycle_len, target_period * 2) : 0.0
+mag   = use_harmonic2 ? math.max(mag1, mag2) : mag1
+
+// Convert correlation → adaptive RSI length
+len_now_f = f_corr_to_len(mag, len_min, len_max, map_power, invert_map)
+
+// Compute custom RSI with dynamic length
+rsi_raw = f_rsi_custom(src, len_now_f)
+
+// Optional smoothing
+rsi_sm  = smooth_rsi > 1 ? f_ema_custom(rsi_raw, smooth_rsi) : rsi_raw
+
+//──────────────────────────────────────────────────────────────────────────────
+// Plots
+//──────────────────────────────────────────────────────────────────────────────
+
+
+plot(rsi_sm,  "Folded RSI",  linewidth=2)
+plot(rsi_raw, "Raw (no smooth)", color=color.new(color.gray, 70))
+
+// Show diagnostics
+
+// Table readout
+var table t = table.new(position=position.top_right, columns=1, rows=4, border_width=1)
+if barstate.islast
+    table.cell(t, 0, 0, "Folded RSI: " + str.tostring(rsi_sm, "#.00"))
+    table.cell(t, 0, 1, "Corr Mag:   " + str.tostring(mag * 100, "#.0") + "%")
+    table.cell(t, 0, 2, "Len Now:    " + str.tostring(len_now_f, "#.00"))
+    table.cell(t, 0, 3, "Best Period: " + str.tostring(use_harmonic2 and mag2 > mag1 ? target_period * 2 : target_period))
+
+// -- 1. Define Levels & Color Palette --
+float ob_level = 70.0
+float os_level = 30.0
+float mid_level = 50.0
+
+// Color Theory: Hot (Red) for OB, Cool (Green) for OS, Neutral (Blue) for main
+color c_rsi_main   = color.new(#2196F3, 0)  // A strong, clean blue (Material Blue 500)
+color c_rsi_ob     = color.new(#F44336, 0)  // A strong, "hot" red (Material Red 500)
+color c_rsi_os     = color.new(#4CAF50, 0)  // A clear, "cool" green (Material Green 500)
+
+color c_ob_line    = color.new(c_rsi_ob, 75)
+color c_os_line    = color.new(c_rsi_os, 75)
+color c_mid_line   = color.new(color.gray, 85)
+
+// Gradient fill colors (start = light, end = saturated)
+color c_ob_fill_s  = color.new(c_rsi_ob, 92)
+color c_ob_fill_e  = color.new(c_rsi_ob, 70)
+color c_os_fill_s  = color.new(c_rsi_os, 92)
+color c_os_fill_e  = color.new(c_rsi_os, 70)
+
+// -- 2. Draw Reference Lines (Subtle) --
+hOb = hline(ob_level, "Overbought", color=c_ob_line, linestyle=hline.style_dashed, linewidth=1)
+hOs = hline(os_level, "Oversold",   color=c_os_line, linestyle=hline.style_dashed, linewidth=1)
+h50 = hline(mid_level, "Midline",   color=c_mid_line, linestyle=hline.style_dotted, linewidth=1)
+
+// -- 3. Draw Main RSI Plot with Gradient Coloring --
+float rsi_val = f_clamp_float(rsi_sm, 0, 100) // Clamp for gradient safety
+
+// Calculate dynamic color for the RSI line itself
+// Fades from Blue -> Red (70-90) and Blue -> Green (30-10)
+color rsi_line_color = rsi_val > ob_level ? color.from_gradient(rsi_val, ob_level, 90, c_rsi_main, c_rsi_ob)
+     : rsi_val < os_level ? color.from_gradient(rsi_val, 10, os_level, c_rsi_os, c_rsi_main)
+     : c_rsi_main
+
+plot_rsi = plot(rsi_sm, "Folded RSI", color=rsi_line_color, linewidth=2)
+
+// -- 4. Draw Gradient Fills for OB/OS Zones --
+// This fills the area *between* the RSI line and the OB/OS levels
+
+// Calculate gradient fill colors (gets more saturated further from 50)
+color ob_fill_color = color.from_gradient(rsi_val, ob_level, 100, c_ob_fill_s, c_ob_fill_e)
+color os_fill_color = color.from_gradient(rsi_val, 0, os_level, c_os_fill_e, c_os_fill_s) // Fades *towards* the line
+
+
+
+rsiPlot = plot(rsi_raw, "RSI", color=#7E57C2)
+rsismooth = plot(rsi_sm, " RSI Smooth", color=color.fuchsia)
+
+rsiUpperBand = hline(70, "RSI Upper Band", color=#787B86)
+midline = hline(50, "RSI Middle Band", color=color.new(#787B86, 50))
+rsiLowerBand = hline(30, "RSI Lower Band", color=#787B86)
+fill(rsiUpperBand, rsiLowerBand, color=color.rgb(126, 87, 194, 90), title="RSI Background Fill")
+midLinePlot = plot(50, color = na, editable = false, display = display.none)
+fill(rsiPlot, midLinePlot, 100, 70, top_color = color.new(color.green, 0), bottom_color = color.new(color.green, 100),  title = "Overbought Gradient Fill")
+fill(rsiPlot, midLinePlot, 30,  0,  top_color = color.new(color.red, 100), bottom_color = color.new(color.red, 0),      title = "Oversold Gradient Fill")
+
+
+
+// --- Indicator Calculations (RSI oscillator) ---
+rsi = rsi_sm
+
+// Optional: show oscillator & levels
+plot(rsi, title="RSI", linewidth=2)
+hline(50,  'Mid', color=color.new(color.gray, 70))
+
+
+plotshape(rsi > 70, "OB", shape.labeldown, location.top, color.red, size=size.small)
+plotshape(rsi < 30, "OS", shape.labelup, location.bottom, color.green, size=size.small)

@@ -1,0 +1,297 @@
+//@Metrify
+//https://creativecommons.org/licenses/by-nc-sa/4.0/
+
+//@version=6
+indicator('Automatic Trendline [Metrify]', 'Metrify Automatic Trendlines', overlay = true, max_bars_back = 5000, max_lines_count = 20)
+
+//--------------------------------------------------------------------------------------------------
+// Inputs
+//--------------------------------------------------------------------------------------------------
+string GROUP_ENGINE = 'Engine'
+string GROUP_FILTER = 'Quality Filters'
+string GROUP_VISUAL = 'Visual'
+
+atrLenTooltip = 'Controls how ATR is calculated.\n\nATR measures average recent candle movement (volatility).\nHigher value = smoother, slower adaptation.\nLower value = faster, more reactive adaptation.'
+breakTolTooltip = 'How far price must move through a trendline before the script treats it as a real break.\nHigher value reduces false breaks from small wicks/noise.'
+maxRelevanceTooltip = 'Keeps selected trendlines close enough to current price.\n\nIf a candidate line is too far from current price (in ATR units), it is ignored.\nLower value = more actionable nearby lines.\nHigher value = allows farther/older lines.'
+
+pivotLen = input.int(10, 'Pivot Length', minval = 2, maxval = 120, group = GROUP_ENGINE)
+lookbackBars = input.int(1000, 'Lookback Bars', minval = 150, maxval = 4000, group = GROUP_ENGINE)
+atrLen = input.int(100, 'ATR Length', minval = 10, maxval = 500, group = GROUP_ENGINE, tooltip = atrLenTooltip)
+
+maxViolations = input.int(2, 'Max Violations', minval = 0, maxval = 6, group = GROUP_FILTER)
+touchTolATR = input.float(0.30, 'Touch Tolerance (ATR)', step = 0.05, minval = 0.05, maxval = 2.0, group = GROUP_FILTER)
+maxSlopeDeg = input.float(6.0, 'Max Slope Angle', step = 1.0, minval = 1.0, maxval = 30.0, group = GROUP_FILTER)
+maxRelevanceATR = input.float(8.0, 'Max Relevance Distance (ATR)', step = 0.5, minval = 1.0, maxval = 30.0, group = GROUP_FILTER, tooltip = maxRelevanceTooltip)
+
+extendBars = input.int(60, 'Line Extend (Bars)', minval = 10, maxval = 300, group = GROUP_VISUAL)
+lineWidth = input.int(2, 'Line Width', minval = 1, maxval = 4, group = GROUP_VISUAL)
+showFill = input.bool(true, 'Show Fill Between Lines', group = GROUP_VISUAL)
+supportColor = input.color(color.new(#20A56C, 0), 'Support Color', group = GROUP_VISUAL)
+resistColor = input.color(color.new(#C24545, 0), 'Resistance Color', group = GROUP_VISUAL)
+neutralColor = input.color(color.new(#607D8B, 0), 'Fill Base Color', group = GROUP_VISUAL)
+
+//--------------------------------------------------------------------------------------------------
+// Helpers
+//--------------------------------------------------------------------------------------------------
+FAST_LOAD_BUFFER_BARS = 100,BAR_SCAN_WINDOW = 250,BAR_SCAN_STEP = 5,minAnchorBars = 10,pivotMemory = 200,maxBarViolRatio = 1,minTouches = 2,breakTolATR = 0.6
+f_line_y(int x1, float y1, int x2, float y2, int x) =>
+    float dx = x2 - x1
+    dx == 0 ? y2 : y1 + (y2 - y1) * (x - x1) / dx
+
+f_store_pivot(array<int> idxArr, array<float> priceArr, int idx, float price, bool isLow, int mergeBars, int maxCount) =>
+    int sz = array.size(idxArr)
+    if sz == 0
+        array.unshift(idxArr, idx)
+        array.unshift(priceArr, price)
+    else
+        int latestIdx = array.get(idxArr, 0)
+        float latestPrice = array.get(priceArr, 0)
+        if idx > latestIdx
+            if idx - latestIdx <= mergeBars
+                bool replace = isLow ? price < latestPrice : price > latestPrice
+                if replace
+                    array.set(idxArr, 0, idx)
+                    array.set(priceArr, 0, price)
+            else
+                array.unshift(idxArr, idx)
+                array.unshift(priceArr, price)
+
+    while array.size(idxArr) > maxCount
+        array.pop(idxArr)
+        array.pop(priceArr)
+
+f_trim_lookback(array<int> idxArr, array<float> priceArr, int lbBars) =>
+    while array.size(idxArr) > 0
+        int oldestIdx = array.get(idxArr, array.size(idxArr) - 1)
+        if bar_index - oldestIdx > lbBars
+            array.pop(idxArr)
+            array.pop(priceArr)
+        else
+            break
+    0
+
+f_find_best_line(
+    array<int> idxArr,
+    array<float> priceArr,
+    bool support,
+    float atrValue,
+    int lbBars,
+    int minSpan,
+    int needTouches,
+    int allowViol,
+    float touchTolMult,
+    float breakTolMult,
+    float maxDeg,
+    float maxRelAtrMult,
+    int barWindow,
+    int sampleStep,
+    float maxBarBreakRatio
+) =>
+    bool bestValid = false
+    int bestX1 = na
+    float bestY1 = na
+    int bestX2 = na
+    float bestY2 = na
+    float bestScore = na
+
+    int n = array.size(idxArr)
+    float safeAtr = math.max(atrValue, syminfo.mintick)
+    float touchTol = safeAtr * touchTolMult
+    float breakTol = safeAtr * breakTolMult
+    float maxSlopeAtrPerBar = math.tan(maxDeg * math.pi / 180.0)
+    float maxRelDist = safeAtr * maxRelAtrMult
+
+    if n >= needTouches
+        float localBest = -1e10
+        for newer = 0 to n - 2 by 1
+            int p2Idx = array.get(idxArr, newer)
+            float p2Price = array.get(priceArr, newer)
+            if bar_index - p2Idx > lbBars
+                break
+
+            for older = newer + 1 to n - 1 by 1
+                int p1Idx = array.get(idxArr, older)
+                float p1Price = array.get(priceArr, older)
+                if bar_index - p1Idx > lbBars
+                    break
+
+                int span = p2Idx - p1Idx
+                if span >= minSpan
+                    float slope = (p2Price - p1Price) / span
+                    float slopeAtrPerBar = safeAtr > 0 ? math.abs(slope) / safeAtr : 0.0
+                    if slopeAtrPerBar <= maxSlopeAtrPerBar
+                        float yNow = p1Price + slope * (bar_index - p1Idx)
+                        if math.abs(close - yNow) <= maxRelDist
+                            int touches = 0
+                            int violations = 0
+                            float errorSum = 0.0
+                            int touchedPoints = 0
+
+                            int eligible = older + 1
+                            for k = 0 to eligible - 1 by 1
+                                int pIdx = array.get(idxArr, k)
+                                float pPrice = array.get(priceArr, k)
+                                float y = p1Price + slope * (pIdx - p1Idx)
+                                float dev = pPrice - y
+
+                                bool isTouch = math.abs(dev) <= touchTol
+                                if isTouch
+                                    touches := touches + 1
+                                    errorSum := errorSum + math.abs(dev)
+                                    touchedPoints := touchedPoints + 1
+
+                                bool isViolation = support ? dev < -breakTol : dev > breakTol
+                                if isViolation
+                                    violations := violations + 1
+
+                                int remaining = eligible - 1 - k
+                                if touches + remaining < needTouches
+                                    break
+                                if violations > allowViol
+                                    break
+
+                            bool brokenNow = support ? close < yNow - breakTol : close > yNow + breakTol
+                            if brokenNow
+                                violations := violations + 2
+
+                            if touches >= needTouches and violations <= allowViol
+                                float avgErr = touchedPoints > 0 ? errorSum / touchedPoints : touchTol
+                                float recency = 1.0 - math.min((bar_index - p2Idx) / (lbBars * 1.0), 1.0)
+                                float spanScore = math.min(span / (lbBars * 1.0), 1.0)
+                                float tightness = 1.0 - math.min(avgErr / touchTol, 1.0)
+                                float slopePenalty = maxSlopeAtrPerBar > 0 ? slopeAtrPerBar / maxSlopeAtrPerBar : 0.0
+
+                                float preScore = touches * 2.8
+                                preScore := preScore + recency * 1.2
+                                preScore := preScore + spanScore * 1.0
+                                preScore := preScore + tightness * 1.3
+                                preScore := preScore - violations * 2.2
+                                preScore := preScore - slopePenalty * 0.5
+
+                                if preScore > localBest
+                                    int scanLen = math.min(barWindow, bar_index - p1Idx)
+                                    int barSamples = 0
+                                    int barBreaks = 0
+                                    int maxSamples = scanLen / sampleStep + 1
+                                    bool scanRejected = false
+                                    int off = 0
+                                    while off <= scanLen
+                                        float yBar = p1Price + slope * (bar_index - off - p1Idx)
+                                        bool barBreak = support ? low[off] < yBar - breakTol : high[off] > yBar + breakTol
+                                        barSamples := barSamples + 1
+                                        if barBreak
+                                            barBreaks := barBreaks + 1
+
+                                        float minPossibleRatio = barBreaks / (maxSamples * 1.0)
+                                        if minPossibleRatio > maxBarBreakRatio
+                                            scanRejected := true
+                                            break
+
+                                        off := off + sampleStep
+
+                                    if not scanRejected
+                                        float barBreakRatio = barSamples > 0 ? barBreaks / (barSamples * 1.0) : 1.0
+                                        int finalViol = violations
+                                        if barBreakRatio > maxBarBreakRatio
+                                            finalViol := finalViol + allowViol + 1
+                                        else
+                                            finalViol := finalViol + int(math.floor(barBreakRatio * 2.0))
+
+                                        if finalViol <= allowViol
+                                            float score = preScore
+                                            score := score - (finalViol - violations) * 2.2
+                                            score := score - barBreakRatio * 2.0
+
+                                            if score > localBest
+                                                localBest := score
+                                                bestValid := true
+                                                bestX1 := p1Idx
+                                                bestY1 := p1Price
+                                                bestX2 := p2Idx
+                                                bestY2 := p2Price
+                                                bestScore := score
+
+    [bestValid, bestX1, bestY1, bestX2, bestY2, bestScore]
+
+//--------------------------------------------------------------------------------------------------
+// State
+//--------------------------------------------------------------------------------------------------
+var array<int> lowPivotIdxs = array.new<int>()
+var array<float> lowPivotPrices = array.new<float>()
+var array<int> highPivotIdxs = array.new<int>()
+var array<float> highPivotPrices = array.new<float>()
+
+var line supportLine = line.new(na, na, na, na, xloc = xloc.bar_index)
+var line resistanceLine = line.new(na, na, na, na, xloc = xloc.bar_index)
+var linefill channelFill = linefill.new(supportLine, resistanceLine, color.new(neutralColor, 95))
+
+//--------------------------------------------------------------------------------------------------
+// Pivot Detection
+//--------------------------------------------------------------------------------------------------
+float atrValue = ta.atr(atrLen)
+
+int requiredHistoryBars = lookbackBars + BAR_SCAN_WINDOW + pivotLen * 3 + FAST_LOAD_BUFFER_BARS
+int processStartBar = math.max(0, last_bar_index - requiredHistoryBars)
+bool processEngine = bar_index >= processStartBar
+
+float ph = ta.pivothigh(high, pivotLen, pivotLen)
+float pl = ta.pivotlow(low, pivotLen, pivotLen)
+
+if processEngine and not na(pl)
+    f_store_pivot(lowPivotIdxs, lowPivotPrices, bar_index - pivotLen, pl, true, pivotLen, pivotMemory)
+
+if processEngine and not na(ph)
+    f_store_pivot(highPivotIdxs, highPivotPrices, bar_index - pivotLen, ph, false, pivotLen, pivotMemory)
+
+if processEngine
+    f_trim_lookback(lowPivotIdxs, lowPivotPrices, lookbackBars)
+    f_trim_lookback(highPivotIdxs, highPivotPrices, lookbackBars)
+
+//--------------------------------------------------------------------------------------------------
+// Active Trendline Search
+//--------------------------------------------------------------------------------------------------
+[supValid, supX1, supY1, supX2, supY2, supScore] = f_find_best_line(lowPivotIdxs, lowPivotPrices, true, atrValue, lookbackBars, minAnchorBars, minTouches, maxViolations, touchTolATR, breakTolATR, maxSlopeDeg, maxRelevanceATR, BAR_SCAN_WINDOW, BAR_SCAN_STEP, maxBarViolRatio)
+[resValid, resX1, resY1, resX2, resY2, resScore] = f_find_best_line(highPivotIdxs, highPivotPrices, false, atrValue, lookbackBars, minAnchorBars, minTouches, maxViolations, touchTolATR, breakTolATR, maxSlopeDeg, maxRelevanceATR, BAR_SCAN_WINDOW, BAR_SCAN_STEP, maxBarViolRatio)
+
+float supRight = na
+if supValid
+    supRight := f_line_y(supX1, supY1, supX2, supY2, bar_index + extendBars)
+
+float resRight = na
+if resValid
+    resRight := f_line_y(resX1, resY1, resX2, resY2, bar_index + extendBars)
+
+//--------------------------------------------------------------------------------------------------
+// Draw Active Lines Only
+//--------------------------------------------------------------------------------------------------
+if supValid
+    line.set_xy1(supportLine, supX1, supY1)
+    line.set_xy2(supportLine, bar_index + extendBars, supRight)
+    line.set_color(supportLine, supportColor)
+    line.set_width(supportLine, lineWidth)
+    line.set_style(supportLine, line.style_solid)
+else
+    line.set_xy1(supportLine, bar_index, close)
+    line.set_xy2(supportLine, bar_index + 1, close)
+    line.set_color(supportLine, color.new(supportColor, 100))
+
+if resValid
+    line.set_xy1(resistanceLine, resX1, resY1)
+    line.set_xy2(resistanceLine, bar_index + extendBars, resRight)
+    line.set_color(resistanceLine, resistColor)
+    line.set_width(resistanceLine, lineWidth)
+    line.set_style(resistanceLine, line.style_solid)
+else
+    line.set_xy1(resistanceLine, bar_index, close)
+    line.set_xy2(resistanceLine, bar_index + 1, close)
+    line.set_color(resistanceLine, color.new(resistColor, 100))
+
+if showFill and supValid and resValid
+    float supNow = f_line_y(supX1, supY1, supX2, supY2, bar_index)
+    float resNow = f_line_y(resX1, resY1, resX2, resY2, bar_index)
+    float mid = (supNow + resNow) * 0.5
+    color fillColor = close >= mid ? color.new(supportColor, 92) : color.new(resistColor, 92)
+    linefill.set_color(channelFill, fillColor)
+else
+    linefill.set_color(channelFill, color.new(neutralColor, 100))
