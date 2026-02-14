@@ -1,0 +1,146 @@
+{
+  "timestamp": "2026-02-14T03:45:41.569Z",
+  "total": 23,
+  "passed": 14,
+  "failed": 9,
+  "files": [
+    {
+      "name": "3D_MACD_Bar_Plot_LuxAlgo.pine",
+      "status": "converted",
+      "jsExists": true,
+      "errorExists": false
+    },
+    {
+      "name": "Automatic_Trendline_Metrify.pine",
+      "status": "failed",
+      "jsExists": true,
+      "errorExists": true
+    },
+    {
+      "name": "CE_1M_3M_Buy_Sell_Hold.pine",
+      "status": "converted",
+      "jsExists": true,
+      "errorExists": false
+    },
+    {
+      "name": "Crossing_Moving_Averages_with_ADX_Filter.pine",
+      "status": "converted",
+      "jsExists": true,
+      "errorExists": false
+    },
+    {
+      "name": "Folded_RSI.pine",
+      "status": "converted",
+      "jsExists": true,
+      "errorExists": false
+    },
+    {
+      "name": "Golden_Pocket_Zones.pine",
+      "status": "failed",
+      "jsExists": true,
+      "errorExists": true
+    },
+    {
+      "name": "Impulse_Trend_Arrows.pine",
+      "status": "converted",
+      "jsExists": true,
+      "errorExists": false
+    },
+    {
+      "name": "Institutional_Order_Flow_Strength_Classifier_LuxAlgo.pine",
+      "status": "converted",
+      "jsExists": true,
+      "errorExists": false
+    },
+    {
+      "name": "Liquidity_Sweep_Detector.pine",
+      "status": "converted",
+      "jsExists": true,
+      "errorExists": false
+    },
+    {
+      "name": "Manias_Panics_and_Crashes.pine",
+      "status": "failed",
+      "jsExists": true,
+      "errorExists": true
+    },
+    {
+      "name": "Net_Buy_Volume_theUltimator5.pine",
+      "status": "converted",
+      "jsExists": true,
+      "errorExists": false
+    },
+    {
+      "name": "NY_5m_15m_Orb_-_Statistics_LTF_Candle_structure.pine",
+      "status": "failed",
+      "jsExists": true,
+      "errorExists": true
+    },
+    {
+      "name": "Proximal_Range_Filter_LuxAlgo.pine",
+      "status": "converted",
+      "jsExists": true,
+      "errorExists": false
+    },
+    {
+      "name": "Pro_Pattern_Long-Short_High_Winrate.pine",
+      "status": "failed",
+      "jsExists": true,
+      "errorExists": true
+    },
+    {
+      "name": "Quantum_Structure_jjart.pine",
+      "status": "failed",
+      "jsExists": false,
+      "errorExists": true
+    },
+    {
+      "name": "RBT_strategy.pine",
+      "status": "converted",
+      "jsExists": true,
+      "errorExists": false
+    },
+    {
+      "name": "Scalping_Strategy_3_minutes.pine",
+      "status": "failed",
+      "jsExists": true,
+      "errorExists": true
+    },
+    {
+      "name": "Singular_Spectrum_Decomposition_LuxAlgo.pine",
+      "status": "converted",
+      "jsExists": true,
+      "errorExists": false
+    },
+    {
+      "name": "SMC_Trade_with_Dhruv.pine",
+      "status": "converted",
+      "jsExists": true,
+      "errorExists": false
+    },
+    {
+      "name": "TehThomas_-_Aligned_Timeframe_Fair_Value_Gaps.pine",
+      "status": "failed",
+      "jsExists": true,
+      "errorExists": true
+    },
+    {
+      "name": "Volatility_Contraction_Score.pine",
+      "status": "converted",
+      "jsExists": true,
+      "errorExists": false
+    },
+    {
+      "name": "Volume_Weighted_Trend_QuantAlgo.pine",
+      "status": "converted",
+      "jsExists": true,
+      "errorExists": false
+    },
+    {
+      "name": "VSA_Pro_Trend_and_Rejection.pine",
+      "status": "failed",
+      "jsExists": true,
+      "errorExists": true
+    }
+  ]
+}

@@ -1,0 +1,470 @@
+//@version=6
+
+indicator("Pro Pattern Al-Sat (High Winrate)", overlay=true, max_labels_count=500, max_lines_count=500, max_boxes_count=500)
+
+
+// ============================================================================
+// AYARLAR
+// ============================================================================
+
+showBullishPatterns = input.bool(true, "Yükseliş Formasyonlarını Göster", group="Pattern Ayarları")
+showBearishPatterns = input.bool(true, "Düşüş Formasyonlarını Göster", group="Pattern Ayarları")
+riskRewardRatio = input.float(2.0, "Risk/Ödül Oranı", minval=0.5, maxval=5.0, step=0.1, group="Risk Yönetimi")
+stopLossATR = input.float(1.5, "Stop Loss (ATR Çarpanı)", minval=0.5, maxval=5.0, step=0.1, group="Risk Yönetimi")
+showTable = input.bool(true, "Sinyal Tablosunu Göster", group="Görünüm")
+tablePosition = input.string("top_right", "Tablo Pozisyonu", options=["top_right", "top_left", "bottom_right", "bottom_left"], group="Görünüm")
+showTradeResults = input.bool(true, "İşlem Sonuçlarını Göster", group="Görünüm")
+showExtendedLines = input.bool(true, "Uzatılmış Çizgileri Göster", group="Görünüm")
+
+// YENİ: FİLTRE AYARLARI
+useTrendFilter = input.bool(true, "Trend Filtresi Kullan", group="🎯 Filtreler")
+useVolumeFilter = input.bool(true, "Volume Filtresi Kullan", group="🎯 Filtreler")
+useRSIFilter = input.bool(true, "RSI Filtresi Kullan", group="🎯 Filtreler")
+useSupportResistance = input.bool(true, "Destek/Direnç Filtresi", group="🎯 Filtreler")
+useTimeFilter = input.bool(true, "Zaman Filtresi Kullan", group="🎯 Filtreler")
+
+// Trend Filtre Parametreleri
+emaFastLength = input.int(50, "Hızlı EMA", minval=10, group="📈 Trend Filtresi")
+emaSlowLength = input.int(200, "Yavaş EMA", minval=50, group="📈 Trend Filtresi")
+supertrendMultiplier = input.float(3.0, "Supertrend Çarpanı", minval=1.0, maxval=10.0, step=0.5, group="📈 Trend Filtresi")
+supertrendPeriod = input.int(10, "Supertrend Periyodu", minval=5, group="📈 Trend Filtresi")
+adxThreshold = input.int(25, "ADX Minimum", minval=10, maxval=50, group="📈 Trend Filtresi")
+
+// Volume Filtre Parametreleri
+volumeMultiplier = input.float(1.5, "Volume Çarpanı", minval=1.0, maxval=3.0, step=0.1, group="📊 Volume Filtresi")
+volumePeriod = input.int(20, "Volume SMA Periyodu", minval=10, group="📊 Volume Filtresi")
+
+// RSI Filtre Parametreleri
+rsiPeriod = input.int(14, "RSI Periyodu", minval=5, group="📉 RSI Filtresi")
+rsiOverbought = input.int(70, "Aşırı Alım Seviyesi", minval=60, maxval=90, group="📉 RSI Filtresi")
+rsiOversold = input.int(30, "Aşırı Satım Seviyesi", minval=10, maxval=40, group="📉 RSI Filtresi")
+
+// Destek/Direnç Parametreleri
+pivotLookback = input.int(10, "Pivot Lookback", minval=5, maxval=50, group="🎚️ Destek/Direnç")
+srProximity = input.float(0.5, "Seviye Yakınlığı (%)", minval=0.1, maxval=2.0, step=0.1, group="🎚️ Destek/Direnç")
+
+// Zaman Filtresi Parametreleri
+avoidFirstHour = input.bool(true, "İlk 1 Saati Atla", group="⏰ Zaman Filtresi")
+avoidLastHour = input.bool(true, "Son 1 Saati Atla", group="⏰ Zaman Filtresi")
+tradingStartHour = input.int(9, "İşlem Başlangıç Saati", minval=0, maxval=23, group="⏰ Zaman Filtresi")
+tradingEndHour = input.int(17, "İşlem Bitiş Saati", minval=0, maxval=23, group="⏰ Zaman Filtresi")
+
+// ATR
+atrValue = ta.atr(14)
+
+
+// ============================================================================
+// YENİ: FİLTRE HESAPLAMALARI
+// ============================================================================
+
+// 1. TREND FİLTRESİ
+emaFast = ta.ema(close, emaFastLength)
+emaSlow = ta.ema(close, emaSlowLength)
+uptrend = emaFast > emaSlow
+downtrend = emaFast < emaSlow
+
+// Supertrend
+[supertrendValue, supertrendDirection] = ta.supertrend(supertrendMultiplier, supertrendPeriod)
+supertrendBullish = supertrendDirection < 0
+supertrendBearish = supertrendDirection > 0
+
+// ADX
+[diPlus, diMinus, adx] = ta.dmi(14, 14)
+strongTrend = adx > adxThreshold
+
+// Kombinasyon: Trend Filtresi Geçti mi?
+trendFilterBullish = uptrend and supertrendBullish and strongTrend
+trendFilterBearish = downtrend and supertrendBearish and strongTrend
+
+// 2. VOLUME FİLTRESİ
+volumeSMA = ta.sma(volume, volumePeriod)
+volumeFilter = volume > volumeSMA * volumeMultiplier
+
+// 3. RSI FİLTRESİ
+rsi = ta.rsi(close, rsiPeriod)
+rsiFilterBullish = rsi < rsiOverbought  // Aşırı alımda değilse
+rsiFilterBearish = rsi > rsiOversold    // Aşırı satımda değilse
+
+// 4. DESTEK/DİRENÇ FİLTRESİ
+pivotHigh = ta.pivothigh(high, pivotLookback, pivotLookback)
+pivotLow = ta.pivotlow(low, pivotLookback, pivotLookback)
+
+// Son önemli seviyeleri sakla
+var float lastResistance = na
+var float lastSupport = na
+
+if not na(pivotHigh)
+    lastResistance := high[pivotLookback]
+
+if not na(pivotLow)
+    lastSupport := low[pivotLookback]
+
+// Mevcut fiyat önemli seviyeye yakın mı?
+proximityPercent = srProximity / 100
+nearSupport = not na(lastSupport) and math.abs(close - lastSupport) / lastSupport < proximityPercent
+nearResistance = not na(lastResistance) and math.abs(close - lastResistance) / lastResistance < proximityPercent
+
+srFilterBullish = nearSupport   // Destek yakınında al
+srFilterBearish = nearResistance // Direnç yakınında sat
+
+// 5. ZAMAN FİLTRESİ
+currentHour = hour(time)
+currentMinute = minute(time)
+
+// İlk ve son saat kontrolü
+firstHourAvoid = avoidFirstHour and currentHour == tradingStartHour
+lastHourAvoid = avoidLastHour and currentHour == tradingEndHour
+
+// İşlem saatleri içinde mi?
+inTradingHours = currentHour >= tradingStartHour and currentHour <= tradingEndHour
+
+// Zaman filtresi geçti mi?
+timeFilter = inTradingHours and not firstHourAvoid and not lastHourAvoid
+
+
+// ============================================================================
+// MUM PATTERN FONKSİYONLARI
+// ============================================================================
+
+bullishEngulfing = close[1] < open[1] and close > open and open <= close[1] and close >= open[1]
+bearishEngulfing = close[1] > open[1] and close < open and open >= close[1] and close <= open[1]
+
+bodySize = math.abs(close - open)
+upperWick = high - math.max(close, open)
+lowerWick = math.min(close, open) - low
+lowestLow = ta.lowest(low, 10)
+highestHigh = ta.highest(high, 10)
+
+isHammer = lowerWick > bodySize * 2 and upperWick < bodySize and close > open and low == lowestLow
+isShootingStar = upperWick > bodySize * 2 and lowerWick < bodySize and close < open and high == highestHigh
+
+avgBody2 = math.abs(close[2] - open[2])
+isMorningStar = close[2] < open[2] and math.abs(close[1] - open[1]) < avgBody2 * 0.3 and close > open and close > (open[2] + close[2])/2
+isEveningStar = close[2] > open[2] and math.abs(close[1] - open[1]) < avgBody2 * 0.3 and close < open and close < (open[2] + close[2])/2
+
+candleRange = high - low
+avgRange = ta.sma(high - low, 14)
+isDoji = math.abs(close - open) < candleRange * 0.1 and candleRange > avgRange
+
+threeWhiteSoldiers = close[2] > open[2] and close[1] > open[1] and close > open and
+                     close[1] > close[2] and close > close[1] and
+                     open[1] > open[2] and open > open[1] and
+                     open[1] < close[2] and open < close[1]
+
+threeBlackCrows = close[2] < open[2] and close[1] < open[1] and close < open and
+                  close[1] < close[2] and close < close[1] and
+                  open[1] < open[2] and open < open[1] and
+                  open[1] > close[2] and open > close[1]
+
+piercingLine = close[1] < open[1] and close > open and open < close[1] and close > (open[1] + close[1])/2 and close < open[1]
+darkCloudCover = close[1] > open[1] and close < open and open > close[1] and close < (open[1] + close[1])/2 and close > open[1]
+
+
+// ============================================================================
+// YENİ: FİLTRELİ SİNYAL HESAPLAMA
+// ============================================================================
+
+// Ham pattern sinyalleri
+bullishPattern = (bullishEngulfing or isHammer or isMorningStar or threeWhiteSoldiers or piercingLine) and showBullishPatterns
+bearishPattern = (bearishEngulfing or isShootingStar or isEveningStar or threeBlackCrows or darkCloudCover) and showBearishPatterns
+
+// TÜM FİLTRELERDEN GEÇMİŞ SİNYALLER
+bullishSignal = bullishPattern and (not useTrendFilter or trendFilterBullish) and (not useVolumeFilter or volumeFilter) and (not useRSIFilter or rsiFilterBullish) and (not useSupportResistance or srFilterBullish) and (not useTimeFilter or timeFilter)
+
+bearishSignal = bearishPattern and (not useTrendFilter or trendFilterBearish) and (not useVolumeFilter or volumeFilter) and (not useRSIFilter or rsiFilterBearish) and (not useSupportResistance or srFilterBearish) and (not useTimeFilter or timeFilter)
+
+
+// ============================================================================
+// KALICI DEĞİŞKENLER
+// ============================================================================
+
+var string lastPattern = "Yok"
+var float lastEntry = na
+var float lastStop = na
+var float lastTarget = na
+var string lastSignalType = "Bekleniyor"
+var color lastSignalColor = color.gray
+var int lastSignalIndex = na
+
+// Winrate hesaplama
+var int totalTrades = 0
+var int winningTrades = 0
+var int losingTrades = 0
+var float totalProfit = 0.0
+var float totalLoss = 0.0
+var bool tradeActive = false
+var string activeTradeType = ""
+
+// Filtre istatistikleri
+var int totalSignalsBeforeFilter = 0
+var int totalSignalsAfterFilter = 0
+
+// Çizgi ve etiket referansları
+var line activeEntryLine = na
+var line activeStopLine = na
+var line activeTpLine = na
+var label activeEntryLabel = na
+var label activeStopLabel = na
+var label activeTpLabel = na
+
+
+// ============================================================================
+// YENİ SİNYAL GELDİĞİNDE GÜNCELLE
+// ============================================================================
+
+string patternName = ""
+
+// Ham sinyal sayısını say
+if bullishPattern or bearishPattern
+    totalSignalsBeforeFilter += 1
+
+// Filtrelenmiş sinyal sayısını say
+if bullishSignal or bearishSignal
+    totalSignalsAfterFilter += 1
+
+if bullishSignal
+    patternName := bullishEngulfing ? "Bullish Engulfing" : isHammer ? "Hammer" : isMorningStar ? "Morning Star" : threeWhiteSoldiers ? "Three White Soldiers" : piercingLine ? "Piercing Line" : ""
+    lastPattern := patternName
+    lastEntry := close
+    lastStop := low - atrValue * stopLossATR
+    lastTarget := lastEntry + (lastEntry - lastStop) * riskRewardRatio
+    lastSignalType := "ALIŞ"
+    lastSignalColor := color.green
+    lastSignalIndex := bar_index
+    tradeActive := true
+    activeTradeType := "BUY"
+
+if bearishSignal
+    patternName := bearishEngulfing ? "Bearish Engulfing" : isShootingStar ? "Shooting Star" : isEveningStar ? "Evening Star" : threeBlackCrows ? "Three Black Crows" : darkCloudCover ? "Dark Cloud Cover" : ""
+    lastPattern := patternName
+    lastEntry := close
+    lastStop := high + atrValue * stopLossATR
+    lastTarget := lastEntry - (lastStop - lastEntry) * riskRewardRatio
+    lastSignalType := "SATIŞ"
+    lastSignalColor := color.red
+    lastSignalIndex := bar_index
+    tradeActive := true
+    activeTradeType := "SELL"
+
+
+// ============================================================================
+// İŞLEM SONUCU TAKİBİ
+// ============================================================================
+
+if tradeActive and not na(lastEntry) and not na(lastStop) and not na(lastTarget)
+    if activeTradeType == "BUY"
+        if high >= lastTarget
+            totalTrades += 1
+            winningTrades += 1
+            profit = lastTarget - lastEntry
+            totalProfit += profit
+            tradeActive := false
+            
+            if showTradeResults
+                label.new(bar_index, lastTarget, "✓ TP HIT\n+" + str.tostring(profit, "#.####"), 
+                         yloc=yloc.price, color=color.new(color.green, 0), 
+                         textcolor=color.white, style=label.style_label_down, size=size.small)
+        
+        else if low <= lastStop
+            totalTrades += 1
+            losingTrades += 1
+            loss = lastEntry - lastStop
+            totalLoss += loss
+            tradeActive := false
+            
+            if showTradeResults
+                label.new(bar_index, lastStop, "✗ STOP\n-" + str.tostring(loss, "#.####"), 
+                         yloc=yloc.price, color=color.new(color.red, 0), 
+                         textcolor=color.white, style=label.style_label_up, size=size.small)
+    
+    else if activeTradeType == "SELL"
+        if low <= lastTarget
+            totalTrades += 1
+            winningTrades += 1
+            profit = lastEntry - lastTarget
+            totalProfit += profit
+            tradeActive := false
+            
+            if showTradeResults
+                label.new(bar_index, lastTarget, "✓ TP HIT\n+" + str.tostring(profit, "#.####"), 
+                         yloc=yloc.price, color=color.new(color.green, 0), 
+                         textcolor=color.white, style=label.style_label_up, size=size.small)
+        
+        else if high >= lastStop
+            totalTrades += 1
+            losingTrades += 1
+            loss = lastStop - lastEntry
+            totalLoss += loss
+            tradeActive := false
+            
+            if showTradeResults
+                label.new(bar_index, lastStop, "✗ STOP\n-" + str.tostring(loss, "#.####"), 
+                         yloc=yloc.price, color=color.new(color.red, 0), 
+                         textcolor=color.white, style=label.style_label_down, size=size.small)
+
+
+// Winrate ve Kar/Zarar Oranı
+winRate = totalTrades > 0 ? (winningTrades / totalTrades) * 100 : 0.0
+profitLossRatio = totalLoss > 0 ? totalProfit / totalLoss : 0.0
+filterEfficiency = totalSignalsBeforeFilter > 0 ? ((totalSignalsBeforeFilter - totalSignalsAfterFilter) / totalSignalsBeforeFilter) * 100 : 0.0
+
+
+// ============================================================================
+// GÖRSELLEŞTİRME
+// ============================================================================
+
+plotshape(bullishSignal, "Alış", shape.triangleup, location.belowbar, color.green, size = size.small)
+plotshape(bearishSignal, "Satış", shape.triangledown, location.abovebar, color.red, size = size.small)
+
+// Trend göstergeleri
+plot(useTrendFilter ? emaFast : na, "EMA Fast", color.new(color.blue, 0), linewidth=1)
+plot(useTrendFilter ? emaSlow : na, "EMA Slow", color.new(color.red, 0), linewidth=2)
+plot(useTrendFilter ? supertrendValue : na, "Supertrend", color=supertrendDirection < 0 ? color.green : color.red, linewidth=2)
+
+// SL & TP çizgileri
+var line lineSL = na
+var line lineTP = na
+
+if bullishSignal or bearishSignal
+    line.delete(lineSL)
+    line.delete(lineTP)
+    
+    if showExtendedLines
+        lineSL := line.new(lastSignalIndex, lastStop, bar_index, lastStop, extend=extend.right, color=color.new(color.red, 40), width=1, style=line.style_dashed)
+        lineTP := line.new(lastSignalIndex, lastTarget, bar_index, lastTarget, extend=extend.right, color=color.new(color.green, 40), width=1, style=line.style_dashed)
+
+
+// Uzatılmış çizgiler ve fiyat etiketleri
+if (bullishSignal or bearishSignal) and showExtendedLines
+    line.delete(activeEntryLine)
+    line.delete(activeStopLine)
+    line.delete(activeTpLine)
+    label.delete(activeEntryLabel)
+    label.delete(activeStopLabel)
+    label.delete(activeTpLabel)
+    
+    activeEntryLine := line.new(lastSignalIndex, lastEntry, bar_index + 50, lastEntry, 
+                                color=color.new(color.blue, 30), width=2, style=line.style_solid)
+    
+    activeStopLine := line.new(lastSignalIndex, lastStop, bar_index + 50, lastStop, 
+                               color=color.new(color.red, 30), width=2, style=line.style_dashed)
+    
+    activeTpLine := line.new(lastSignalIndex, lastTarget, bar_index + 50, lastTarget, 
+                             color=color.new(color.green, 30), width=2, style=line.style_dashed)
+    
+    activeEntryLabel := label.new(bar_index + 3, lastEntry, 
+                                  "Giriş: " + str.tostring(lastEntry, "#.####"), 
+                                  yloc=yloc.price, color=color.new(color.blue, 70), 
+                                  textcolor=color.white, style=label.style_label_left, size=size.tiny)
+    
+    activeStopLabel := label.new(bar_index + 3, lastStop, 
+                                 "Stop: " + str.tostring(lastStop, "#.####"), 
+                                 yloc=yloc.price, color=color.new(color.red, 70), 
+                                 textcolor=color.white, style=label.style_label_left, size=size.tiny)
+    
+    activeTpLabel := label.new(bar_index + 3, lastTarget, 
+                               "TP: " + str.tostring(lastTarget, "#.####"), 
+                               yloc=yloc.price, color=color.new(color.green, 70), 
+                               textcolor=color.white, style=label.style_label_left, size=size.tiny)
+
+
+// Sinyal etiketi
+var label lastLabel = na
+
+if bullishSignal or bearishSignal
+    label.delete(lastLabel)
+    y_pos = bullishSignal ? low : high
+    label_style = bullishSignal ? label.style_label_up : label.style_label_down
+    label_color = bullishSignal ? color.new(color.green, 70) : color.new(color.red, 70)
+    signal_text = bullishSignal ? "ALIŞ" : "SATIŞ"
+    lastLabel := label.new(lastSignalIndex, y_pos, signal_text + "\n" + lastPattern + "\nGiriş: " + str.tostring(lastEntry, "#.####") + "\nSL: " + str.tostring(lastStop, "#.####") + "\nTP: " + str.tostring(lastTarget,"#.####"),
+                          yloc = bullishSignal ? yloc.belowbar : yloc.abovebar, color=label_color, textcolor=color.white, style=label_style, size=size.small)
+
+
+// ============================================================================
+// GENİŞLETİLMİŞ SİNYAL TABLOSU
+// ============================================================================
+
+if showTable
+    var table t = table.new(tablePosition == "top_right" ? position.top_right :
+                           tablePosition == "top_left" ? position.top_left :
+                           tablePosition == "bottom_right"? position.bottom_right:
+                           position.bottom_left, columns=3, rows=16,
+                           bgcolor=color.new(color.black, 85),
+                           border_width=1, border_color=color.new(color.blue, 60))
+    
+    table.clear(t, 0, 0, 2, 15)
+    
+    table.cell(t, 0, 0, "PRO SİSTEM - HIGH WINRATE", text_color=color.white, bgcolor=color.new(color.blue, 40), text_size=size.normal)
+    table.merge_cells(t, 0, 0, 2, 0)
+    
+    table.cell(t, 0, 1, "Parametre", text_color=color.yellow, bgcolor=color.new(color.gray, 70))
+    table.cell(t, 1, 1, "Değer", text_color=color.yellow, bgcolor=color.new(color.gray, 70))
+    table.cell(t, 2, 1, "Durum", text_color=color.yellow, bgcolor=color.new(color.gray, 70))
+    
+    table.cell(t, 0, 2, "Son Sinyal", text_color=color.white)
+    table.cell(t, 1, 2, lastSignalType, text_color=lastSignalColor)
+    table.cell(t, 2, 2, lastSignalType == "Bekleniyor" ? "○" : "●", text_color=lastSignalColor, text_size=size.normal)
+    
+    table.cell(t, 0, 3, "Pattern", text_color=color.white)
+    table.cell(t, 1, 3, lastPattern, text_color=color.white)
+    table.cell(t, 2, 3, "")
+    
+    table.cell(t, 0, 4, "Giriş", text_color=color.white)
+    table.cell(t, 1, 4, na(lastEntry) ? "-" : str.tostring(lastEntry, "#.####"), text_color=color.aqua)
+    table.cell(t, 2, 4, "")
+    
+    table.cell(t, 0, 5, "Stop Loss", text_color=color.white)
+    table.cell(t, 1, 5, na(lastStop) ? "-" : str.tostring(lastStop, "#.####"), text_color=color.red)
+    table.cell(t, 2, 5, na(lastEntry) or na(lastStop) ? "-" : str.tostring(math.abs(lastEntry - lastStop), "#.####"), text_color=color.orange)
+    
+    table.cell(t, 0, 6, "Take Profit", text_color=color.white)
+    table.cell(t, 1, 6, na(lastTarget) ? "-" : str.tostring(lastTarget, "#.####"), text_color=color.green)
+    table.cell(t, 2, 6, na(lastEntry) or na(lastTarget) ? "-" : str.tostring(math.abs(lastTarget - lastEntry), "#.####"), text_color=color.lime)
+    
+    table.cell(t, 0, 7, "Risk/Ödül", text_color=color.white)
+    table.cell(t, 1, 7, "1:" + str.tostring(riskRewardRatio, "#.#"), text_color=color.yellow)
+    table.cell(t, 2, 7, "")
+    
+    // Performans
+    table.cell(t, 0, 8, "━━━━━ PERFORMANS ━━━━━", text_color=color.aqua)
+    table.merge_cells(t, 0, 8, 2, 8)
+    
+    table.cell(t, 0, 9, "Toplam İşlem", text_color=color.white)
+    table.cell(t, 1, 9, str.tostring(totalTrades), text_color=color.aqua)
+    table.cell(t, 2, 9, "📊", text_color=color.white)
+    
+    table.cell(t, 0, 10, "🎯 WINRATE", text_color=color.white, text_size=size.normal)
+    winRateColor = winRate >= 70 ? color.new(color.green, 0) : winRate >= 50 ? color.orange : color.red
+    table.cell(t, 1, 10, str.tostring(winRate, "#.##") + "%", text_color=winRateColor, text_size=size.normal)
+    table.cell(t, 2, 10, str.tostring(winningTrades) + "W/" + str.tostring(losingTrades) + "L", text_color=color.orange, text_size=size.tiny)
+    
+    table.cell(t, 0, 11, "Kar/Zarar Oranı", text_color=color.white)
+    plRatioColor = profitLossRatio >= 2 ? color.new(color.green, 0) : profitLossRatio >= 1 ? color.orange : color.red
+    table.cell(t, 1, 11, str.tostring(profitLossRatio, "#.##"), text_color=plRatioColor)
+    table.cell(t, 2, 11, profitLossRatio >= 1 ? "✓" : "✗", text_color=plRatioColor)
+    
+    // Filtre İstatistikleri
+    table.cell(t, 0, 12, "━━━━━ FİLTRELER ━━━━━", text_color=color.purple)
+    table.merge_cells(t, 0, 12, 2, 12)
+    
+    table.cell(t, 0, 13, "Ham Sinyal", text_color=color.white)
+    table.cell(t, 1, 13, str.tostring(totalSignalsBeforeFilter), text_color=color.gray)
+    table.cell(t, 2, 13, "📡", text_color=color.gray)
+    
+    table.cell(t, 0, 14, "Filtrelenmiş", text_color=color.white)
+    table.cell(t, 1, 14, str.tostring(totalSignalsAfterFilter), text_color=color.green)
+    table.cell(t, 2, 14, "✓", text_color=color.green)
+    
+    table.cell(t, 0, 15, "Filtre Etkinliği", text_color=color.white)
+    filterColor = filterEfficiency >= 60 ? color.green : filterEfficiency >= 40 ? color.orange : color.red
+    table.cell(t, 1, 15, str.tostring(filterEfficiency, "#.#") + "%", text_color=filterColor)
+    table.cell(t, 2, 15, filterEfficiency >= 50 ? "🔥" : "⚡", text_color=filterColor)
+
+
+// ============================================================================
+// ALERTLER
+// ============================================================================
+
+alertcondition(bullishSignal, title="🟢 Filtrelenmiş Alış", message="ALIŞ {{ticker}} - {{plot(\"Pattern\")}} | Giriş {{close}}")
+alertcondition(bearishSignal, title="🔴 Filtrelenmiş Satış", message="SATIŞ {{ticker}} - {{plot(\"Pattern\")}} | Giriş {{close}}")

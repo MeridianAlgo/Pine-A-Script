@@ -1,0 +1,306 @@
+// This work is licensed under a Attribution-NonCommercial-ShareAlike 4.0 International (CC BY-NC-SA 4.0) https://creativecommons.org/licenses/by-nc-sa/4.0/
+// © LuxAlgo
+
+//@version=6
+indicator("Singular Spectrum Decomposition [LuxAlgo]", "LuxAlgo - SSA Decomposition", overlay = false)
+
+//---------------------------------------------------------------------------------------------------------------------}
+// Settings
+//---------------------------------------------------------------------------------------------------------------------{
+int lagInput        = input.int(20, "Window Length (L)", minval = 2, tooltip = "The embedding window length (L). Larger values capture longer cycles.")
+int trainingInput   = input.int(100, "Buffer Length (N)", minval = 50, tooltip = "The number of recent bars (N) used for the static decomposition.")
+int forecastInput   = input.int(20, "Forecast Length", minval = 1, tooltip = "Number of bars to extrapolate into the future.")
+
+GROUP_STYLE         = "Style"
+bool showTrend         = input.bool(true, "Trend on Price", inline = "Trend", group = GROUP_STYLE)
+color trendColorInput  = input.color(#ff5d00, "", inline = "Trend", group = GROUP_STYLE)
+
+bool showP1            = input.bool(true, "Long Term Periodic", inline = "P1", group = GROUP_STYLE)
+color p1ColorInput     = input.color(#2962ff, "", inline = "P1", group = GROUP_STYLE)
+
+bool showP2            = input.bool(true, "Short Term Periodic", inline = "P2", group = GROUP_STYLE)
+color p2ColorInput     = input.color(#f06292, "", inline = "P2", group = GROUP_STYLE)
+
+bool showNoise         = input.bool(true, "Noise", inline = "Noise", group = GROUP_STYLE)
+color noiseColorInput  = input.color(color.new(#9c9c9c, 50), "", inline = "Noise", group = GROUP_STYLE)
+
+bool showExtrapolation = input.bool(true, "Show Extrapolation", group = GROUP_STYLE, tooltip = "Show the forecast as dashed lines.")
+
+DATA                    = #DBDBDB
+HEADERS                 = #808080
+BACKGROUND              = #161616
+BORDERS                 = #2E2E2E
+
+TOP_RIGHT               = 'Top Right'
+BOTTOM_RIGHT            = 'Bottom Right'
+BOTTOM_LEFT             = 'Bottom Left'
+
+TINY                    = 'Tiny'
+SMALL                   = 'Small'
+NORMAL                  = 'Normal'
+LARGE                   = 'Large'
+HUGE                    = 'Huge'
+
+DASHBOARD_GROUP         = 'Dashboard'
+
+dashboardTooltip        = 'Enable or disable the dashboard.'
+dashboardPositionTooltip= 'Select the dashboard location.'
+dashboardSizeTooltip    = 'Select the dashboard size.'
+
+dashboardInput          = input.bool(true, 'Dashboard', group = DASHBOARD_GROUP, tooltip = dashboardTooltip)
+dashboardPositionInput  = input.string(TOP_RIGHT, 'Position', group = DASHBOARD_GROUP, tooltip = dashboardPositionTooltip, options = [TOP_RIGHT, BOTTOM_RIGHT, BOTTOM_LEFT])
+dashboardSizeInput      = input.string(SMALL, 'Size', group = DASHBOARD_GROUP, tooltip = dashboardSizeTooltip, options = [TINY, SMALL, NORMAL, LARGE, HUGE])
+
+var parsedDashboardPosition = switch dashboardPositionInput
+    TOP_RIGHT       => position.top_right
+    BOTTOM_RIGHT    => position.bottom_right
+    BOTTOM_LEFT     => position.bottom_left
+
+var parsedDashboardSize     = switch dashboardSizeInput
+    TINY            => size.tiny
+    SMALL           => size.small
+    NORMAL          => size.normal
+    LARGE           => size.large
+    HUGE            => size.huge
+
+//---------------------------------------------------------------------------------------------------------------------}
+// Functions
+//---------------------------------------------------------------------------------------------------------------------{
+// Sorts eigenvectors matrix columns based on eigenvalues array (descending)
+sortEigen(matrix<float> vectors, array<float> values) =>
+    int size = values.size()
+    array<int> indices = array.new<int>(size)
+    for i = 0 to size - 1
+        indices.set(i, i)
+    
+    for i = 0 to size - 2
+        for j = 0 to size - i - 2
+            if values.get(indices.get(j)) < values.get(indices.get(j + 1))
+                temp = indices.get(j)
+                indices.set(j, indices.get(j + 1))
+                indices.set(j + 1, temp)
+    
+    matrix<float> sortedVectors = matrix.new<float>(vectors.rows(), vectors.columns())
+    for col = 0 to size - 1
+        int oldCol = indices.get(col)
+        for row = 0 to vectors.rows() - 1
+            sortedVectors.set(row, col, vectors.get(row, oldCol))
+    sortedVectors
+
+// Diagonal Averaging to reconstruct a series of length N from a specific component
+diagonalAveraging(matrix<float> V, int k, array<float> y, int L, int N) =>
+    int K = N - L + 1
+    array<float> pc = array.new<float>(K, 0.0)
+    for j = 0 to K - 1
+        float val = 0.0
+        for i = 0 to L - 1
+            val += matrix.get(V, i, k) * array.get(y, j + i)
+        array.set(pc, j, val)
+    
+    array<float> rc = array.new<float>(N, 0.0)
+    for n = 0 to N - 1
+        float sum = 0.0
+        int count = 0
+        for i = math.max(0, n - K + 1) to math.min(n, L - 1)
+            int j = n - i
+            sum += matrix.get(V, i, k) * array.get(pc, j)
+            count += 1
+        array.set(rc, n, sum / count)
+    rc
+
+// Calculate Linear Recurrence Relation (LRR) coefficients for a set of component indices
+getLRR(matrix<float> V, array<int> indices, int L) =>
+    array<float> a = array.new<float>(L - 1, 0.0)
+    float verticalSum = 0.0
+    for k in indices
+        float pi_k = V.get(L - 1, k)
+        verticalSum += math.pow(pi_k, 2)
+    
+    if verticalSum < 1.0
+        for i = 0 to L - 2
+            float sum = 0.0
+            for k in indices
+                sum += V.get(L - 1, k) * V.get(i, k)
+            a.set(i, sum / (1.0 - verticalSum))
+    a
+
+// Generate extrapolated values using LRR, adjusted to avoid initial jump
+extrapolate(array<float> src, array<float> lrr, int nForecast) =>
+    int L = lrr.size() + 1
+    array<float> res = array.copy(src)
+    float lastRecon = src.get(src.size() - 1)
+    
+    float f0 = 0.0
+    for j = 0 to L - 2
+        f0 += lrr.get(j) * src.get(src.size() - L + j)
+    
+    array<float> adjusted = array.new<float>(0)
+    adjusted.push(lastRecon)
+    
+    float runningVal = lastRecon
+    float prevRaw    = f0
+    
+    for i = 1 to nForecast
+        float val = 0.0
+        for j = 0 to L - 2
+            val += lrr.get(j) * res.get(res.size() - (L - 1) + j)
+        
+        float diff = val - prevRaw
+        runningVal += diff
+        adjusted.push(runningVal)
+        
+        res.push(val)
+        prevRaw := val
+    adjusted
+
+// Create a polyline from a series of values with time coordinates
+createPolyline(array<float> values, int startBar, color c, int width = 2, string style = line.style_solid) =>
+    array<chart.point> points = array.new<chart.point>(0)
+    for i = 0 to values.size() - 1
+        array.push(points, chart.point.from_index(startBar + i, array.get(values, i)))
+    polyline.new(points, line_color = c, line_width = width, line_style = style)
+
+// Create a polyline with force_overlay=true
+createOverlayPolyline(array<float> values, int startBar, color c, int width = 2, string style = line.style_solid) =>
+    array<chart.point> points = array.new<chart.point>(0)
+    for i = 0 to values.size() - 1
+        array.push(points, chart.point.from_index(startBar + i, array.get(values, i)))
+    polyline.new(points, line_color = c, line_width = width, line_style = style, force_overlay = true)
+
+// Calculate average period of a reconstructed component using zero crossings
+getPeriod(array<float> src) =>
+    int n = src.size()
+    int count = 0
+    int firstIdx = -1
+    int lastIdx = -1
+    if n > 1
+        for i = 1 to n - 1
+            float prev = src.get(i-1)
+            float curr = src.get(i)
+            if (prev > 0 and curr <= 0) or (prev < 0 and curr >= 0)
+                if firstIdx == -1
+                    firstIdx := i
+                lastIdx := i
+                count += 1
+    
+    count > 1 ? (float(lastIdx - firstIdx) / (count - 1)) * 2 : na
+
+// Dashboard helper functions
+cell(table t_able, int column, int row, string data, color = #FFFFFF, align = text.align_right, color background = na, float height = 0) => 
+    t_able.cell(column, row, data, text_color = color, text_size = parsedDashboardSize, text_halign = align, bgcolor = background, height = height)
+
+divider(table t_able, int row, int lastColumn) =>    
+    string rowDivider = '━━━━━━━━━━━━━━━━━━━━'
+    t_able.merge_cells(0, row, lastColumn, row)
+    cell(t_able, 0, row, rowDivider, align = text.align_center, height = 0.5, color = BORDERS)
+
+//---------------------------------------------------------------------------------------------------------------------}
+// Main Logic
+//---------------------------------------------------------------------------------------------------------------------{
+// Cleanup previous drawings on new calculation (re-runs on tick)
+var polyline trendLine  = na
+var polyline trendFore  = na
+var polyline p1Line     = na
+var polyline p2Line     = na
+var polyline noiseLine  = na
+
+var table t_able = table.new(parsedDashboardPosition, 2, 5, bgcolor = BACKGROUND, border_width = 0, frame_color = BORDERS, frame_width = 1, force_overlay = true)
+
+if barstate.islast
+    // 1. Setup indices
+    int startIdx = bar_index - (trainingInput - 1)
+    int foreIdx  = bar_index
+
+    // 2. Collect price data (Chronological)
+    array<float> y = array.new<float>(0)
+    for i = 0 to trainingInput - 1
+        array.push(y, close[trainingInput - 1 - i])
+
+    // 3. Compute Covariance Matrix S (LxL)
+    matrix<float> S = matrix.new<float>(lagInput, lagInput, 0.0)
+    int nRowsX = trainingInput - lagInput + 1
+    for i = 0 to lagInput - 1
+        for j = i to lagInput - 1
+            float sum = 0.0
+            for k = 0 to nRowsX - 1
+                sum += array.get(y, k + i) * array.get(y, k + j)
+            matrix.set(S, i, j, sum)
+            matrix.set(S, j, i, sum)
+    
+    // 4. Eigendecomposition
+    array<float>  evals = matrix.eigenvalues(S)
+    matrix<float> evecs = matrix.eigenvectors(S)
+    matrix<float> sortedV = sortEigen(evecs, evals)
+    
+    // 5. Reconstruct Components and Extrapolate
+    // Trend
+    array<float> trendValues = diagonalAveraging(sortedV, 0, y, lagInput, trainingInput)
+    array<float> trendExtrap = extrapolate(trendValues, getLRR(sortedV, array.from(0), lagInput), forecastInput)
+    
+    // Periodic 1
+    array<float> rc1 = diagonalAveraging(sortedV, 1, y, lagInput, trainingInput)
+    array<float> rc2 = diagonalAveraging(sortedV, 2, y, lagInput, trainingInput)
+    array<float> p1Values = array.new<float>(trainingInput, 0.0)
+    for i = 0 to trainingInput - 1
+        array.set(p1Values, i, array.get(rc1, i) + array.get(rc2, i))
+        
+    // Periodic 2
+    array<float> rc3 = diagonalAveraging(sortedV, 3, y, lagInput, trainingInput)
+    array<float> rc4 = diagonalAveraging(sortedV, 4, y, lagInput, trainingInput)
+    array<float> p2Values = array.new<float>(trainingInput, 0.0)
+    for i = 0 to trainingInput - 1
+        array.set(p2Values, i, array.get(rc3, i) + array.get(rc4, i))
+        
+    // Noise
+    array<float> noiseValues = array.new<float>(trainingInput, 0.0)
+    if lagInput > 5
+        for k = 5 to lagInput - 1
+            array<float> rck = diagonalAveraging(sortedV, k, y, lagInput, trainingInput)
+            for i = 0 to trainingInput - 1
+                array.set(noiseValues, i, array.get(noiseValues, i) + array.get(rck, i))
+
+    // 6. Delete previous drawings
+    polyline.delete(trendLine)
+    polyline.delete(trendFore)
+    polyline.delete(p1Line)
+    polyline.delete(p2Line)
+    polyline.delete(noiseLine)
+    
+    // 7. Draw Polylines
+    if showTrend
+        trendLine := createOverlayPolyline(trendValues, startIdx, trendColorInput, 3)
+        if showExtrapolation
+            trendFore := createOverlayPolyline(trendExtrap, foreIdx, trendColorInput, 3, line.style_dashed)
+
+    if showP1
+        p1Line    := createPolyline(p1Values, startIdx, p1ColorInput, 2)
+            
+    if showP2
+        p2Line    := createPolyline(p2Values, startIdx, p2ColorInput, 2)
+            
+    if showNoise
+        noiseLine := createPolyline(noiseValues, startIdx, noiseColorInput, 1)
+
+    // 8. Update Dashboard
+    if dashboardInput
+        float period1 = getPeriod(p1Values)
+        float period2 = getPeriod(p2Values)
+        
+        t_able.clear(0, 0, 1, 4)
+        t_able.merge_cells(0, 0, 1, 0)
+        cell(t_able, 0, 0, "SSA Components", color = DATA, align = text.align_center)
+        divider(t_able, 1, 1)
+        cell(t_able, 0, 2, "Long Term Avg Period", color = HEADERS, align = text.align_left)
+        cell(t_able, 1, 2, str.tostring(period1, "#.##"), color = DATA)
+        
+        divider(t_able, 3, 1)
+        
+        cell(t_able, 0, 4, "Short Term Avg Period", color = HEADERS, align = text.align_left)
+        cell(t_able, 1, 4, str.tostring(period2, "#.##"), color = DATA)
+    else
+        t_able.clear(0, 0, 1, 4)
+
+// Add zero-line reference for the separate pane
+hline(0, "Zero Line", color = color.new(color.gray, 50), linestyle = hline.style_dotted)
+
+//---------------------------------------------------------------------------------------------------------------------}

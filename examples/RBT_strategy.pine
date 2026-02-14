@@ -1,0 +1,82 @@
+// 16 nov 2025 23:45
+//Logic--> cur should min 30% - max 300% of prev + check doji + check Engulfing + check last 0-4 same orev candle + check mean of atleast 2-50 prev 
+//Last update on 02 Dec 2025 New function add---> prev candle high/low taken by cur high/low (On Off botton)
+// all have on off options this is latest version
+//
+// working excellent in XAUUSD 
+
+
+//@version=6
+indicator("LuckyFX RBtrader strategy", overlay=true)
+
+// ----- Inputs & Filters -----
+enable_prev_candles  = input.bool(true, "Check: Prev Candles Same Dir?")
+same_prev_candles    = input.int(2,    "Prev Candles Same (0–4)", minval=0, maxval=4)
+enable_body_percent  = input.bool(true, "Check: Cur > % Prev Body?")
+body_percent_min     = input.float(0.3, "Body % Min (0.3)", minval=0.3, maxval=2.0, step=0.05)
+body_percent_max     = input.float(3.0, "Body % Max (3.0)", minval=0.3, maxval=3.0, step=0.05)
+ignore_doji          = input.bool(true, "Ignore if Prev is Doji")
+enable_mean_range    = input.bool(true, "Check: Cur >= Mean Full Candle?")
+mean_length          = input.int(5,    "Mean Candle Range (2-50)", minval=2, maxval=50)
+ignore_engulf        = input.bool(true, "Ignore if Engulfing (Body Size)")
+
+// ----- NEW: Wick compare toggle -----
+enable_wick_compare  = input.bool(false, "Check: Cur wick > Prev wick (on/off)")
+
+// ----- Candle Info -----
+prev_open  = open[1]
+prev_close = close[1]
+prev_high  = high[1]
+prev_low   = low[1]
+prev_body  = math.abs(prev_close - prev_open)
+prev_upper_wick = prev_high - math.max(prev_open, prev_close)
+prev_lower_wick = math.min(prev_open, prev_close) - prev_low
+prev_total_wick = prev_upper_wick + prev_lower_wick
+prev_is_doji = prev_total_wick >= 2 * prev_body
+prev_is_bull = prev_close > prev_open
+prev_is_bear = prev_close < prev_open
+
+cur_body = math.abs(close - open)
+cur_range = high - low
+is_bull = close > open
+is_bear = close < open
+is_bullish_engulf = cur_body > (prev_body + prev_upper_wick)
+is_bearish_engulf = cur_body > (prev_body + prev_lower_wick)
+
+// ----- Current wicks -----
+cur_upper_wick = high - math.max(open, close)
+cur_lower_wick = math.min(open, close) - low
+
+// ---- Mean Full Candle Range (high-low of previous N candles) ----
+sum_range = 0.0
+for i = 1 to mean_length
+    sum_range := sum_range + (high[i] - low[i])
+mean_prev_range = sum_range / mean_length
+is_cur_range_big_enough = not enable_mean_range or cur_range >= mean_prev_range
+
+// ----- Prev Dir Logic for Flexible N -----
+prev_dir = prev_is_bull ? 1 : prev_is_bear ? -1 : 0
+match = true
+if same_prev_candles > 0
+    for i = 2 to same_prev_candles + 1
+        match := match and ((close[i] > open[i] ? 1 : close[i] < open[i] ? -1 : 0) == prev_dir)
+last_n_same_as_prev = not enable_prev_candles or (prev_dir != 0 and match)
+
+// ----- Body % threshold check -----
+body_percent_ok = not enable_body_percent or (cur_body > body_percent_min * prev_body and cur_body < body_percent_max * prev_body)
+
+// ----- Wick comparison condition (single-line to avoid parser issues) -----
+wick_condition = not enable_wick_compare or ((is_bull and cur_lower_wick > prev_lower_wick) or (is_bear and cur_upper_wick > prev_upper_wick))
+
+// ----- Signal logic -----
+bull_bigger_than_bear = is_bull and prev_is_bear and body_percent_ok and (not ignore_doji or not prev_is_doji) and (not ignore_engulf or not is_bullish_engulf) and last_n_same_as_prev and is_cur_range_big_enough and wick_condition
+bear_bigger_than_bull = is_bear and prev_is_bull and body_percent_ok and (not ignore_doji or not prev_is_doji) and (not ignore_engulf or not is_bearish_engulf) and last_n_same_as_prev and is_cur_range_big_enough and wick_condition
+
+// ----- Plot (constant shape/size) -----
+// removed explicit alpha from color to keep syntax safe
+plotshape(bull_bigger_than_bear, style=shape.triangleup, color=color.rgb(38, 129, 11), size=size.small, location=location.belowbar, title="Bullish Signal")
+plotshape(bear_bigger_than_bull, style=shape.triangledown, color=color.rgb(226, 10, 10), size=size.small, location=location.abovebar, title="Bearish Signal")
+
+alertcondition(bull_bigger_than_bear, title="Bullish Signal", message="Bullish > Bearish Setup")
+alertcondition(bear_bigger_than_bull, title="Bearish Signal", message="Bearish > Bullish Setup")
+

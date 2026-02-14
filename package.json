@@ -7,7 +7,9 @@
   "scripts": {
     "transpile": "node src/transpiler.js",
     "test": "node test/test.js",
-    "test:indicators": "node test/indicator_tests.js"
+    "test:indicators": "node test/indicator_tests.js",
+    "convert:all": "node tools/batch_convert.js",
+    "convert:status": "node tools/conversion_status.js"
   },
   "keywords": ["pinescript", "javascript", "transpiler", "tradingview"],
   "author": "",

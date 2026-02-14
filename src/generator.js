@@ -17,11 +17,30 @@ class CodeGenerator {
     this.indent = '  ';
     this.functions = new Map();
 
+    this.renameMap = new Map();
+
     this.reservedNamespaces = new Set([
       'ta', 'math', 'array', 'str',
       'color', 'table', 'position', 'location', 'shape', 'size', 'text',
-      'strategy'
+      'strategy',
+      'state'
     ]);
+  }
+
+  getSafeName(name) {
+    if (this.reservedNamespaces.has(name)) {
+      const existing = this.renameMap.get(name);
+      if (existing) return existing;
+      let i = 1;
+      let candidate = `${name}_${i}`;
+      while (this.context.variables.has(candidate) || this.reservedNamespaces.has(candidate)) {
+        i++;
+        candidate = `${name}_${i}`;
+      }
+      this.renameMap.set(name, candidate);
+      return candidate;
+    }
+    return name;
   }
 
   indentStr() {
@@ -86,8 +105,8 @@ class CodeGenerator {
   }
 
   generateDestructuringAssignment(node) {
-    const targets = node.targets || [];
-    const lhs = `[${targets.join(', ')}]`;
+    const targets = (node.targets || []).filter(t => t !== '_');
+    const lhs = `[${(node.targets || []).map(t => t === '_' ? '' : t).join(', ')}]`;
 
     const needsDeclaration = targets.some(t => !this.context.variables.has(t) && !this.reservedNamespaces.has(t));
     if (needsDeclaration) {
@@ -313,26 +332,27 @@ class CodeGenerator {
   generateInputDeclaration(node) {
     this.context.inputs.push(node);
     this.writeln(`// Input: ${node.name} (${node.inputType})`);
-    this.writeln(`const ${node.name} = ${JSON.stringify(node.defaultValue)};`);
+    this.writeln(`const ${this.getSafeName(node.name)} = ${JSON.stringify(node.defaultValue)};`);
   }
 
   generateVariableDeclaration(node) {
+    const name = this.getSafeName(node.name);
     const prefix = (node.isVarip || node.isVar || node.declaredType) ? 'let' : 'const';
-    if (node.isVarip || node.isVar) {
-      this.context.stateVars.add(node.name);
-      this.context.variables.add(node.name);
-      this.writeln(`if (state.${node.name} === undefined) state.${node.name} = ${this.generate(node.value)};`);
+    if (node.isVar || node.isVarip) {
+      // Persistent variable stored in state
+      this.context.stateVars.add(name);
+      this.writeln(`if (state.${name} === undefined) state.${name} = ${this.generate(node.value)};`);
       return;
     }
 
-    this.context.variables.add(node.name);
-    this.writeln(`${prefix} ${node.name} = ${this.generate(node.value)};`);
+    this.context.variables.add(name);
+    this.writeln(`${prefix} ${name} = ${this.generate(node.value)};`);
   }
 
   generateAssignment(node) {
     // Pine allows implicit declaration on first assignment.
     if (node.target && node.target.type === 'Identifier') {
-      const name = node.target.name;
+      const name = this.getSafeName(node.target.name);
       if (this.context.stateVars.has(name)) {
         this.writeln(`state.${name} = ${this.generate(node.value)};`);
         return;
@@ -379,7 +399,8 @@ class CodeGenerator {
   }
 
   generateForInStatement(node) {
-    this.writeln(`for (const ${node.variable} of ${this.generate(node.iterable)}) {`);
+    const variable = Array.isArray(node.variable) ? `[${node.variable.join(', ')}]` : node.variable;
+    this.writeln(`for (const ${variable} of ${this.generate(node.iterable)}) {`);
     this.pushIndent();
     this.generate(node.body);
     this.popIndent();
@@ -525,6 +546,9 @@ class CodeGenerator {
   }
 
   generateIdentifier(node) {
+    if (this.renameMap.has(node.name)) {
+      return this.renameMap.get(node.name);
+    }
     if (this.reservedNamespaces.has(node.name) && !this.context.variables.has(node.name)) {
       return `pinescript.${node.name}`;
     }

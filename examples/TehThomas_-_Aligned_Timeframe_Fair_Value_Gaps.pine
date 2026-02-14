@@ -1,0 +1,292 @@
+// This Pine Script® code is subject to the terms of the Mozilla Public License 2.0 at https://mozilla.org/MPL/2.0/
+// © TehThomas
+
+
+// ==========================================
+// Indicator: Aligned Timeframe Fair Value Gaps
+// Author: @TehThomas
+// Description: Shows Fair Value Gaps on aligned timeframes, ICT style.
+// ==========================================
+
+
+//@version=6
+indicator("[TehThomas] - Aligned Timeframe Fair Value Gaps", overlay=true, max_boxes_count=500, max_lines_count=500, max_bars_back = 2000)
+
+
+// === Timeframe Alignment Function ===
+getAlignedTimeframe() =>
+    string result = ""
+    if timeframe.in_seconds() <= 60  // <= 1 min
+        result := "15"  // 15 min
+    else if timeframe.in_seconds() <= 180  // <= 3 min
+        result := "30"  // 30 min
+    else if timeframe.in_seconds() <= 300  // <= 5 min
+        result := "60"  // 1 hour
+    else if timeframe.in_seconds() <= 900  // <= 15 min
+        result := "240"  // 4 hour
+    else if timeframe.in_seconds() <= 3600  // <= 1 hour
+        result := "D"  // Daily
+    else if timeframe.in_seconds() <= 14400  // <= 4 hour
+        result := "W"  // Weekly
+    else
+        result := "M"  // Monthly
+    result
+
+
+// === Get Display Name for Timeframe ===
+getTimeframeDisplay(tf) =>
+    string result = ""
+    if tf == "15"
+        result := "15M"
+    else if tf == "30"
+        result := "30M"
+    else if tf == "60"
+        result := "1H"
+    else if tf == "240"
+        result := "4H"
+    else if tf == "D"
+        result := "Daily"
+    else if tf == "W"
+        result := "Weekly"
+    else if tf == "M"
+        result := "Monthly"
+    else
+        result := tf
+    result
+
+
+alignedTF = getAlignedTimeframe()
+tfDisplay = getTimeframeDisplay(alignedTF)
+
+
+// === User Inputs ===
+extendBars   = input.int(20, "Extend boxes", minval=0, group = "Boxes")
+Gapsize      = input.float(0, "Min Gap Size (%)", minval=0, step=0.1, group = "Boxes", tooltip = "Set the percentage size of how big the fvg should be")
+dynamicGaps  = input.bool(false, "Dynamic (shrinking) gaps", group="Boxes")
+maxGaps      = input.int(10, "Max Unfilled Gaps to Display", minval=1, group="Boxes")
+maxHistory   = input.int(50, "Max FVGs in History", minval=50, maxval=200, group="Boxes", tooltip="Higher = more unfilled gaps available, but slower performance")
+bullColor    = input.color(color.new(#47f7414d, 85), "Bullish Gap Color", group = "Colors")
+bearColor    = input.color(#fa7b7b26, "Bearish Gap Color", group = "Colors")
+gapBorderColor = input.color(color.black, "Gap Border Color", group = "Colors")
+showMidline  = input.bool(true, "Show Midline", group = "Midline")
+midlineColor = input.color(color.new(color.black, 0), "Midline Color", group = "Midline")
+midlineStyleOpt = input.string("Dotted", "Midline Style", options=["Solid", "Dashed", "Dotted"], group = "Midline")
+
+
+// === Label Inputs ===
+showLabel    = input.bool(true, "Show FVG Label", group = "Label")
+labelColor   = input.color(color.new(color.black, 0), "Label Text Color", group = "Label")
+labelSize    = input.string("Small", "Label Size", options=["Tiny", "Small", "Normal", "Large"], group = "Label")
+
+
+midlineStyle = midlineStyleOpt == "Solid"  ? line.style_solid :
+               midlineStyleOpt == "Dashed" ? line.style_dashed :
+               line.style_dotted
+
+
+textSize = labelSize == "Tiny"   ? size.tiny   :
+           labelSize == "Small"  ? size.small  :
+           labelSize == "Normal" ? size.normal :
+           size.large
+
+
+// === FVG Type ===
+type FVG
+    float top
+    float bot
+    bool Bullish
+    int created_bar
+    int start_bar
+    bool triggered
+    box fvgBox
+    line midLine
+    bool isFilled      // Filled by price
+    bool isVisible     // Currently displayed
+
+
+// === Arrays for tracking ===
+var FVG[] fvg_records = array.new<FVG>()
+
+
+// === Get HTF OHLC Data - Uses [1] offset to only use confirmed/closed HTF bars ===
+[htfLow, htfHigh, htfLow2, htfHigh2, htfTime] = request.security(syminfo.tickerid, alignedTF, [low[1], high[1], low[3], high[3], time[1]], lookahead=barmerge.lookahead_on)
+
+
+// Detect new HTF bar
+htfChanged = ta.change(htfTime) != 0
+
+
+// === Track HTF bar starts ===
+var int htfBarStart = na
+var int htfBarStart1 = na
+var int htfBarStart2 = na
+var int htfBarStart3 = na
+
+
+if htfChanged
+    htfBarStart3 := htfBarStart2
+    htfBarStart2 := htfBarStart1
+    htfBarStart1 := htfBarStart
+    htfBarStart := bar_index
+
+
+// === FVG Detection ===
+threshold = Gapsize / 100
+bullFVG = htfChanged and htfLow > htfHigh2 and ((htfLow - htfHigh2) / htfHigh2 > threshold)
+bearFVG = htfChanged and htfHigh < htfLow2 and ((htfLow2 - htfHigh) / htfHigh > threshold)
+
+
+// === Variables for alert conditions ===
+bullFVG_entry = false
+bearFVG_entry = false
+
+
+// === UPDATE: Update existing FVGs ===
+i = 0
+while i < array.size(fvg_records)
+    get = array.get(fvg_records, i)
+    
+    // Skip if already filled by price
+    if get.isFilled
+        i += 1
+        continue
+    
+    right_edge = bar_index + extendBars
+    top = get.top
+    bot = get.bot
+    changed = false
+    shouldMarkFilled = false
+    
+    // Alert only if price enters gap after creation bar and not triggered yet
+    if not get.triggered and bar_index > get.created_bar
+        inGap = (low <= top and high >= bot)
+        if inGap
+            if get.Bullish
+                bullFVG_entry := true
+            else
+                bearFVG_entry := true
+            get := FVG.new(top, bot, get.Bullish, get.created_bar, get.start_bar, true, get.fvgBox, get.midLine, get.isFilled, get.isVisible)
+            array.set(fvg_records, i, get)
+    
+    // Shrinking / removal logic
+    if dynamicGaps
+        if get.Bullish
+            if low < top
+                top := math.max(low, bot)
+                changed := true
+            if top <= bot
+                shouldMarkFilled := true
+        else
+            if high > bot
+                bot := math.min(high, top)
+                changed := true
+            if bot >= top
+                shouldMarkFilled := true
+    else
+        if get.Bullish and low <= bot
+            shouldMarkFilled := true
+        if not get.Bullish and high >= top
+            shouldMarkFilled := true
+    
+    if shouldMarkFilled
+        // Mark as filled
+        if get.isVisible
+            box.delete(get.fvgBox)
+            if showMidline and not na(get.midLine)
+                line.delete(get.midLine)
+        get := FVG.new(top, bot, get.Bullish, get.created_bar, get.start_bar, get.triggered, na, na, true, false)
+        array.set(fvg_records, i, get)
+        i += 1
+        continue
+    
+    if changed
+        if get.isVisible
+            box.set_top(get.fvgBox, top)
+            box.set_bottom(get.fvgBox, bot)
+        get := FVG.new(top, bot, get.Bullish, get.created_bar, get.start_bar, get.triggered, get.fvgBox, get.midLine, get.isFilled, get.isVisible)
+        array.set(fvg_records, i, get)
+    
+    // Update box/line only if visible
+    if get.isVisible
+        box.set_right(get.fvgBox, right_edge)
+        if showMidline and not na(get.midLine)
+            mid = (top + bot) / 2
+            line.set_x2(get.midLine, right_edge)
+            line.set_y1(get.midLine, mid)
+            line.set_y2(get.midLine, mid)
+            line.set_style(get.midLine, midlineStyle)
+    i += 1
+
+
+// === Add new FVG ===
+addFVG(isBull, top, bot, color, startBar) =>
+    fvgBox = box.new(left=startBar, top=top, right=bar_index+extendBars, bottom=bot, bgcolor=color, border_color=gapBorderColor)
+    
+    if showLabel
+        box.set_text(fvgBox, tfDisplay + " FVG")
+        box.set_text_color(fvgBox, labelColor)
+        box.set_text_size(fvgBox, textSize)
+        box.set_text_halign(fvgBox, text.align_center)
+        box.set_text_valign(fvgBox, text.align_center)
+    
+    mid = (top + bot) / 2
+    midLine = showMidline ? line.new(startBar, mid, bar_index+extendBars, mid, xloc.bar_index, color=midlineColor, style=midlineStyle) : na
+    
+    newFvg = FVG.new(top, bot, isBull, bar_index, startBar, false, fvgBox, midLine, false, true)
+    fvg_records.unshift(newFvg)
+    
+    // Keep max history
+    if array.size(fvg_records) > maxHistory
+        oldFvg = array.pop(fvg_records)
+        if not oldFvg.isFilled and oldFvg.isVisible
+            box.delete(oldFvg.fvgBox)
+            if showMidline and not na(oldFvg.midLine)
+                line.delete(oldFvg.midLine)
+
+
+// === Detect and Add New FVGs - Box starts at htfBarStart2 (where gap actually formed) ===
+if bullFVG and not na(htfBarStart2)
+    addFVG(true, htfLow, htfHigh2, bullColor, htfBarStart2)
+if bearFVG and not na(htfBarStart2)
+    addFVG(false, htfLow2, htfHigh, bearColor, htfBarStart2)
+
+
+// === Count unfilled and manage visibility ===
+unfilledCount = 0
+i2 = 0
+while i2 < array.size(fvg_records)
+    get2 = array.get(fvg_records, i2)
+    
+    // Only count unfilled gaps
+    if not get2.isFilled
+        unfilledCount += 1
+        
+        // Within top maxGaps: ensure visible
+        if unfilledCount <= maxGaps
+            if not get2.isVisible
+                // Recreate box and line
+                color = get2.Bullish ? bullColor : bearColor
+                newBox = box.new(left=get2.start_bar, top=get2.top, right=bar_index+extendBars, bottom=get2.bot, bgcolor=color, border_color=gapBorderColor)
+                
+                if showLabel
+                    box.set_text(newBox, tfDisplay + " FVG")
+                    box.set_text_color(newBox, labelColor)
+                    box.set_text_size(newBox, textSize)
+                    box.set_text_halign(newBox, text.align_center)
+                    box.set_text_valign(newBox, text.align_center)
+                
+                mid = (get2.top + get2.bot) / 2
+                newLine = showMidline ? line.new(get2.start_bar, mid, bar_index+extendBars, mid, xloc.bar_index, color=midlineColor, style=midlineStyle) : na
+                
+                get2 := FVG.new(get2.top, get2.bot, get2.Bullish, get2.created_bar, get2.start_bar, get2.triggered, newBox, newLine, get2.isFilled, true)
+                array.set(fvg_records, i2, get2)
+        else
+            // Outside top maxGaps: hide
+            if get2.isVisible
+                box.delete(get2.fvgBox)
+                if showMidline and not na(get2.midLine)
+                    line.delete(get2.midLine)
+                get2 := FVG.new(get2.top, get2.bot, get2.Bullish, get2.created_bar, get2.start_bar, get2.triggered, na, na, get2.isFilled, false)
+                array.set(fvg_records, i2, get2)
+    
+    i2 += 1

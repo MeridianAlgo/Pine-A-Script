@@ -1,18 +1,20 @@
-/**
- * PineScript Built-in Functions - JavaScript implementations
- */
+// PineScript to JavaScript Transpiled Code
 
-export const builtins = new Map([
-  // Moving Averages
-  ['sma', function(series, length) {
+// Generated automatically
+
+
+// Built-in PineScript functions
+
+const pinescript = {
+
+  sma: function(series, length) {
     if (series === null || series === undefined) return null;
     if (!Array.isArray(series)) series = [series];
     if (!series || series.length < length) return null;
     const slice = series.slice(-length);
     return slice.reduce((a, b) => a + b, 0) / length;
-  }],
-
-  ['ema', function(series, length) {
+  },
+  ema: function(series, length) {
     if (series === null || series === undefined) return null;
     if (!Array.isArray(series)) series = [series];
     if (!series || series.length < 1) return null;
@@ -22,9 +24,8 @@ export const builtins = new Map([
       result = alpha * series[i] + (1 - alpha) * result;
     }
     return result;
-  }],
-
-  ['wma', function(series, length) {
+  },
+  wma: function(series, length) {
     if (series === null || series === undefined) return null;
     if (!Array.isArray(series)) series = [series];
     if (!series || series.length < length) return null;
@@ -37,9 +38,8 @@ export const builtins = new Map([
       weightSum += weight;
     }
     return sum / weightSum;
-  }],
-
-  ['vwma', function(close, volume, length) {
+  },
+  vwma: function(close, volume, length) {
     if (!close || close.length < length) return null;
     let sum = 0;
     let volSum = 0;
@@ -48,9 +48,8 @@ export const builtins = new Map([
       volSum += volume[volume.length - 1 - i];
     }
     return volSum > 0 ? sum / volSum : null;
-  }],
-
-  ['rma', function(series, length) {
+  },
+  rma: function(series, length) {
     if (series === null || series === undefined) return null;
     if (!Array.isArray(series)) series = [series];
     if (!series || series.length < 1) return null;
@@ -60,9 +59,8 @@ export const builtins = new Map([
       result = alpha * series[i] + (1 - alpha) * result;
     }
     return result;
-  }],
-
-  ['hma', function(series, length) {
+  },
+  hma: function(series, length) {
     if (series === null || series === undefined) return null;
     if (!Array.isArray(series)) series = [series];
     if (!series || series.length < length) return null;
@@ -71,9 +69,8 @@ export const builtins = new Map([
     const wma2 = builtins.get('wma')(series, length);
     const diff = wma2 - wma1;
     return builtins.get('wma')([diff, diff], Math.floor(Math.sqrt(length)));
-  }],
-
-  ['alma', function(series, length, offset = 0.85, sigma = 6) {
+  },
+  alma: function(series, length, offset = 0.85, sigma = 6) {
     if (series === null || series === undefined) return null;
     if (!Array.isArray(series)) series = [series];
     if (!series || series.length < length) return null;
@@ -86,10 +83,8 @@ export const builtins = new Map([
       weightSum += weight;
     }
     return weightSum > 0 ? sum / weightSum : null;
-  }],
-
-  // Volatility
-  ['atr', function(high, low, close, length = 14) {
+  },
+  atr: function(high, low, close, length = 14) {
     if (!Array.isArray(high) || !Array.isArray(low) || !Array.isArray(close)) return null;
     if (high.length < length + 1 || low.length < length + 1 || close.length < length + 1) return null;
     let sum = 0;
@@ -103,27 +98,23 @@ export const builtins = new Map([
       sum += tr;
     }
     return sum / length;
-  }],
-
-  ['bb', function(source, length, mult = 2) {
+  },
+  bb: function(source, length, mult = 2) {
     if (!source || source.length < length) return null;
     const sma = builtins.get('sma')(source, length);
     const slice = source.slice(-length);
     const variance = slice.reduce((sum, val) => sum + Math.pow(val - sma, 2), 0) / length;
     const stdDev = Math.sqrt(variance);
     return { middle: sma, upper: sma + mult * stdDev, lower: sma - mult * stdDev };
-  }],
-
-  ['kc', function(high, low, close, length = 20, mult = 2) {
+  },
+  kc: function(high, low, close, length = 20, mult = 2) {
     if (!high || high.length < length) return null;
     const typicalPrice = high.map((h, i) => (h + low[i] + close[i]) / 3);
     const sma = builtins.get('sma')(typicalPrice, length);
     const atr = builtins.get('atr')(high, low, close, length);
     return { middle: sma, upper: sma + mult * atr, lower: sma - mult * atr };
-  }],
-
-  // Oscillators
-  ['rsi', function(close, length = 14) {
+  },
+  rsi: function(close, length = 14) {
     if (close === null || close === undefined) return null;
     if (!Array.isArray(close)) close = [close];
     if (!close || close.length < length + 1) return null;
@@ -139,9 +130,8 @@ export const builtins = new Map([
     if (avgLoss === 0) return 100;
     const rs = avgGain / avgLoss;
     return 100 - (100 / (1 + rs));
-  }],
-
-  ['roc', function(series, length = 9) {
+  },
+  roc: function(series, length = 9) {
     if (series === null || series === undefined) return null;
     if (!Array.isArray(series)) series = [series];
     if (!series || series.length < length + 1) return null;
@@ -149,9 +139,8 @@ export const builtins = new Map([
     const curr = series[series.length - 1];
     if (prev === 0 || prev === null || prev === undefined) return null;
     return ((curr - prev) / prev) * 100;
-  }],
-
-  ['percentrank', function(series, length = 100) {
+  },
+  percentrank: function(series, length = 100) {
     if (series === null || series === undefined) return null;
     if (!Array.isArray(series)) series = [series];
     if (series.length < 1) return null;
@@ -162,9 +151,8 @@ export const builtins = new Map([
     if (idx < 0) idx = sorted.length - 1;
     if (sorted.length <= 1) return 0;
     return (idx / (sorted.length - 1)) * 100;
-  }],
-
-  ['stoch', function(high, low, close, kLength = 14, dLength = 3, smoothK = 3) {
+  },
+  stoch: function(high, low, close, kLength = 14, dLength = 3, smoothK = 3) {
     if (!high || high.length < kLength) return null;
     const highestHigh = Math.max(...high.slice(-kLength));
     const lowestLow = Math.min(...low.slice(-kLength));
@@ -172,9 +160,8 @@ export const builtins = new Map([
     if (range === 0) return { k: 50, d: 50 };
     const rawK = ((close[close.length - 1] - lowestLow) / range) * 100;
     return { k: rawK, d: builtins.get('sma')([rawK], smoothK) };
-  }],
-
-  ['macd', function(close, fastLen = 12, slowLen = 26, signalLen = 9) {
+  },
+  macd: function(close, fastLen = 12, slowLen = 26, signalLen = 9) {
     if (!close || close.length < slowLen + signalLen) return null;
     const fastEMA = builtins.get('ema')(close, fastLen);
     const slowEMA = builtins.get('ema')(close, slowLen);
@@ -182,9 +169,8 @@ export const builtins = new Map([
     const signalLine = builtins.get('ema')([macdLine], signalLen);
     const histogram = macdLine - signalLine;
     return { macd: macdLine, signal: signalLine, histogram: histogram };
-  }],
-
-  ['cci', function(a, b, c, d) {
+  },
+  cci: function(a, b, c, d) {
     // Pine signatures:
     // - ta.cci(source, length)
     // - ta.cci(high, low, close, length)
@@ -209,16 +195,14 @@ export const builtins = new Map([
     const meanDev = slice.reduce((sum, val) => sum + Math.abs(val - sma), 0) / length;
     if (meanDev === 0) return 0;
     return (source[source.length - 1] - sma) / (0.015 * meanDev);
-  }],
-
-  ['change', function(series) {
+  },
+  change: function(series) {
     if (series === null || series === undefined) return null;
     if (!Array.isArray(series)) series = [series];
     if (series.length < 2) return null;
     return series[series.length - 1] - series[series.length - 2];
-  }],
-
-  ['mfi', function(high, low, close, volume, length = 14) {
+  },
+  mfi: function(high, low, close, volume, length = 14) {
     if (!high || high.length < length + 1) return null;
     let posSum = 0;
     let negSum = 0;
@@ -232,10 +216,8 @@ export const builtins = new Map([
     if (negSum === 0) return 100;
     const ratio = posSum / negSum;
     return 100 - (100 / (1 + ratio));
-  }],
-
-  // Volume
-  ['obv', function(close, volume) {
+  },
+  obv: function(close, volume) {
     if (!close || close.length < 2) return null;
     let result = 0;
     for (let i = 1; i < close.length; i++) {
@@ -243,9 +225,8 @@ export const builtins = new Map([
       else if (close[i] < close[i - 1]) result -= volume[i];
     }
     return result;
-  }],
-
-  ['ad', function(high, low, close, volume) {
+  },
+  ad: function(high, low, close, volume) {
     if (!high || high.length < 1) return null;
     let result = 0;
     for (let i = 0; i < high.length; i++) {
@@ -253,17 +234,15 @@ export const builtins = new Map([
       result += mf;
     }
     return result;
-  }],
-
-  ['adosc', function(high, low, close, volume, fastLen = 3, slowLen = 10) {
+  },
+  adosc: function(high, low, close, volume, fastLen = 3, slowLen = 10) {
     if (!high || high.length < slowLen) return null;
     const ad = builtins.get('ad')(high, low, close, volume);
     const fastEMA = builtins.get('ema')(ad, fastLen);
     const slowEMA = builtins.get('ema')(ad, slowLen);
     return fastEMA - slowEMA;
-  }],
-
-  ['cmf', function(high, low, close, volume, length = 20) {
+  },
+  cmf: function(high, low, close, volume, length = 20) {
     if (!high || high.length < length) return null;
     let sum = 0;
     let volSum = 0;
@@ -273,9 +252,8 @@ export const builtins = new Map([
       volSum += volume[i];
     }
     return volSum > 0 ? sum / volSum : 0;
-  }],
-
-  ['vwap', function(high, low, close, volume) {
+  },
+  vwap: function(high, low, close, volume) {
     if (!high || high.length < 1) return null;
     let priceVolSum = 0;
     let volSum = 0;
@@ -285,10 +263,8 @@ export const builtins = new Map([
       volSum += volume[i];
     }
     return volSum > 0 ? priceVolSum / volSum : null;
-  }],
-
-  // Statistical
-  ['linreg', function(source, length, offset = 0) {
+  },
+  linreg: function(source, length, offset = 0) {
     if (!source || source.length < length) return null;
     const slice = source.slice(-length - offset).slice(offset);
     let sumX = 0, sumY = 0, sumXY = 0, sumXX = 0;
@@ -301,9 +277,8 @@ export const builtins = new Map([
     const slope = (length * sumXY - sumX * sumY) / (length * sumXX - sumX * sumX);
     const intercept = (sumY - slope * sumX) / length;
     return intercept + slope * (length - 1);
-  }],
-
-  ['correlation', function(source1, source2, length) {
+  },
+  correlation: function(source1, source2, length) {
     if (!source1 || source1.length < length) return null;
     const slice1 = source1.slice(-length);
     const slice2 = source2.slice(-length);
@@ -319,157 +294,123 @@ export const builtins = new Map([
     }
     const den = Math.sqrt(den1 * den2);
     return den > 0 ? num / den : 0;
-  }],
-
-  ['variance', function(source, length) {
+  },
+  variance: function(source, length) {
     if (!source || source.length < length) return null;
     const slice = source.slice(-length);
     const mean = slice.reduce((a, b) => a + b, 0) / length;
     return slice.reduce((sum, val) => sum + Math.pow(val - mean, 2), 0) / length;
-  }],
-
-  ['stdev', function(source, length) {
+  },
+  stdev: function(source, length) {
     return Math.sqrt(builtins.get('variance')(source, length));
-  }],
-
-  // Price Functions
-  ['hl2', function(high, low) {
+  },
+  hl2: function(high, low) {
     return high && low ? (high[high.length - 1] + low[low.length - 1]) / 2 : null;
-  }],
-
-  ['hlc3', function(high, low, close) {
+  },
+  hlc3: function(high, low, close) {
     return high && low && close ? (high[high.length - 1] + low[low.length - 1] + close[close.length - 1]) / 3 : null;
-  }],
-
-  ['ohlc4', function(open, high, low, close) {
+  },
+  ohlc4: function(open, high, low, close) {
     return open && high && low && close ? (open[open.length - 1] + high[high.length - 1] + low[low.length - 1] + close[close.length - 1]) / 4 : null;
-  }],
-
-  // Utility Functions
-  ['avg', function(...args) {
+  },
+  avg: function(...args) {
     return args.reduce((a, b) => a + b, 0) / args.length;
-  }],
-
-  ['max', function(...args) {
+  },
+  max: function(...args) {
     return Math.max(...args.filter(v => v !== null && v !== undefined));
-  }],
-
-  ['min', function(...args) {
+  },
+  min: function(...args) {
     return Math.min(...args.filter(v => v !== null && v !== undefined));
-  }],
-
-  ['abs', function(value) {
+  },
+  abs: function(value) {
     return Math.abs(value);
-  }],
-
-  ['sqrt', function(value) {
+  },
+  sqrt: function(value) {
     return Math.sqrt(value);
-  }],
-
-  ['pow', function(base, exp) {
+  },
+  pow: function(base, exp) {
     return Math.pow(base, exp);
-  }],
-
-  ['exp', function(value) {
+  },
+  exp: function(value) {
     return Math.exp(value);
-  }],
-
-  ['log', function(value) {
+  },
+  log: function(value) {
     return Math.log(value);
-  }],
-
-  ['log10', function(value) {
+  },
+  log10: function(value) {
     return Math.log10(value);
-  }],
-
-  ['sin', function(value) {
+  },
+  sin: function(value) {
     return Math.sin(value);
-  }],
-
-  ['cos', function(value) {
+  },
+  cos: function(value) {
     return Math.cos(value);
-  }],
-
-  ['tan', function(value) {
+  },
+  tan: function(value) {
     return Math.tan(value);
-  }],
-
-  ['asin', function(value) {
+  },
+  asin: function(value) {
     return Math.asin(value);
-  }],
-
-  ['acos', function(value) {
+  },
+  acos: function(value) {
     return Math.acos(value);
-  }],
-
-  ['atan', function(value) {
+  },
+  atan: function(value) {
     return Math.atan(value);
-  }],
-
-  ['floor', function(value) {
+  },
+  floor: function(value) {
     return Math.floor(value);
-  }],
-
-  ['ceil', function(value) {
+  },
+  ceil: function(value) {
     return Math.ceil(value);
-  }],
-
-  ['round', function(value, decimals = 0) {
+  },
+  round: function(value, decimals = 0) {
     const factor = Math.pow(10, decimals);
     return Math.round(value * factor) / factor;
-  }],
-
-  ['cum', function(series) {
+  },
+  cum: function(series) {
     if (!series) return null;
     return series.reduce((sum, val) => sum + val, 0);
-  }],
-
-  ['sum', function(series, length) {
+  },
+  sum: function(series, length) {
     if (!series || series.length < length) return null;
     return series.slice(-length).reduce((a, b) => a + b, 0);
-  }],
-
-  ['highest', function(series, length) {
+  },
+  highest: function(series, length) {
     if (!series || series.length < length) return null;
     return Math.max(...series.slice(-length));
-  }],
-
-  ['lowest', function(series, length) {
+  },
+  lowest: function(series, length) {
     if (!series || series.length < length) return null;
     return Math.min(...series.slice(-length));
-  }],
-
-  ['highestbars', function(series, length) {
+  },
+  highestbars: function(series, length) {
     if (!series || series.length < length) return null;
     const slice = series.slice(-length);
     const maxVal = Math.max(...slice);
     return length - 1 - slice.indexOf(maxVal);
-  }],
-
-  ['lowestbars', function(series, length) {
+  },
+  lowestbars: function(series, length) {
     if (!series || series.length < length) return null;
     const slice = series.slice(-length);
     const minVal = Math.min(...slice);
     return length - 1 - slice.indexOf(minVal);
-  }],
-
-  ['rising', function(series, length) {
+  },
+  rising: function(series, length) {
     if (!series || series.length < length) return false;
     for (let i = series.length - length; i < series.length - 1; i++) {
       if (series[i] >= series[i + 1]) return false;
     }
     return true;
-  }],
-
-  ['falling', function(series, length) {
+  },
+  falling: function(series, length) {
     if (!series || series.length < length) return false;
     for (let i = series.length - length; i < series.length - 1; i++) {
       if (series[i] <= series[i + 1]) return false;
     }
     return true;
-  }],
-
-  ['cross', function(series1, series2) {
+  },
+  cross: function(series1, series2) {
     if (series1 === null || series1 === undefined) return false;
     if (series2 === null || series2 === undefined) return false;
     if (!Array.isArray(series1)) series1 = [series1];
@@ -478,15 +419,13 @@ export const builtins = new Map([
     const i = series1.length - 1;
     return (series1[i - 1] < series2[i - 1] && series1[i] >= series2[i]) ||
            (series1[i - 1] > series2[i - 1] && series1[i] <= series2[i]);
-  }],
-
-  ['offset', function(series, offset) {
+  },
+  offset: function(series, offset) {
     if (!Array.isArray(series)) return null;
     const idx = series.length - 1 - offset;
     return idx >= 0 ? series[idx] : null;
-  }],
-
-  ['valuewhen', function(condition, source, occurrence = 1) {
+  },
+  valuewhen: function(condition, source, occurrence = 1) {
     if (condition === null || condition === undefined) return null;
     if (source === null || source === undefined) return null;
     if (!Array.isArray(condition)) condition = [condition];
@@ -499,9 +438,8 @@ export const builtins = new Map([
       }
     }
     return null;
-  }],
-
-  ['barssince', function(condition) {
+  },
+  barssince: function(condition) {
     if (condition === null || condition === undefined) return null;
     if (!Array.isArray(condition)) {
       return condition ? 0 : null;
@@ -510,75 +448,58 @@ export const builtins = new Map([
       if (condition[i]) return condition.length - 1 - i;
     }
     return null;
-  }],
-
-  // Time Functions
-  ['year', function(timestamp) {
+  },
+  year: function(timestamp) {
     const date = timestamp ? new Date(timestamp) : new Date();
     return date.getFullYear();
-  }],
-
-  ['month', function(timestamp) {
+  },
+  month: function(timestamp) {
     const date = timestamp ? new Date(timestamp) : new Date();
     return date.getMonth() + 1;
-  }],
-
-  ['weekofyear', function(timestamp) {
+  },
+  weekofyear: function(timestamp) {
     const date = timestamp ? new Date(timestamp) : new Date();
     const d = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()));
     const dayNum = d.getUTCDay();
     d.setUTCDate(d.getUTCDate() + 4 - (dayNum || 7));
     const yearStart = new Date(Date.UTC(d.getUTCFullYear(), 0, 1));
     return Math.ceil((((d - yearStart) / 86400000) + 1) / 7);
-  }],
-
-  ['dayofmonth', function(timestamp) {
+  },
+  dayofmonth: function(timestamp) {
     const date = timestamp ? new Date(timestamp) : new Date();
     return date.getDate();
-  }],
-
-  ['hour', function(timestamp) {
+  },
+  hour: function(timestamp) {
     const date = timestamp ? new Date(timestamp) : new Date();
     return date.getHours();
-  }],
-
-  ['minute', function(timestamp) {
+  },
+  minute: function(timestamp) {
     const date = timestamp ? new Date(timestamp) : new Date();
     return date.getMinutes();
-  }],
-
-  ['second', function(timestamp) {
+  },
+  second: function(timestamp) {
     const date = timestamp ? new Date(timestamp) : new Date();
     return date.getSeconds();
-  }],
-
-  ['timestamp', function(year, month, day, hour = 0, minute = 0, second = 0) {
+  },
+  timestamp: function(year, month, day, hour = 0, minute = 0, second = 0) {
     return Date.UTC(year, month - 1, day, hour, minute, second);
-  }],
-
-  // Type Conversion
-  ['na', function(value) {
+  },
+  na: function(value) {
     return value === null || value === undefined || (typeof value === 'number' && isNaN(value));
-  }],
-
-  ['nz', function(value, replacement = 0) {
+  },
+  nz: function(value, replacement = 0) {
     return value === null || value === undefined || isNaN(value) ? replacement : value;
-  }],
-
-  ['isna', function(value) {
+  },
+  isna: function(value) {
     return value === null || value === undefined || isNaN(value);
-  }],
-
-  ['isempty', function(value) {
+  },
+  isempty: function(value) {
     return value === null || value === undefined || value === '';
-  }],
-
-  ['fixnan', function(value, replacement = 0) {
+  },
+  fixnan: function(value, replacement = 0) {
     return builtins.get('nz')(value, replacement);
-  }],
-
-  // Plotting Functions (stub implementations)
-  ['plot', function(series, title = '', color = null, linewidth = 1) {
+  },
+  plot: function(series, title = '', color = null, linewidth = 1) {
     globalThis.__pineRuntime.plots.push({
       series,
       title,
@@ -586,192 +507,149 @@ export const builtins = new Map([
       linewidth
     });
     return series;
-  }],
-
-  ['lineNew', function(x1, y1, x2, y2, opts = {}) {
+  },
+  lineNew: function(x1, y1, x2, y2, opts = {}) {
     return { x1, y1, x2, y2, opts, _type: 'line' };
-  }],
-
-  ['lineDelete', function(l) {
+  },
+  lineDelete: function(l) {
     return null;
-  }],
-
-  ['labelNew', function(x, y, text = '', opts = {}) {
-    return { x, y, text, opts, _type: 'label' };
-  }],
-
-  ['labelDelete', function(l) {
-    return null;
-  }],
-
-  ['plotshape', function(condition, ...rest) {
-    if (globalThis.__pineRuntime) {
-      globalThis.__pineRuntime.plotshapes.push({ condition, args: rest });
-    }
-    return condition;
-  }],
-
-  ['indicator', function(title, shorttitle, overlay, opts) {
-    if (globalThis.__pineRuntime) {
-      globalThis.__pineRuntime.indicator = { title, shorttitle, overlay, opts };
-    }
-    return null;
-  }],
-
-  ['strategy', function(title, shorttitle, overlay, opts) {
-    if (globalThis.__pineRuntime) {
-      globalThis.__pineRuntime.strategy = { title, shorttitle, overlay, opts };
-    }
-    return null;
-  }],
-
-  ['alertcondition', function(condition, ...rest) {
-    if (globalThis.__pineRuntime) {
-      globalThis.__pineRuntime.alerts.push({ condition, args: rest });
-    }
-    return null;
-  }],
-
-  ['plotbar', function(open, high, low, close, title, color, editable, showLast) {
-    return { open, high, low, close };
-  }],
-
-  ['plotcandle', function(open, high, low, close, title, color, wickColor, borderColor, editable, showLast) {
-    return { open, high, low, close };
-  }],
-
-  ['hline', function(_price, _title, _opts) {
-    return null;
-  }],
-
-  // Drawing/annotation (stubs)
-  ['labelNew', function(...args) {
+  },
+  labelNew: function(...args) {
     if (globalThis.__pineRuntime) {
       globalThis.__pineRuntime.labels = globalThis.__pineRuntime.labels || [];
       globalThis.__pineRuntime.labels.push({ args });
     }
     return { args };
-  }],
-
-  ['bgcolor', function(color, title, editable, showLast) {
+  },
+  labelDelete: function(l) {
     return null;
-  }],
-
-  ['fill', function(series1, series2, color, title, editable) {
+  },
+  plotshape: function(condition, ...rest) {
+    if (globalThis.__pineRuntime) {
+      globalThis.__pineRuntime.plotshapes.push({ condition, args: rest });
+    }
+    return condition;
+  },
+  indicator: function(title, shorttitle, overlay, opts) {
+    if (globalThis.__pineRuntime) {
+      globalThis.__pineRuntime.indicator = { title, shorttitle, overlay, opts };
+    }
     return null;
-  }],
-
-  // Alert Functions
-  ['alert', function(condition, message, frequency) {
+  },
+  strategy: function(title, shorttitle, overlay, opts) {
+    if (globalThis.__pineRuntime) {
+      globalThis.__pineRuntime.strategy = { title, shorttitle, overlay, opts };
+    }
+    return null;
+  },
+  alertcondition: function(condition, ...rest) {
+    if (globalThis.__pineRuntime) {
+      globalThis.__pineRuntime.alerts.push({ condition, args: rest });
+    }
+    return null;
+  },
+  plotbar: function(open, high, low, close, title, color, editable, showLast) {
+    return { open, high, low, close };
+  },
+  plotcandle: function(open, high, low, close, title, color, wickColor, borderColor, editable, showLast) {
+    return { open, high, low, close };
+  },
+  hline: function(_price, _title, _opts) {
+    return null;
+  },
+  bgcolor: function(color, title, editable, showLast) {
+    return null;
+  },
+  fill: function(series1, series2, color, title, editable) {
+    return null;
+  },
+  alert: function(condition, message, frequency) {
     console.log('Alert:', condition ? message : 'Condition not met');
     return condition;
-  }],
-
-  // Strategy Functions
-  ['strategyEntry', function(id, direction, qty, limit, stop, ocaName, ocaType, comment) {
+  },
+  strategyEntry: function(id, direction, qty, limit, stop, ocaName, ocaType, comment) {
     console.log(`Strategy Entry: ${id} ${direction}`);
     return true;
-  }],
-
-  ['strategyExit', function(id, fromEntry, qty, limit, stop, ocaName, comment) {
+  },
+  strategyExit: function(id, fromEntry, qty, limit, stop, ocaName, comment) {
     console.log(`Strategy Exit: ${id}`);
     return true;
-  }],
-
-  ['strategyOrder', function(id, direction, qty, limit, stop, ocaName, ocaType, comment) {
+  },
+  strategyOrder: function(id, direction, qty, limit, stop, ocaName, ocaType, comment) {
     console.log(`Strategy Order: ${id} ${direction}`);
     return true;
-  }],
-
-  ['strategyClose', function(id, comment, qty, percent, immediately) {
+  },
+  strategyClose: function(id, comment, qty, percent, immediately) {
     console.log(`Strategy Close: ${id}`);
     return true;
-  }],
-
-  ['strategyLong', function() {
+  },
+  strategyLong: function() {
     return 'long';
-  }],
-
-  ['strategyShort', function() {
+  },
+  strategyShort: function() {
     return 'short';
-  }],
-
-  ['chartPointFromIndex', function(_index, _price) {
+  },
+  chartPointFromIndex: function(_index, _price) {
     return { index: _index ?? null, price: _price ?? null };
-  }],
-
-  ['chartPointNew', function(_time, _price) {
+  },
+  chartPointNew: function(_time, _price) {
     return { time: _time ?? null, price: _price ?? null };
-  }],
-
-  ['mapNew', function() {
+  },
+  mapNew: function() {
     return new Map();
-  }],
-
-  ['mapSize', function(m) {
+  },
+  mapSize: function(m) {
     return m instanceof Map ? m.size : 0;
-  }],
-
-  ['mapGet', function(m, key, defval) {
+  },
+  mapGet: function(m, key, defval) {
     if (!(m instanceof Map)) return defval ?? null;
     if (!m.has(key)) return defval ?? null;
     return m.get(key);
-  }],
-
-  ['mapSet', function(m, key, value) {
+  },
+  mapSet: function(m, key, value) {
     if (!(m instanceof Map)) return null;
     m.set(key, value);
     return value;
-  }],
-
-  ['mapRemove', function(m, key) {
+  },
+  mapRemove: function(m, key) {
     if (!(m instanceof Map)) return false;
     return m.delete(key);
-  }],
-
-  ['mapKeys', function(m) {
+  },
+  mapKeys: function(m) {
     if (!(m instanceof Map)) return [];
     return Array.from(m.keys());
-  }],
-
-  ['mapValues', function(m) {
+  },
+  mapValues: function(m) {
     if (!(m instanceof Map)) return [];
     return Array.from(m.values());
-  }],
-
-  ['mapContains', function(m, key) {
+  },
+  mapContains: function(m, key) {
     if (!(m instanceof Map)) return false;
     return m.has(key);
-  }],
-
-  ['matrixNew', function(rows, cols, initialValue = 0) {
+  },
+  matrixNew: function(rows, cols, initialValue = 0) {
     const r = Math.max(0, rows ?? 0);
     const c = Math.max(0, cols ?? 0);
     const data = Array.from({ length: r }, () => Array.from({ length: c }, () => initialValue));
     return { rows: r, cols: c, data };
-  }],
-
-  ['matrixRows', function(m) {
+  },
+  matrixRows: function(m) {
     return m?.rows ?? 0;
-  }],
-
-  ['matrixCols', function(m) {
+  },
+  matrixCols: function(m) {
     return m?.cols ?? 0;
-  }],
-
-  ['matrixGet', function(m, row, col) {
+  },
+  matrixGet: function(m, row, col) {
     if (!m || !Array.isArray(m.data)) return null;
     return m.data?.[row]?.[col] ?? null;
-  }],
-
-  ['matrixSet', function(m, row, col, value) {
+  },
+  matrixSet: function(m, row, col, value) {
     if (!m || !Array.isArray(m.data)) return null;
     if (!Array.isArray(m.data[row])) return null;
     m.data[row][col] = value;
     return value;
-  }],
-
-  ['matrixFill', function(m, value) {
+  },
+  matrixFill: function(m, value) {
     if (!m || !Array.isArray(m.data)) return null;
     for (let r = 0; r < (m.rows ?? 0); r++) {
       for (let c = 0; c < (m.cols ?? 0); c++) {
@@ -779,9 +657,8 @@ export const builtins = new Map([
       }
     }
     return m;
-  }],
-
-  ['matrixSum', function(m) {
+  },
+  matrixSum: function(m) {
     if (!m || !Array.isArray(m.data)) return null;
     let s = 0;
     for (let r = 0; r < (m.rows ?? 0); r++) {
@@ -791,17 +668,15 @@ export const builtins = new Map([
       }
     }
     return s;
-  }],
-
-  ['matrixAvg', function(m) {
+  },
+  matrixAvg: function(m) {
     if (!m || !Array.isArray(m.data)) return null;
     const n = (m.rows ?? 0) * (m.cols ?? 0);
     if (n === 0) return null;
     const s = builtins.get('matrixSum')(m);
     return (typeof s === 'number') ? (s / n) : null;
-  }],
-
-  ['matrixMin', function(m) {
+  },
+  matrixMin: function(m) {
     if (!m || !Array.isArray(m.data)) return null;
     let out = null;
     for (let r = 0; r < (m.rows ?? 0); r++) {
@@ -812,9 +687,8 @@ export const builtins = new Map([
       }
     }
     return out;
-  }],
-
-  ['matrixMax', function(m) {
+  },
+  matrixMax: function(m) {
     if (!m || !Array.isArray(m.data)) return null;
     let out = null;
     for (let r = 0; r < (m.rows ?? 0); r++) {
@@ -825,9 +699,8 @@ export const builtins = new Map([
       }
     }
     return out;
-  }],
-
-  ['matrixTranspose', function(m) {
+  },
+  matrixTranspose: function(m) {
     if (!m || !Array.isArray(m.data)) return null;
     const r = m.rows ?? 0;
     const c = m.cols ?? 0;
@@ -838,9 +711,8 @@ export const builtins = new Map([
       }
     }
     return out;
-  }],
-
-  ['matrixMult', function(a, b) {
+  },
+  matrixMult: function(a, b) {
     if (!a || !b || !Array.isArray(a.data) || !Array.isArray(b.data)) return null;
     const aRows = a.rows ?? 0;
     const aCols = a.cols ?? 0;
@@ -860,9 +732,8 @@ export const builtins = new Map([
       }
     }
     return out;
-  }],
-
-  ['matrixInv', function(m) {
+  },
+  matrixInv: function(m) {
     if (!m || !Array.isArray(m.data)) return null;
     const r = m.rows ?? 0;
     const c = m.cols ?? 0;
@@ -882,221 +753,176 @@ export const builtins = new Map([
       return out;
     }
     return null;
-  }],
-
-  // Security / Data Functions
-  ['requestSecurity', function(symbol, timeframe, expression) {
+  },
+  requestSecurity: function(symbol, timeframe, expression) {
     return expression;
-  }],
-
-  // Array Functions
-  ['arrayNew', function(initialSize = 0, initialValue = 0) {
+  },
+  arrayNew: function(initialSize = 0, initialValue = 0) {
     return Array(initialSize).fill(initialValue);
-  }],
-
-  ['arraySize', function(arr) {
+  },
+  arraySize: function(arr) {
     return arr ? arr.length : 0;
-  }],
-
-  ['arrayGet', function(arr, index) {
+  },
+  arrayGet: function(arr, index) {
     return arr && arr[index] !== undefined ? arr[index] : null;
-  }],
-
-  ['arraySet', function(arr, index, value) {
+  },
+  arraySet: function(arr, index, value) {
     if (arr) arr[index] = value;
     return value;
-  }],
-
-  ['arrayPush', function(arr, value) {
+  },
+  arrayPush: function(arr, value) {
     if (arr) arr.push(value);
     return value;
-  }],
-
-  ['arrayPop', function(arr) {
+  },
+  arrayPop: function(arr) {
     return arr ? arr.pop() : null;
-  }],
-
-  ['arrayShift', function(arr) {
+  },
+  arrayShift: function(arr) {
     return arr ? arr.shift() : null;
-  }],
-
-  ['arrayUnshift', function(arr, value) {
+  },
+  arrayUnshift: function(arr, value) {
     if (arr) arr.unshift(value);
     return value;
-  }],
-
-  ['arrayClear', function(arr) {
+  },
+  arrayClear: function(arr) {
     if (arr) arr.length = 0;
     return null;
-  }],
-
-  ['arrayInsert', function(arr, index, value) {
+  },
+  arrayInsert: function(arr, index, value) {
     if (!arr) return value;
     const i = Math.max(0, Math.min(arr.length, Number(index) || 0));
     arr.splice(i, 0, value);
     return value;
-  }],
-
-  ['arrayRemove', function(arr, index) {
+  },
+  arrayRemove: function(arr, index) {
     if (!arr) return null;
     const i = Number(index) || 0;
     if (i < 0 || i >= arr.length) return null;
     const removed = arr.splice(i, 1);
     return removed.length ? removed[0] : null;
-  }],
-
-  ['arrayFill', function(arr, value, startIndex = 0, endIndex = null) {
+  },
+  arrayFill: function(arr, value, startIndex = 0, endIndex = null) {
     if (!arr) return arr;
     const start = Number(startIndex) || 0;
     const end = endIndex === null || endIndex === undefined ? arr.length : Number(endIndex) || 0;
     arr.fill(value, start, end);
     return arr;
-  }],
-
-  ['arraySlice', function(arr, startIndex = 0, endIndex = null) {
+  },
+  arraySlice: function(arr, startIndex = 0, endIndex = null) {
     if (!arr) return [];
     const start = Number(startIndex) || 0;
     const end = endIndex === null || endIndex === undefined ? arr.length : Number(endIndex) || 0;
     return arr.slice(start, end);
-  }],
-
-  ['arraySort', function(arr, order = 'ascending') {
+  },
+  arraySort: function(arr, order = 'ascending') {
     if (arr) arr.sort((a, b) => order === 'ascending' ? a - b : b - a);
     return arr;
-  }],
-
-  ['arrayReverse', function(arr) {
+  },
+  arrayReverse: function(arr) {
     if (arr) arr.reverse();
     return arr;
-  }],
-
-  ['arrayContains', function(arr, value) {
+  },
+  arrayContains: function(arr, value) {
     return arr ? arr.includes(value) : false;
-  }],
-
-  ['arrayIndexOf', function(arr, value) {
+  },
+  arrayIndexOf: function(arr, value) {
     return arr ? arr.indexOf(value) : -1;
-  }],
-
-  ['arraySum', function(arr) {
+  },
+  arraySum: function(arr) {
     return arr ? arr.reduce((a, b) => a + b, 0) : 0;
-  }],
-
-  ['arrayAvg', function(arr) {
+  },
+  arrayAvg: function(arr) {
     return arr && arr.length > 0 ? arr.reduce((a, b) => a + b, 0) / arr.length : 0;
-  }],
-
-  ['arrayMin', function(arr) {
+  },
+  arrayMin: function(arr) {
     return arr && arr.length > 0 ? Math.min(...arr) : null;
-  }],
-
-  ['arrayMax', function(arr) {
+  },
+  arrayMax: function(arr) {
     return arr && arr.length > 0 ? Math.max(...arr) : null;
-  }],
-
-  // String Functions
-  ['strLength', function(str) {
+  },
+  strLength: function(str) {
     return str ? str.length : 0;
-  }],
-
-  ['strSubstring', function(str, from, to) {
+  },
+  strSubstring: function(str, from, to) {
     return str ? str.substring(from, to) : '';
-  }],
-
-  ['strConcat', function(...args) {
+  },
+  strConcat: function(...args) {
     return args.join('');
-  }],
-
-  ['strContains', function(str, substring) {
+  },
+  strContains: function(str, substring) {
     return str ? str.includes(substring) : false;
-  }],
-
-  ['strStartsWith', function(str, prefix) {
+  },
+  strStartsWith: function(str, prefix) {
     return str ? str.startsWith(prefix) : false;
-  }],
-
-  ['strEndsWith', function(str, suffix) {
+  },
+  strEndsWith: function(str, suffix) {
     return str ? str.endsWith(suffix) : false;
-  }],
-
-  ['strReplace', function(str, from, to) {
+  },
+  strReplace: function(str, from, to) {
     return str ? str.replace(from, to) : '';
-  }],
-
-  ['strReplaceAll', function(str, from, to) {
+  },
+  strReplaceAll: function(str, from, to) {
     return str ? str.split(from).join(to) : '';
-  }],
-
-  ['strLower', function(str) {
+  },
+  strLower: function(str) {
     return str ? str.toLowerCase() : '';
-  }],
-
-  ['strUpper', function(str) {
+  },
+  strUpper: function(str) {
     return str ? str.toUpperCase() : '';
-  }],
-
-  ['strToNumber', function(str) {
+  },
+  strToNumber: function(str) {
     return str ? parseFloat(str) : 0;
-  }],
-
-  ['strToString', function(value) {
+  },
+  strToString: function(value) {
     return String(value);
-  }],
-
-  ['strSplit', function(str, delimiter) {
+  },
+  strSplit: function(str, delimiter) {
     return str ? str.split(delimiter) : [];
-  }],
-
-  ['strMatch', function(str, regex) {
+  },
+  strMatch: function(str, regex) {
     const match = str.match(new RegExp(regex));
     return match ? match[0] : '';
-  }],
-
-  ['strPos', function(str, substring) {
+  },
+  strPos: function(str, substring) {
     return str ? str.indexOf(substring) : -1;
-  }],
-
-  ['strRPos', function(str, substring) {
+  },
+  strRPos: function(str, substring) {
     return str ? str.lastIndexOf(substring) : -1;
-  }],
-
-  ['strRemove', function(str, from, to) {
+  },
+  strRemove: function(str, from, to) {
     return str ? str.substring(0, from) + str.substring(to) : '';
-  }],
-
-  ['strReverse', function(str) {
+  },
+  strReverse: function(str) {
     return str ? str.split('').reverse().join('') : '';
-  }],
-
-  // Math Constants
-  ['pi', Math.PI],
-  ['e', Math.E],
-  ['true', true],
-  ['false', false],
-  ['ticker', 'AAPL'],
-  ['tickerid', 'NASDAQ:AAPL'],
-  ['syminfo', function(type) {
+  },
+  pi: 3.141592653589793,
+  e: 2.718281828459045,
+  true: true,
+  false: false,
+  ticker: "AAPL",
+  tickerid: "NASDAQ:AAPL",
+  syminfo: function(type) {
     const info = { ticker: 'AAPL', tickerid: 'NASDAQ:AAPL', prefix: 'NASDAQ', root: 'AAPL', suffix: '' };
     return info[type] || '';
-  }],
-  ['time', Date.now()],
-  ['timenow', Date.now()],
-  ['barstate', 'LAST'],
-  ['dividends', {}],
-  ['splits', {}],
-  ['earnings', {}],
-  ['volume', 0],
-  ['open', 0],
-  ['high', 0],
-  ['low', 0],
-  ['close', 0],
-  ['pivothigh', function(_leftBars, _rightBars) {
+  },
+  time: 1771040739870,
+  timenow: 1771040739870,
+  barstate: "LAST",
+  dividends: {},
+  splits: {},
+  earnings: {},
+  volume: 0,
+  open: 0,
+  high: 0,
+  low: 0,
+  close: 0,
+  pivothigh: function(_leftBars, _rightBars) {
     return null;
-  }],
-  ['pivotlow', function(_leftBars, _rightBars) {
+  },
+  pivotlow: function(_leftBars, _rightBars) {
     return null;
-  }],
-  ['tr', function(high, low, close) {
+  },
+  tr: function(high, low, close) {
     // Pine signature: ta.tr(true)
     if (typeof high === 'boolean') {
       const H = globalThis.high;
@@ -1118,7 +944,333 @@ export const builtins = new Map([
     }
 
     return Math.max(high - low, Math.abs(high - close), Math.abs(low - close));
-  }],
-]);
+  },
+};
 
-export default builtins;
+
+const builtins = new Map(Object.entries(pinescript));
+
+
+globalThis.__pineRuntime = globalThis.__pineRuntime || { plots: [], plotshapes: [], alerts: [] };
+
+globalThis.pinescript = pinescript;
+
+
+pinescript.strategy.long = pinescript.strategyLong();
+
+pinescript.strategy.short = pinescript.strategyShort();
+
+
+globalThis.input = globalThis.input || {};
+
+globalThis.input.timeframe = globalThis.input.timeframe || ((defval) => defval);
+
+
+globalThis.array = globalThis.array || {
+
+  from: (...items) => items,
+
+  size: (arr) => pinescript.arraySize(arr),
+
+  get: (arr, i) => pinescript.arrayGet(arr, i),
+
+  set: (arr, i, v) => pinescript.arraySet(arr, i, v),
+
+  push: (arr, v) => pinescript.arrayPush(arr, v),
+
+  pop: (arr) => pinescript.arrayPop(arr),
+
+  unshift: (arr, v) => pinescript.arrayUnshift(arr, v),
+
+  shift: (arr) => pinescript.arrayShift(arr),
+
+  clear: (arr) => pinescript.arrayClear(arr),
+
+  remove: (arr, i) => pinescript.arrayRemove(arr, i),
+
+};
+
+
+globalThis.hline = globalThis.hline || { style_dotted: "style_dotted", style_solid: "style_solid" };
+
+
+class SeriesArray extends Array {
+
+  valueOf() { return this.length ? this[this.length - 1] : NaN; }
+
+  toString() { return String(this.valueOf()); }
+
+}
+
+pinescript.asSeries = function(v) {
+
+  if (v === null || v === undefined) return v;
+
+  if (v instanceof SeriesArray) return v;
+
+  if (Array.isArray(v)) return Object.setPrototypeOf(v, SeriesArray.prototype);
+
+  return v;
+
+};
+
+
+globalThis.timeframe = globalThis.timeframe || { period: "D" };
+
+pinescript._parseTimeframeMs = function(tf) {
+
+  if (tf === null || tf === undefined) return null;
+
+  const s = String(tf).trim().toUpperCase();
+
+  if (/^\d+$/.test(s)) return parseInt(s, 10) * 60 * 1000;
+
+  if (s.endsWith("S")) return parseInt(s.slice(0, -1), 10) * 1000;
+
+  if (s.endsWith("H")) return parseInt(s.slice(0, -1), 10) * 60 * 60 * 1000;
+
+  if (s === "D") return 24 * 60 * 60 * 1000;
+
+  if (s === "W") return 7 * 24 * 60 * 60 * 1000;
+
+  if (s === "M") return 30 * 24 * 60 * 60 * 1000;
+
+  return null;
+
+};
+
+
+pinescript.requestSecurity = function(symbol, tf, series, opts) {
+
+  const timeSeries = globalThis.time;
+
+  if (!Array.isArray(timeSeries) || !Array.isArray(series)) return series;
+
+  const ms = pinescript._parseTimeframeMs(tf);
+
+  if (!ms) return series;
+
+  const lookahead = opts?.lookahead ?? false;
+
+  const gaps = opts?.gaps ?? false;
+
+  const out = [];
+
+  let bucket = null;
+
+  let bucketVal = null;
+
+  for (let i = 0; i < timeSeries.length; i++) {
+
+    const t = timeSeries[i];
+
+    const b = Math.floor(t / ms);
+
+    if (bucket === null) { bucket = b; bucketVal = series[i]; }
+
+    if (b !== bucket) { bucket = b; bucketVal = series[i]; } else { bucketVal = series[i]; }
+
+    if (lookahead) out.push(bucketVal); else out.push(gaps ? null : bucketVal);
+
+  }
+
+  return pinescript.asSeries(out);
+
+};
+
+
+globalThis.request = globalThis.request || {
+
+  security: function(symbol, tf, series, opts) { return pinescript.requestSecurity(symbol, tf, series, opts); },
+
+  financial: function() { return null; }
+
+};
+
+
+globalThis.barmerge = globalThis.barmerge || {
+
+  gaps_off: false,
+
+  gaps_on: true,
+
+  lookahead_off: false,
+
+  lookahead_on: true,
+
+};
+
+
+pinescript.color = {
+
+  hex: function(s) {
+
+    if (typeof s !== "string" || s[0] !== "#") return { r: 0, g: 0, b: 0, a: 255 };
+
+    const hex = s.slice(1);
+
+    const hasAlpha = hex.length === 8;
+
+    const r = parseInt(hex.slice(0, 2), 16) || 0;
+
+    const g = parseInt(hex.slice(2, 4), 16) || 0;
+
+    const b = parseInt(hex.slice(4, 6), 16) || 0;
+
+    const a = hasAlpha ? (parseInt(hex.slice(6, 8), 16) || 255) : 255;
+
+    return { r, g, b, a };
+
+  },
+
+  from_gradient: function(value, min, max, color1, color2) {
+
+    const c1 = color1 || { r: 0, g: 0, b: 0, a: 255 };
+
+    const c2 = color2 || { r: 255, g: 255, b: 255, a: 255 };
+
+    if (value === null || value === undefined || min === null || min === undefined || max === null || max === undefined) return c1;
+
+    const denom = (max - min);
+
+    const t = denom === 0 ? 0 : Math.max(0, Math.min(1, (value - min) / denom));
+
+    const lerp = (a, b) => Math.round(a + (b - a) * t);
+
+    return { r: lerp(c1.r ?? 0, c2.r ?? 0), g: lerp(c1.g ?? 0, c2.g ?? 0), b: lerp(c1.b ?? 0, c2.b ?? 0), a: lerp(c1.a ?? 255, c2.a ?? 255) };
+
+  },
+
+  rgb: function(r, g, b, a) { return { r, g, b, a: a ?? 255 }; },
+
+  new: function(c, transp) { return { ...(c || {}), transp: transp ?? 0 }; },
+
+  r: function(c) { return c?.r ?? 0; },
+
+  g: function(c) { return c?.g ?? 0; },
+
+  b: function(c) { return c?.b ?? 0; },
+
+  red: { r: 255, g: 0, b: 0, a: 255 },
+
+  green: { r: 0, g: 255, b: 0, a: 255 },
+
+  blue: { r: 0, g: 0, b: 255, a: 255 },
+
+  gray: { r: 128, g: 128, b: 128, a: 255 },
+
+};
+
+
+pinescript.size = { small: "small", normal: "normal", large: "large" };
+
+pinescript.shape = { triangleup: "triangleup", triangledown: "triangledown", circle: "circle", square: "square" };
+
+pinescript.location = { belowbar: "belowbar", abovebar: "abovebar" };
+
+pinescript.position = { top_right: "top_right", top_left: "top_left", bottom_right: "bottom_right", bottom_left: "bottom_left" };
+
+pinescript.text = { align_center: "center" };
+
+
+pinescript.table = {
+
+  new: function(position, columns, rows, opts) { return { position, columns, rows, opts: opts || {}, cells: [] }; },
+
+  cell: function(table, column, row, text, opts) {
+
+    if (!table) return null;
+
+    table.cells.push({ column, row, text, opts: opts || {} });
+
+    return null;
+
+  }
+
+};
+
+
+// Input parameters
+
+
+// Main script logic
+
+function main() {
+
+  globalThis.__pineState = globalThis.__pineState || {};
+  const state = globalThis.__pineState["main"] = globalThis.__pineState["main"] || {};
+  open = pinescript.asSeries(globalThis.open);
+  high = pinescript.asSeries(globalThis.high);
+  low = pinescript.asSeries(globalThis.low);
+  close = pinescript.asSeries(globalThis.close);
+  volume = pinescript.asSeries(globalThis.volume);
+  time = pinescript.asSeries(globalThis.time);
+  null;
+  // Strategy: Crossing Moving Averages with ADX Filter)
+  // Options: {"overlay":true,"pyramiding":0}
+  let fastLen = input.int(20, ({ title: "Fast MA Length" }));
+  let slowLen = input.int(120, ({ title: "Slow MA Length" }));
+  let maType = input.string("SMA", ({ title: "Moving Average Type", options: ["SMA", "EMA", "WMA", "LMA"] }));
+  let useADX = input.bool(true, ({ title: "Enable ADX Filter" }));
+  let adxLen = input.int(14, ({ title: "ADX Length" }));
+  let adxThreshold = input.float(20, ({ title: "ADX Threshold" }));
+  function ma(src, len) {
+    let out = null;
+    if ((maType === "SMA")) {
+      {
+        out = pinescript.sma(src, len);
+      }
+    } else {
+      if ((maType === "EMA")) {
+        {
+          out = pinescript.ema(src, len);
+        }
+      } else {
+        if ((maType === "WMA")) {
+          {
+            out = pinescript.wma(src, len);
+          }
+        } else {
+          {
+            out = pinescript.rma(src, len);
+          }
+        }
+      }
+    }
+    return out;
+  }
+  let fastMA = ma(close, fastLen);
+  let slowMA = ma(close, slowLen);
+  let longBias = (fastMA > slowMA);
+  let shortBias = (fastMA < slowMA);
+  let upMove = (high - pinescript.offset(high, 1));
+  let downMove = (pinescript.offset(low, 1) - low);
+  let plusDM = (((upMove > downMove) && (upMove > 0)) ? upMove : 0);
+  let minusDM = (((downMove > upMove) && (downMove > 0)) ? downMove : 0);
+  let trur = pinescript.rma(ta.tr(true), adxLen);
+  let plusDI = ((100 * pinescript.rma(plusDM, adxLen)) / trur);
+  let minusDI = ((100 * pinescript.rma(minusDM, adxLen)) / trur);
+  let dx = ((100 * pinescript.abs((plusDI - minusDI))) / (plusDI + minusDI));
+  let adx = pinescript.rma(dx, adxLen);
+  let adxOK = (!useADX || (adx >= adxThreshold));
+  let enterLong = ((longBias && adxOK) && (pinescript.strategy.position_size <= 0));
+  let enterShort = ((shortBias && adxOK) && (pinescript.strategy.position_size >= 0));
+  if (enterLong) {
+    {
+      pinescript.strategyEntry("Long", pinescript.strategy.long);
+    }
+  }
+  if (enterShort) {
+    {
+      pinescript.strategyEntry("Short", pinescript.strategy.short);
+    }
+  }
+  pinescript.plot(fastMA, "Fast MA", ({ color: pinescript.color.blue, linewidth: 1 }));
+  pinescript.plot(slowMA, "Slow MA", ({ color: pinescript.color.orange, linewidth: 3 }));
+}
+
+
+// Export for use
+
+export { main
+};

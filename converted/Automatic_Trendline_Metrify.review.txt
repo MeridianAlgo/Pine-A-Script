@@ -1,0 +1,5 @@
+Review: PASS
+Warnings:
+- Possibly missing runtime builtins/mappings: math
+Notes:
+- Used fallback syntax check (vm.SourceTextModule unavailable; exports stripped).

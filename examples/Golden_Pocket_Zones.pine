@@ -1,0 +1,321 @@
+//@version=6
+indicator("Golden Pocket Zones", overlay=true, max_boxes_count=500)
+
+// ========================================
+// INPUT SETTINGS
+// ========================================
+lookbackDays = input.int(20, "Lookback Days", minval=1, maxval=100, tooltip="Number of daily candles to analyze for golden pocket zones")
+zoneHeightPct = input.float(3.0, "Zone Height (% of ADR10)", minval=0.1, maxval=50.0, step=0.1, tooltip="Height of golden pocket zone as percentage of ADR10 - SAME for all zones")
+minCandleSizePct = input.float(60.0, "Min Candle Size (% of ADR10)", minval=0, maxval=200, step=5, tooltip="Only show zones for candles larger than this % of ADR10. Set to 0 to show all zones.")
+showLabels = input.bool(true, "Show Labels", tooltip="Display age and strength labels inside zones")
+
+// ========================================
+// COLOR SETTINGS
+// ========================================
+zoneColor = input.color(color.new(#FFB84D, 20), "Zone Color", tooltip="Color of the golden pocket zones")
+textColor = input.color(color.new(#000000, 0), "Text Color", tooltip="Color of the text labels")
+
+// ========================================
+// ZONE DATA TYPE
+// ========================================
+type ZoneData
+    float upper
+    float lower
+    int startBar
+    int age
+    float strength
+
+// ========================================
+// FETCH DAILY DATA USING REQUEST.SECURITY
+// ========================================
+// Request daily OHLC and time data
+[dailyHigh, dailyLow, dailyTime] = request.security(syminfo.tickerid, "D", [high, low, time], lookahead=barmerge.lookahead_off)
+
+// Calculate ADR10 (10-period average daily range) on daily timeframe
+adr10 = request.security(syminfo.tickerid, "D", ta.sma(high - low, 10), lookahead=barmerge.lookahead_off)
+
+// ========================================
+// STORAGE ARRAYS
+// ========================================
+var int lastDailyTime = 0
+var int lastDailyStartBar = na
+var array<float> dailyHighs = array.new<float>()
+var array<float> dailyLows = array.new<float>()
+var array<int> dailyBars = array.new<int>()
+var array<float> dailyADRs = array.new<float>()
+var array<ZoneData> zones = array.new<ZoneData>()
+
+// Store the current ADR10 for consistent zone heights
+var float currentADR10 = na
+
+// ========================================
+// HELPER FUNCTIONS
+// ========================================
+
+// Get pip size for current instrument
+f_getPips() =>
+    syminfo.type == "forex" ? (syminfo.currency == "JPY" ? 0.01 : 0.0001) : (syminfo.ticker == "XAUUSD" or syminfo.ticker == "GOLD") ? 0.01 : 0.0001
+
+// Convert price distance to pips
+f_toPips(val) =>
+    math.abs(val) / f_getPips()
+
+// Calculate golden pocket zone boundaries with FIXED zone height
+calcGoldenPocket(float high, float low, float fixedZoneHeight) =>
+    candleRange = high - low
+    
+    // Golden pocket is between 50% and 61.8% Fibonacci retracement
+    // Calculate midpoint at 55.9% (average of 0.5 and 0.618)
+    gpMid = low + candleRange * 0.559
+    
+    // Use the SAME fixed zone height for all zones
+    [gpMid + fixedZoneHeight, gpMid - fixedZoneHeight, candleRange]
+
+// Check if two zones overlap
+zonesOverlap(float upper1, float lower1, float upper2, float lower2) =>
+    not (upper1 < lower2 or upper2 < lower1)
+
+// Merge two zones and return new boundaries
+mergeZones(float upper1, float lower1, float upper2, float lower2) =>
+    [math.max(upper1, upper2), math.min(lower1, lower2)]
+
+// Calculate strength rating (4-10 scale)
+calcStrength(float candleSize, float adr) =>
+    strengthPct = (candleSize / adr) * 100.0
+    strength = 0.0
+    if strengthPct >= 160
+        strength := 10.0
+    else if strengthPct >= 140
+        strength := 9.0
+    else if strengthPct >= 120
+        strength := 8.0
+    else if strengthPct >= 100
+        strength := 7.0
+    else if strengthPct >= 80
+        strength := 6.0
+    else if strengthPct >= 60
+        strength := 5.0
+    else
+        strength := 4.0
+    strength
+
+// ========================================
+// MAIN LOGIC - DETECT NEW DAILY BAR
+// ========================================
+if dailyTime != lastDailyTime and not na(dailyTime)
+    lastDailyTime := dailyTime
+    
+    // Update current ADR10 for consistent zone heights
+    if not na(adr10) and adr10 > 0
+        currentADR10 := adr10
+    
+    // Store the START bar of the PREVIOUS daily candle (if exists)
+    if not na(lastDailyStartBar)
+        array.unshift(dailyBars, lastDailyStartBar)
+    
+    // Record the START bar of the NEW daily candle
+    lastDailyStartBar := bar_index
+    
+    // Store daily data at the beginning of arrays
+    array.unshift(dailyHighs, dailyHigh)
+    array.unshift(dailyLows, dailyLow)
+    array.unshift(dailyADRs, adr10)
+    
+    // Limit array size to lookback period
+    if array.size(dailyHighs) > lookbackDays
+        array.pop(dailyHighs)
+        array.pop(dailyLows)
+        array.pop(dailyBars)
+        array.pop(dailyADRs)
+    
+    // Recalculate all zones
+    array.clear(zones)
+    
+    // Calculate FIXED zone height based on current ADR10
+    float fixedZoneHeight = not na(currentADR10) ? (currentADR10 * (zoneHeightPct / 100.0) / 2.0) : 0.0
+    
+    // Build temporary zones array
+    tempZones = array.new<ZoneData>()
+    
+    // Only process if we have data and valid zone height
+    int arraySize = array.size(dailyHighs)
+    int barsArraySize = array.size(dailyBars)
+    if arraySize > 0 and fixedZoneHeight > 0
+        for i = 0 to arraySize - 1
+            dayHigh = array.get(dailyHighs, i)
+            dayLow = array.get(dailyLows, i)
+            // Use the stored start bar if available, otherwise use current bar_index
+            dayBar = i < barsArraySize ? array.get(dailyBars, i) : bar_index
+            dayADR = array.get(dailyADRs, i)
+            
+            if not na(dayHigh) and not na(dayLow) and not na(dayADR) and dayADR > 0
+                candleSize = dayHigh - dayLow
+                candleSizePct = (candleSize / dayADR) * 100.0
+                
+                // Filter by minimum candle size
+                if candleSizePct >= minCandleSizePct
+                    // Use FIXED zone height for all zones
+                    [upper, lower, range] = calcGoldenPocket(dayHigh, dayLow, fixedZoneHeight)
+                    
+                    // Calculate strength
+                    strength = calcStrength(candleSize, dayADR)
+                    
+                    // Create zone
+                    newZone = ZoneData.new(upper, lower, dayBar, i, strength)
+                    array.push(tempZones, newZone)
+        
+        // Merge overlapping zones
+        int tempZonesSize = array.size(tempZones)
+        if tempZonesSize > 0
+            mergedIndices = array.new<bool>()
+            for i = 0 to tempZonesSize - 1
+                array.push(mergedIndices, false)
+            
+            for i = 0 to tempZonesSize - 1
+                if not array.get(mergedIndices, i)
+                    zone1 = array.get(tempZones, i)
+                    
+                    // Only loop if there are more zones to check
+                    if i + 1 < tempZonesSize
+                        for j = i + 1 to tempZonesSize - 1
+                            if not array.get(mergedIndices, j)
+                                zone2 = array.get(tempZones, j)
+                                
+                                if zonesOverlap(zone1.upper, zone1.lower, zone2.upper, zone2.lower)
+                                    // Merge zones
+                                    [mergedUpper, mergedLower] = mergeZones(zone1.upper, zone1.lower, zone2.upper, zone2.lower)
+                                    zone1.upper := mergedUpper
+                                    zone1.lower := mergedLower
+                                    // Keep the older age (higher index) and max strength
+                                    zone1.age := math.max(zone1.age, zone2.age)
+                                    zone1.strength := math.max(zone1.strength, zone2.strength)
+                                    // Use the earliest start bar when merging
+                                    zone1.startBar := math.min(zone1.startBar, zone2.startBar)
+                                    // Mark zone2 as merged
+                                    array.set(mergedIndices, j, true)
+                    
+                    // Add non-merged zone to final zones
+                    array.push(zones, zone1)
+
+// ========================================
+// DRAW ZONES ON LAST BAR
+// ========================================
+if barstate.islast and array.size(zones) > 0
+    // Clear all existing boxes and labels
+    if array.size(box.all) > 0
+        for existingBox in box.all
+            box.delete(existingBox)
+    if array.size(label.all) > 0
+        for existingLabel in label.all
+            label.delete(existingLabel)
+    
+    // First pass: calculate all distances to find min/max for heatmap scaling
+    minDist = 999999.0
+    maxDist = 0.0
+    for i = 0 to array.size(zones) - 1
+        zone = array.get(zones, i)
+        if not na(zone)
+            distanceInPrice = 0.0
+            if close > zone.upper
+                distanceInPrice := close - zone.upper
+            else if close < zone.lower
+                distanceInPrice := zone.lower - close
+            else
+                distToUpper = zone.upper - close
+                distToLower = close - zone.lower
+                distanceInPrice := math.min(distToUpper, distToLower)
+            
+            pipSize = syminfo.type == "forex" ? (syminfo.currency == "JPY" ? 0.01 : 0.0001) : 0.01
+            distancePips = distanceInPrice / pipSize
+            minDist := math.min(minDist, distancePips)
+            maxDist := math.max(maxDist, distancePips)
+    
+    // Draw zones from oldest to newest (so newer zones layer on top)
+    for i = array.size(zones) - 1 to 0
+        zone = array.get(zones, i)
+        
+        if not na(zone)
+            // Calculate distance for this zone
+            distanceInPrice = 0.0
+            if close > zone.upper
+                distanceInPrice := close - zone.upper
+            else if close < zone.lower
+                distanceInPrice := zone.lower - close
+            else
+                distToUpper = zone.upper - close
+                distToLower = close - zone.lower
+                distanceInPrice := math.min(distToUpper, distToLower)
+            
+            pipSize = syminfo.type == "forex" ? (syminfo.currency == "JPY" ? 0.01 : 0.0001) : 0.01
+            distancePips = distanceInPrice / pipSize
+            
+            // Calculate heatmap color: closer = hotter (orange), farther = colder (yellow)
+            // Normalize distance to 0-1 range
+            normalizedDist = maxDist > minDist ? (distancePips - minDist) / (maxDist - minDist) : 0.5
+            
+            // Create color gradient: close = vibrant orange (#FF8C00), far = bright yellow (#FFD700)
+            // Far zones (cold): Bright Yellow RGB(255, 215, 0)
+            // Close zones (hot): Vibrant Orange RGB(255, 140, 0)
+            
+            // Linear interpolation
+            r = 255
+            g = math.round(215 - (215 - 140) * normalizedDist)
+            b = math.round(0)
+            
+            heatmapColor = color.new(color.rgb(r, g, b), 20)
+            
+            // Create box extending to the right with heatmap color
+            // Ensure startBar is within valid range to prevent buffer overflow
+            // Use a conservative limit based on available bars
+            maxLookback = math.min(2000, bar_index)
+            safeStartBar = math.max(zone.startBar, bar_index - maxLookback)
+            boxId = box.new(
+                 left=safeStartBar,
+                 top=zone.upper,
+                 right=bar_index + 50,
+                 bottom=zone.lower,
+                 border_color=color.new(heatmapColor, 70),
+                 border_width=1,
+                 bgcolor=heatmapColor,
+                 extend=extend.right
+             )
+            
+            // Add label 25 bars to the right of current bar
+            if showLabels
+                ageText = zone.age == 0 ? "TODAY" : str.tostring(zone.age) + " DAYS"
+                strengthText = str.tostring(zone.strength, "#") + "/10"
+                
+                // Calculate distance in pips from current close to nearest zone edge
+                distanceInPrice = 0.0
+                if close > zone.upper
+                    // Price is above zone
+                    distanceInPrice := close - zone.upper
+                else if close < zone.lower
+                    // Price is below zone
+                    distanceInPrice := zone.lower - close
+                else
+                    // Price is inside zone - distance to nearest edge
+                    distToUpper = zone.upper - close
+                    distToLower = close - zone.lower
+                    distanceInPrice := math.min(distToUpper, distToLower)
+                
+                // Direct pip calculation based on instrument
+                pipSize = syminfo.type == "forex" ? (syminfo.currency == "JPY" ? 0.01 : 0.0001) : 0.01
+                distancePips = distanceInPrice / pipSize
+                distanceText = str.tostring(math.round(distancePips)) + " PIPS"
+                labelText = "GOLDEN POCKET ||| AGE " + ageText + " ||| STRENGTH " + strengthText + " ||| DISTANCE " + distanceText
+                
+                // Calculate midpoint of zone for label Y position
+                labelY = (zone.upper + zone.lower) / 2.0
+                
+                // Create label 25 bars to the right
+                label.new(
+                     x=bar_index + 25,
+                     y=labelY,
+                     text=labelText,
+                     color=color.new(color.black, 100),
+                     textcolor=textColor,
+                     size=size.large,
+                     style=label.style_label_center,
+                     xloc=xloc.bar_index
+                 )

@@ -1,0 +1,112 @@
+// This script is licensed under Creative Commons Attribution-NonCommercial-ShareAlike 4.0 International
+// https://creativecommons.org/licenses/by-nc-sa/4.0/
+
+//@version=6
+indicator('Volume Weighted Trend [QuantAlgo]', overlay=true, max_labels_count=500)
+
+//              ╔════════════════════════════════╗              //
+//              ║      USER-DEFINED SETTINGS     ║              //
+//              ╚════════════════════════════════╝              //
+
+var string calculation_settings = '════════ Calculation Parameters ════════'
+var string visual_settings = '════════ Visualization Settings ════════'
+
+tooltip_vwma = 'Period for the Volume Weighted Moving Average, which forms the central trend baseline weighted by trading volume. Shorter periods (14-21) make the indicator highly responsive to recent price action and volume surges, generating more frequent trend changes - ideal for intraday trading and scalping where you need to capture quick momentum shifts. Medium periods (34-55) provide balanced sensitivity that captures meaningful trend changes while filtering out minor fluctuations - suitable for swing trading on 4H and daily charts. Longer periods (89-144) create a stable trend baseline focused on major market direction, generating fewer but higher-conviction trend signals - best for position trading and identifying primary trends. Standard value is 34 for balanced performance across most trading styles.'
+tooltip_atr = 'Multiplier for the Average True Range to define volatility buffers around the VWMA. Lower values (0.8-1.2) create tighter bands closer to the trend line, triggering more frequent trend changes as price makes smaller moves - useful in low-volatility environments and range-bound markets where you want early trend confirmation. Medium values (1.5-2.0) provide balanced filtering that requires meaningful price movement beyond normal volatility - suitable for most market conditions and reduces whipsaws. Higher values (2.5-3.5) create wider bands that only trigger on significant breakouts, generating fewer but more reliable trend changes - best for volatile markets and traders seeking high-conviction signals. Standard value is 1.5 for optimal noise filtering.'
+tooltip_preset = 'Select a predefined configuration optimized for different trading styles, timeframes, and market conditions.'
+tooltip_preset_details = 'Default (34, 1.5): Standard configuration suitable for swing trading on 4H and daily charts. Balanced VWMA period captures meaningful trend changes, moderate ATR multiplier filters noise effectively. Generates quality trend signals without excessive whipsaws, ideal for most traders and market conditions.\n\nFast Response (21, 1.2): Aggressive configuration for intraday trading and scalping on 5min-1H charts. Shorter VWMA reacts quickly to volume-weighted price shifts, tighter bands trigger earlier on breakouts. Best for active traders who can monitor positions closely and capitalize on short-term momentum.\n\nSmooth Trend (55, 2.0): Conservative configuration for position trading on daily and weekly charts. Extended VWMA establishes stable trend baseline, wider bands only signal on major breakouts. Best for patient traders seeking primary trend direction with minimal false signals and reduced trading frequency.'
+tooltip_color_preset = 'Pre-configured color schemes optimized for different chart themes and visual preferences. Classic uses traditional green/red. Aqua provides ocean-inspired blues and oranges. Cosmic offers futuristic cyan and purple. Cyber features warm orange and cool cyan contrast. Neon delivers high-contrast yellow and magenta for maximum visibility. Custom allows full color customization.'
+tooltip_bullish = 'Color for bullish trend conditions when price breaks above the upper volatility band. This represents statistically significant upward momentum confirmed by volume-weighted price action exceeding normal volatility bounds. Use vibrant colors to highlight uptrend zones and potential long opportunities.'
+tooltip_bearish = 'Color for bearish trend conditions when price breaks below the lower volatility band. This represents statistically significant downward momentum with volume-weighted price falling below normal volatility range. Use warning colors to signal downtrend zones and potential short opportunities or exit signals.'
+tooltip_enable_glow = 'Enable/disable the neon glow effect around the VWMA line. When enabled, creates a layered visual effect with three overlapping plots at different transparencies, making the trend line more prominent and easier to track across the chart. The glow effect provides depth and emphasis to the central trend line. Disable for a cleaner, minimalist appearance or if running many indicators where visual clarity is paramount.'
+tooltip_enable_ribbons = 'Enable/disable gradient ribbon fills between the VWMA and volatility bands. When enabled, creates semi-transparent colored zones showing the buffer range around the trend line, providing visual context for price position relative to trend boundaries. The ribbons help identify when price is approaching breakout thresholds. Disable to reduce chart clutter or focus solely on the central VWMA line and band boundaries.'
+tooltip_band_transparency = 'Transparency level for the upper and lower volatility band lines. Higher values (80-95) create subtle band outlines that provide boundary context without visual clutter - useful when running multiple indicators or preferring minimalist charts. Lower values (50-70) create more prominent band lines for stronger emphasis on breakout thresholds - useful for traders who want clear visual boundaries for trend trigger zones. Standard value is 90 for subtle guidance lines that don\'t dominate the chart.'
+tooltip_enable_barcolor = 'Enable/disable bar coloring based on current trend direction. When enabled, price bars are tinted with bullish color during uptrends and bearish color during downtrends, providing instant visual confirmation of trend state without checking the indicator. This helps quickly identify trend alignment across multiple timeframes. Disable if you prefer default bar colors or use other bar coloring indicators.'
+
+vwma_length = input.int(34, 'VWMA Length', minval=5, group=calculation_settings, tooltip=tooltip_vwma)
+atr_multiplier = input.float(1.5, 'ATR Multiplier', minval=0.5, step=0.1, group=calculation_settings, tooltip=tooltip_atr)
+preset_config = input.string('Default', 'Preset Configuration', options=['Default', 'Fast Response', 'Smooth Trend'], group=calculation_settings, tooltip=tooltip_preset + '\n\n' + tooltip_preset_details)
+
+color_preset = input.string('Custom', 'Color Preset', options=['Classic', 'Aqua', 'Cosmic', 'Cyber', 'Neon', 'Custom'], group=visual_settings, tooltip=tooltip_color_preset)
+bullish_input = input.color(#00ffaa, 'Bullish Trend Color', group=visual_settings, tooltip=tooltip_bullish)
+bearish_input = input.color(#ff0000, 'Bearish Trend Color', group=visual_settings, tooltip=tooltip_bearish)
+
+enable_glow = input.bool(true, 'Enable Neon Glow Effect', group=visual_settings, tooltip=tooltip_enable_glow)
+enable_ribbons = input.bool(true, 'Enable Volatility Ribbons', group=visual_settings, tooltip=tooltip_enable_ribbons)
+band_transparency = input.int(90, 'Band Transparency', minval=0, maxval=100, group=visual_settings, tooltip=tooltip_band_transparency)
+enable_barcolor = input.bool(true, 'Enable Bar Coloring', group=visual_settings, tooltip=tooltip_enable_barcolor)
+
+if preset_config == 'Fast Response'
+    vwma_length := 21
+    atr_multiplier := 1.2
+else if preset_config == 'Smooth Trend'
+    vwma_length := 55
+    atr_multiplier := 2.0
+
+[bullish_color, bearish_color] = switch color_preset
+    'Classic' => [#00ff00, #ff0000]
+    'Aqua' => [#00d4ff, #ff8c00]
+    'Cosmic' => [#49ffce, #9932cc]
+    'Cyber' => [#00cccc, #ff6600]
+    'Neon' => [#ffff00, #ff00ff]
+    'Custom' => [bullish_input, bearish_input]
+
+//              ╔════════════════════════════════╗              //
+//              ║        CORE CALCULATION        ║              //
+//              ╚════════════════════════════════╝              //
+
+vwma_basis = ta.vwma(close, vwma_length)
+atr_value = ta.atr(vwma_length)
+upper_band = vwma_basis + atr_value * atr_multiplier
+lower_band = vwma_basis - atr_value * atr_multiplier
+
+var int trend_direction = 0
+if close > upper_band
+    trend_direction := 1
+else if close < lower_band
+    trend_direction := -1
+
+trend_turned_bullish = trend_direction == 1 and trend_direction[1] != 1
+trend_turned_bearish = trend_direction == -1 and trend_direction[1] != -1
+trend_changed = trend_turned_bullish or trend_turned_bearish
+
+color trend_color = trend_direction == 1 ? bullish_color : bearish_color
+
+//              ╔════════════════════════════════╗              //
+//              ║          VISUALIZATION         ║              //
+//              ╚════════════════════════════════╝              //
+
+plot(enable_glow ? vwma_basis : na, 'VWMA Glow Outer', color.new(trend_color, 80), 8)
+plot(enable_glow ? vwma_basis : na, 'VWMA Glow Inner', color.new(trend_color, 50), 4)
+vwma_plot = plot(vwma_basis, 'VWMA Line', color.new(trend_color, 0), 2)
+
+upper_band_plot = plot(upper_band, 'Upper Band', color=color.new(trend_color, band_transparency))
+upper_mid_plot = plot(math.avg(upper_band, vwma_basis), 'Upper Mid', color=color.new(trend_color, 95))
+lower_band_plot = plot(lower_band, 'Lower Band', color=color.new(trend_color, band_transparency))
+lower_mid_plot = plot(math.avg(lower_band, vwma_basis), 'Lower Mid', color=color.new(trend_color, 95))
+
+fill(upper_band_plot, upper_mid_plot, enable_ribbons ? color.new(trend_color, 85) : na, 'Upper Outer Ribbon')
+fill(upper_mid_plot, vwma_plot, enable_ribbons ? color.new(trend_color, 70) : na, 'Upper Inner Ribbon')
+fill(lower_band_plot, lower_mid_plot, enable_ribbons ? color.new(trend_color, 85) : na, 'Lower Outer Ribbon')
+fill(lower_mid_plot, vwma_plot, enable_ribbons ? color.new(trend_color, 70) : na, 'Lower Inner Ribbon')
+
+barcolor(enable_barcolor ? (trend_direction == 1 ? color.new(bullish_color, 20) : color.new(bearish_color, 20)) : na, title='Trend Bar Color')
+
+//              ╔════════════════════════════════╗              //
+//              ║             ALERTS             ║              //
+//              ╚════════════════════════════════╝              //
+
+alertcondition(trend_turned_bullish, title='Bullish Trend Signal', message='Volume Weighted Trend: BULLISH trend confirmed on {{exchange}}:{{ticker}} - {{interval}}')
+alertcondition(trend_turned_bearish, title='Bearish Trend Signal', message='Volume Weighted Trend: BEARISH trend confirmed on {{exchange}}:{{ticker}} - {{interval}}')
+alertcondition(trend_changed, title='Trend Direction Changed', message='Volume Weighted Trend: Trend direction changed on {{exchange}}:{{ticker}} - {{interval}}')
+
+//              ╔════════════════════════════════╗              //
+//              ║           CREATED BY           ║              //
+//              ╚════════════════════════════════╝              //
+
+// ██████╗ ██╗   ██╗ █████╗ ███╗   ██╗████████╗     █████╗ ██╗      ██████╗  ██████╗ 
+//██╔═══██╗██║   ██║██╔══██╗████╗  ██║╚══██╔══╝    ██╔══██╗██║     ██╔════╝ ██╔═══██╗
+//██║   ██║██║   ██║███████║██╔██╗ ██║   ██║       ███████║██║     ██║  ███╗██║   ██║
+//██║▄▄ ██║██║   ██║██╔══██║██║╚██╗██║   ██║       ██╔══██║██║     ██║   ██║██║   ██║
+//╚██████╔╝╚██████╔╝██║  ██║██║ ╚████║   ██║       ██║  ██║███████╗╚██████╔╝╚██████╔╝
+// ╚══▀▀═╝  ╚═════╝ ╚═╝  ╚═╝╚═╝  ╚═══╝   ╚═╝       ╚═╝  ╚═╝╚══════╝ ╚═════╝  ╚═════╝

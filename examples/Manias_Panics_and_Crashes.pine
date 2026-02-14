@@ -1,0 +1,538 @@
+//@version=6
+indicator("Manias, Panics and Crashes", shorttitle="MPC", overlay=false, max_labels_count=500)
+
+// ============================================================================
+// IMPROVED COLOR PALETTE (Professional Trading Colors)
+// ============================================================================
+// Based on high-contrast, colorblind-friendly professional palette
+color_green_bright = #00ff00     // Bright green for bullish/safe
+color_green_soft = #26a69a       // Teal green (softer, professional)
+color_yellow_bright = #ffd700    // Gold yellow for caution
+color_orange_alert = #ff6b35     // Vibrant orange for warnings
+color_red_danger = #ff1744       // Bright red for danger
+color_purple_composite = #ab47bc // Purple for composite score
+color_gray_neutral = #78909c     // Neutral gray
+color_dark_bg = #1e1e1e         // Dark background
+
+// ============================================================================
+// INPUT PARAMETERS - ENHANCED UX/UI CONTROLS
+// ============================================================================
+
+// === DISPLAY OPTIONS ===
+display_mode = input.string("Smoothed All Lines", "Display Mode",
+     options=["Smoothed All Lines", "Single Dominant Line", "Both"],
+     group="Display")
+smooth_period = input.int(3, "Smoothing Period", minval=1, maxval=20, group="Display")
+show_zones = input.bool(true, "Show Background Phase Zones", group="Display")
+show_phase_labels = input.bool(true, "Show Phase Change Labels", group="Display")
+show_historical_context = input.bool(true, "Show Historical Context", group="Display")
+
+// === DASHBOARD SETTINGS ===
+dashboard_position = input.string("Top Right", "Dashboard Position",
+     options=["Top Left", "Top Center", "Top Right", "Middle Left", "Middle Right", "Bottom Left", "Bottom Right"],
+     group="Dashboard")
+dashboard_size = input.string("Normal", "Dashboard Size",
+     options=["Small", "Normal", "Large", "Extra Large"],
+     group="Dashboard")
+show_components = input.bool(true, "Show Component Health Panel", group="Dashboard")
+show_action_hints = input.bool(true, "Show Action Guidance", group="Dashboard")
+
+// === THRESHOLDS ===
+mania_threshold = input.int(75, "Mania Alert Threshold", minval=0, maxval=100, group="Alert Thresholds")
+panic_threshold = input.int(60, "Panic Alert Threshold", minval=0, maxval=100, group="Alert Thresholds")
+crash_threshold = input.int(70, "Crash Alert Threshold", minval=0, maxval=100, group="Alert Thresholds")
+
+// === TECHNICAL PARAMETERS ===
+ma_period = input.int(200, "Long-term MA Period", minval=50, maxval=300, group="Technical Parameters")
+rsi_period = input.int(14, "RSI Period", minval=5, maxval=30, group="Technical Parameters")
+vol_period = input.int(20, "Volume Average Period", minval=10, maxval=50, group="Technical Parameters")
+
+// === COMPONENTS ===
+show_credit = input.bool(true, "Include Credit Risk Indicators", group="Components")
+show_breadth = input.bool(true, "Include Market Breadth", group="Components")
+show_vix = input.bool(true, "Include VIX Analysis", group="Components")
+
+// ============================================================================
+// EXTERNAL DATA REQUESTS
+// ============================================================================
+vix = show_vix ? request.security("TVC:VIX", timeframe.period, close) : na
+vix_5 = show_vix ? request.security("TVC:VIX", timeframe.period, close[5]) : na
+hyg = show_credit ? request.security("AMEX:HYG", timeframe.period, close) : na
+lqd = show_credit ? request.security("AMEX:LQD", timeframe.period, close) : na
+tlt = show_credit ? request.security("NASDAQ:TLT", timeframe.period, close) : na
+xlf = show_credit ? request.security("AMEX:XLF", timeframe.period, close) : na
+spy = show_credit ? request.security("AMEX:SPY", timeframe.period, close) : na
+adv_dec = show_breadth ? request.security("INDEX:ADDN", timeframe.period, close) : na
+
+// ============================================================================
+// CREDIT RISK CALCULATIONS
+// ============================================================================
+hyg_lqd_ratio = show_credit and not na(hyg) and not na(lqd) ? lqd / hyg : na
+hyg_lqd_spread = hyg_lqd_ratio
+hyg_lqd_baseline = ta.sma(hyg_lqd_spread, 60)
+hyg_lqd_stress = show_credit and not na(hyg_lqd_spread) and not na(hyg_lqd_baseline) ?
+     ((hyg_lqd_spread - hyg_lqd_baseline) / hyg_lqd_baseline) * 100 : 0
+
+tlt_spy_ratio = show_credit and not na(tlt) and not na(spy) ? tlt / spy : na
+tlt_spy_baseline = ta.sma(tlt_spy_ratio, 60)
+tlt_spy_flight = show_credit and not na(tlt_spy_ratio) and not na(tlt_spy_baseline) ?
+     ((tlt_spy_ratio - tlt_spy_baseline) / tlt_spy_baseline) * 100 : 0
+
+xlf_spy_ratio = show_credit and not na(xlf) and not na(spy) ? xlf / spy : na
+xlf_spy_baseline = ta.sma(xlf_spy_ratio, 60)
+xlf_spy_weakness = show_credit and not na(xlf_spy_ratio) and not na(xlf_spy_baseline) ?
+     ((xlf_spy_baseline - xlf_spy_ratio) / xlf_spy_baseline) * 100 : 0
+
+credit_stress_raw = show_credit ?
+     (hyg_lqd_stress * 0.4) + (tlt_spy_flight * 0.3) + (xlf_spy_weakness * 0.3) : 0
+credit_stress = math.max(0, math.min(100, credit_stress_raw * 5))
+
+// ============================================================================
+// TECHNICAL INDICATORS
+// ============================================================================
+ma_long = ta.sma(close, ma_period)
+price_deviation = ((close - ma_long) / ma_long) * 100
+rsi = ta.rsi(close, rsi_period)
+rsi_overbought_days = ta.barssince(rsi < 70)
+rsi_oversold = rsi < 30
+roc = ta.roc(close, 20)
+roc_ma = ta.sma(roc, 20)
+roc_accelerating = roc > roc_ma
+vol_avg = ta.sma(volume, vol_period)
+vol_spike = volume / vol_avg
+high_vol_down = vol_spike > 1.5 and close < open
+[macd_line, signal_line, _] = ta.macd(close, 12, 26, 9)
+macd_bearish = ta.crossunder(macd_line, signal_line)
+vix_spike = show_vix and not na(vix) and not na(vix_5) ? (vix > vix_5 * 1.30 or vix > 25) : false
+vix_extreme = show_vix and not na(vix) ? vix > 40 : false
+vix_low = show_vix and not na(vix) ? vix < 20 : false
+peak_20 = ta.highest(close, 20)
+peak_60 = ta.highest(close, 60)
+decline_20 = ((close - peak_20) / peak_20) * 100
+decline_60 = ((close - peak_60) / peak_60) * 100
+price_above_50ma = close > ta.sma(close, 50)
+breadth_proxy = show_breadth ? ta.sma(price_above_50ma ? 1 : 0, 20) * 100 : 50
+correlation_proxy = math.abs(ta.correlation(close, ma_long, 20)) * 100
+
+// ============================================================================
+// PHASE SCORES (RAW)
+// ============================================================================
+mania_price = price_deviation > 15 ? 25 : (price_deviation > 10 ? 15 : 0)
+mania_rsi = (rsi > 70 and rsi_overbought_days > 10) ? 25 : (rsi > 70 ? 15 : 0)
+mania_breadth = breadth_proxy > 60 ? 20 : (breadth_proxy > 50 ? 10 : 0)
+mania_vix = vix_low ? 15 : 0
+mania_momentum = roc_accelerating and roc > 0 ? 15 : 0
+mania_score_raw = mania_price + mania_rsi + mania_breadth + mania_vix + mania_momentum
+
+panic_decline = decline_20 < -5 and decline_20 > -15 ? 20 : 0
+panic_vix_spike = vix_spike ? 20 : 0
+panic_volume = high_vol_down ? 15 : 0
+panic_breadth = breadth_proxy < 40 ? 15 : 0
+panic_credit = credit_stress > 30 ? 15 : 0
+panic_momentum = macd_bearish ? 15 : 0
+panic_score_raw = panic_decline + panic_vix_spike + panic_volume + panic_breadth + panic_credit + panic_momentum
+
+crash_extreme_decline = decline_60 < -15 ? 25 : (decline_60 < -10 ? 15 : 0)
+crash_vix_extreme = vix_extreme ? 20 : 0
+crash_volume_climax = vol_spike > 2.0 and close < open ? 15 : 0
+crash_breadth_collapse = breadth_proxy < 20 ? 15 : 0
+crash_correlation = correlation_proxy > 80 ? 15 : 0
+crash_credit_freeze = credit_stress > 60 ? 10 : 0
+crash_score_raw = crash_extreme_decline + crash_vix_extreme + crash_volume_climax + crash_breadth_collapse + crash_correlation + crash_credit_freeze
+
+// ============================================================================
+// SMOOTHING
+// ============================================================================
+mania_score = ta.sma(mania_score_raw, smooth_period)
+panic_score = ta.sma(panic_score_raw, smooth_period)
+crash_score = ta.sma(crash_score_raw, smooth_period)
+composite_risk = math.max(mania_score, math.max(panic_score, crash_score))
+
+// ============================================================================
+// PHASE STATE MACHINE WITH PERSISTENCE
+// ============================================================================
+var string phase = "NORMAL"
+var color phase_color = color_green_soft
+var int phase_start_bar = na
+
+// Determine dominant phase
+string new_phase = "NORMAL"
+if crash_score > crash_threshold
+    new_phase := "CRASH"
+else if panic_score > panic_threshold
+    new_phase := "PANIC"
+else if mania_score > mania_threshold
+    new_phase := "MANIA"
+
+// Detect phase change
+phase_changed = new_phase != phase
+if phase_changed
+    phase := new_phase
+    phase_start_bar := bar_index
+
+// Update phase color with improved palette
+phase_color := phase == "CRASH" ? color_red_danger :
+     phase == "PANIC" ? color_orange_alert :
+     phase == "MANIA" ? color_yellow_bright : color_green_soft
+
+// Calculate days in current phase
+days_in_phase = not na(phase_start_bar) ? bar_index - phase_start_bar + 1 : 0
+
+// ============================================================================
+// HISTORICAL CONTEXT COMPARISON
+// ============================================================================
+var string historical_context = ""
+if show_historical_context
+    if phase == "CRASH"
+        if crash_score > 90
+            historical_context := "Similar to: 2008 Crisis Peak"
+        else if crash_score > 80
+            historical_context := "Similar to: COVID-19 March 2020"
+        else
+            historical_context := "Similar to: Dec 2018 Selloff"
+    else if phase == "PANIC"
+        if panic_score > 75
+            historical_context := "Similar to: Pre-2020 Crash"
+        else
+            historical_context := "Similar to: Flash Crash"
+    else if phase == "MANIA"
+        if mania_score > 85
+            historical_context := "Similar to: Dot-Com Bubble 2000"
+        else
+            historical_context := "Similar to: Pre-2008 Peak"
+    else
+        historical_context := "Normal Market Conditions"
+
+// ============================================================================
+// ACTION GUIDANCE
+// ============================================================================
+var string action_hint = ""
+if show_action_hints
+    if phase == "CRASH"
+        action_hint := "🆘 CAPITULATION - Prepare to Buy Quality"
+    else if phase == "PANIC"
+        action_hint := "⚠️ RAISE CASH - Avoid Buying Dips"
+    else if phase == "MANIA"
+        action_hint := "⚠️ REDUCE EXPOSURE - Take Profits"
+    else if composite_risk > 50
+        action_hint := "⚡ ELEVATED RISK - Monitor Closely"
+    else
+        action_hint := "✅ NORMAL - Continue Regular Strategy"
+
+// ============================================================================
+// COMPONENT HEALTH STATUS
+// ============================================================================
+vix_status = show_vix and not na(vix) ?
+     (vix > 40 ? "🔴 EXTREME" :
+      vix > 25 ? "🟠 HIGH" :
+      vix < 20 ? "🟢 LOW" : "🟡 MODERATE") : "N/A"
+
+credit_status = show_credit ?
+     (credit_stress > 70 ? "🔴 FREEZE" :
+      credit_stress > 40 ? "🟠 STRESS" :
+      credit_stress > 20 ? "🟡 ELEVATED" : "🟢 NORMAL") : "N/A"
+
+breadth_status = show_breadth ?
+     (breadth_proxy < 20 ? "🔴 COLLAPSE" :
+      breadth_proxy < 40 ? "🟠 WEAK" :
+      breadth_proxy > 60 ? "🟢 STRONG" : "🟡 NEUTRAL") : "N/A"
+
+momentum_status = rsi > 70 ? "🔴 OVERBOUGHT" :
+     rsi < 30 ? "🟢 OVERSOLD" :
+     roc > 5 ? "🟢 BULLISH" :
+     roc < -5 ? "🔴 BEARISH" : "🟡 NEUTRAL"
+
+// ============================================================================
+// PHASE CHANGE LABELS ON CHART - UPDATED (No "NORMAL", shorter text)
+// ============================================================================
+if show_phase_labels and phase_changed and barstate.isconfirmed
+    // Skip NORMAL labels, only show phase alerts
+    if phase != "NORMAL"
+        label_text = phase == "CRASH" ? "🔴 CRASH" :
+             phase == "PANIC" ? "🟠 PANIC" :
+             phase == "MANIA" ? "🟡 MANIA" : ""
+
+        label_color = phase == "CRASH" ? color.new(color_red_danger, 0) :
+             phase == "PANIC" ? color.new(color_orange_alert, 0) :
+             phase == "MANIA" ? color.new(color_yellow_bright, 0) : na
+
+        if label_text != ""
+            label.new(bar_index, composite_risk, label_text,
+                 style=label.style_label_down,
+                 color=label_color,
+                 textcolor=color.white,
+                 size=size.large,
+                 textalign=text.align_center)
+
+// ============================================================================
+// PLOTTING - LINES (Improved colors)
+// ============================================================================
+// Choose display mode
+show_all_lines = display_mode == "Smoothed All Lines" or display_mode == "Both"
+show_dominant_only = display_mode == "Single Dominant Line" or display_mode == "Both"
+
+// Plot individual lines (smoothed) with improved colors
+plot(show_all_lines ? mania_score : na, title="Mania Score",
+     color=color.new(color_yellow_bright, 0), linewidth=2)
+plot(show_all_lines ? panic_score : na, title="Panic Score",
+     color=color.new(color_orange_alert, 0), linewidth=2)
+plot(show_all_lines ? crash_score : na, title="Crash Score",
+     color=color.new(color_red_danger, 0), linewidth=2)
+
+// Plot dominant line (thick, prominent)
+dominant_color = phase == "CRASH" ? color_red_danger :
+     phase == "PANIC" ? color_orange_alert :
+     phase == "MANIA" ? color_yellow_bright : color_gray_neutral
+plot(show_dominant_only ? composite_risk : na, title="Dominant Risk",
+     color=color.new(dominant_color, 0), linewidth=4, style=plot.style_line)
+
+// ============================================================================
+// BACKGROUND ZONES - Improved colors with better contrast
+// ============================================================================
+bg_color = show_zones ?
+     (phase == "CRASH" ? color.new(color_red_danger, 88) :
+     phase == "PANIC" ? color.new(color_orange_alert, 92) :
+     phase == "MANIA" ? color.new(color_yellow_bright, 94) :
+     color.new(color_green_soft, 96)) : na
+
+bgcolor(bg_color, title="Phase Background")
+
+// ============================================================================
+// THRESHOLD LINES & ZONES (Improved colors)
+// ============================================================================
+hline(100, "Max", color=color.new(color_gray_neutral, 70), linestyle=hline.style_solid)
+hline(crash_threshold, "Crash Threshold",
+     color=color.new(color_red_danger, 50), linestyle=hline.style_dashed, linewidth=2)
+hline(panic_threshold, "Panic Threshold",
+     color=color.new(color_orange_alert, 50), linestyle=hline.style_dashed, linewidth=2)
+hline(mania_threshold, "Mania Threshold",
+     color=color.new(color_yellow_bright, 50), linestyle=hline.style_dashed, linewidth=2)
+hline(0, "Min", color=color.new(color_gray_neutral, 70), linestyle=hline.style_solid)
+
+// Risk zone fills with improved colors
+h100 = hline(100, color=color.new(color.gray, 100))
+h85 = hline(85, color=color.new(color.gray, 100))
+h60 = hline(60, color=color.new(color.gray, 100))
+h30 = hline(30, color=color.new(color.gray, 100))
+h0 = hline(0, color=color.new(color.gray, 100))
+
+fill(h85, h100, color=color.new(color_red_danger, 92), title="Extreme Risk")
+fill(h60, h85, color=color.new(color_orange_alert, 92), title="High Risk")
+fill(h30, h60, color=color.new(color_yellow_bright, 95), title="Elevated Risk")
+fill(h0, h30, color=color.new(color_green_soft, 95), title="Normal")
+
+// ============================================================================
+// ENHANCED DASHBOARD - NORMALIZED FONTS & IMPROVED DESCRIPTIONS
+// ============================================================================
+// Determine position
+var string h_position = position.top_right
+if dashboard_position == "Top Left"
+    h_position := position.top_left
+else if dashboard_position == "Top Center"
+    h_position := position.top_center
+else if dashboard_position == "Top Right"
+    h_position := position.top_right
+else if dashboard_position == "Middle Left"
+    h_position := position.middle_left
+else if dashboard_position == "Middle Right"
+    h_position := position.middle_right
+else if dashboard_position == "Bottom Left"
+    h_position := position.bottom_left
+else if dashboard_position == "Bottom Right"
+    h_position := position.bottom_right
+
+// Normalized font sizes (more consistent)
+var string text_size_header = size.large
+var string text_size_normal = size.normal
+var string text_size_small = size.small
+
+if dashboard_size == "Small"
+    text_size_header := size.normal
+    text_size_normal := size.small
+    text_size_small := size.tiny
+else if dashboard_size == "Large"
+    text_size_header := size.large
+    text_size_normal := size.normal
+    text_size_small := size.small
+else if dashboard_size == "Extra Large"
+    text_size_header := size.huge
+    text_size_normal := size.large
+    text_size_small := size.normal
+// Default "Normal" uses the var initialization values
+
+// Calculate number of rows needed
+title_rows = 1 // Title row
+base_rows = 4 // Phase, Risk, Action, Historical
+component_rows = show_components ? 5 : 0 // Header + 4 components
+total_rows = title_rows + base_rows + component_rows
+
+// Create main dashboard table
+var table dashboard = table.new(h_position, 2, total_rows,
+     bgcolor=color.new(color_dark_bg, 80),
+     border_width=3,
+     border_color=phase_color)
+
+if barstate.islast
+    row = 0
+
+    // === ROW 0: TITLE ===
+    // Note: Pine Script doesn't support multi-colored text or colspan,
+    // so we merge visually by using both cells with centered text
+    table.cell(dashboard, 0, row, "",
+         bgcolor=color.new(phase_color, 20))
+    table.cell(dashboard, 1, row, "🟡 Manias, 🟠 Panics and 🔴 Crashes",
+         text_color=color.white,
+         text_size=text_size_header,
+         text_halign=text.align_center,
+         bgcolor=color.new(phase_color, 20))
+    row := row + 1
+
+    // === ROW 1: PHASE (BIG) ===
+    table.cell(dashboard, 0, row, "PHASE",
+         text_color=color.white,
+         text_size=text_size_normal,
+         bgcolor=color.new(color_gray_neutral, 60))
+    table.cell(dashboard, 1, row, phase,
+         text_color=phase_color,
+         text_size=text_size_header,
+         bgcolor=color.new(color_dark_bg, 50))
+    row := row + 1
+
+    // === ROW 2: RISK SCORE (GAUGE STYLE) ===
+    risk_display = str.tostring(math.round(composite_risk)) + " / 100"
+    risk_label = composite_risk > 85 ? "🔴 EXTREME RISK" :
+         composite_risk > 60 ? "🟠 HIGH RISK" :
+         composite_risk > 30 ? "🟡 ELEVATED RISK" : "🟢 LOW RISK"
+
+    table.cell(dashboard, 0, row, "RISK",
+         text_color=color.white,
+         text_size=text_size_normal,
+         bgcolor=color.new(color_gray_neutral, 60))
+    table.cell(dashboard, 1, row, risk_display + "\n" + risk_label,
+         text_color=phase_color,
+         text_size=text_size_normal,
+         bgcolor=color.new(color_dark_bg, 50))
+    row := row + 1
+
+    // === ROW 3: ACTION GUIDANCE ===
+    if show_action_hints
+        table.cell(dashboard, 0, row, "ACTION",
+             text_color=color.white,
+             text_size=text_size_normal,
+             bgcolor=color.new(color_gray_neutral, 60))
+        table.cell(dashboard, 1, row, action_hint,
+             text_color=color.white,
+             text_size=text_size_normal,
+             bgcolor=color.new(color_dark_bg, 50))
+        row := row + 1
+
+    // === ROW 4: HISTORICAL CONTEXT ===
+    if show_historical_context
+        table.cell(dashboard, 0, row, "CONTEXT",
+             text_color=color.white,
+             text_size=text_size_normal,
+             bgcolor=color.new(color_gray_neutral, 60))
+        table.cell(dashboard, 1, row, historical_context + "\nDay " + str.tostring(days_in_phase) + " of " + phase,
+             text_color=color.gray,
+             text_size=text_size_normal,
+             bgcolor=color.new(color_dark_bg, 50))
+        row := row + 1
+
+    // === COMPONENT HEALTH PANEL - IMPROVED WITH DESCRIPTIONS ===
+    if show_components
+        // Header
+        table.cell(dashboard, 0, row, "COMPONENTS",
+             text_color=color.white,
+             text_size=text_size_normal,
+             bgcolor=color.new(color_purple_composite, 40))
+        table.cell(dashboard, 1, row, "STATUS",
+             text_color=color.white,
+             text_size=text_size_normal,
+             bgcolor=color.new(color_purple_composite, 40))
+        row := row + 1
+
+        // VIX - Volatility/Fear Gauge
+        vix_value = show_vix and not na(vix) ? str.tostring(math.round(vix * 10) / 10) : "N/A"
+        table.cell(dashboard, 0, row, "VIX (Fear): " + vix_value,
+             text_color=color.white,
+             text_size=text_size_normal,
+             bgcolor=color.new(color_dark_bg, 65))
+        table.cell(dashboard, 1, row, vix_status,
+             text_color=color.white,
+             text_size=text_size_normal,
+             bgcolor=color.new(color_dark_bg, 65))
+        row := row + 1
+
+        // Credit - Stress in Bond Markets
+        credit_value = show_credit ? str.tostring(math.round(credit_stress)) : "N/A"
+        table.cell(dashboard, 0, row, "Credit (Bonds): " + credit_value,
+             text_color=color.white,
+             text_size=text_size_normal,
+             bgcolor=color.new(color_dark_bg, 65))
+        table.cell(dashboard, 1, row, credit_status,
+             text_color=color.white,
+             text_size=text_size_normal,
+             bgcolor=color.new(color_dark_bg, 65))
+        row := row + 1
+
+        // Breadth - Market Participation
+        breadth_value = show_breadth ? str.tostring(math.round(breadth_proxy)) + "%" : "N/A"
+        table.cell(dashboard, 0, row, "Breadth (Participation): " + breadth_value,
+             text_color=color.white,
+             text_size=text_size_normal,
+             bgcolor=color.new(color_dark_bg, 65))
+        table.cell(dashboard, 1, row, breadth_status,
+             text_color=color.white,
+             text_size=text_size_normal,
+             bgcolor=color.new(color_dark_bg, 65))
+        row := row + 1
+
+        // Momentum - Price Direction
+        rsi_value = str.tostring(math.round(rsi))
+        table.cell(dashboard, 0, row, "Momentum (RSI): " + rsi_value,
+             text_color=color.white,
+             text_size=text_size_normal,
+             bgcolor=color.new(color_dark_bg, 65))
+        table.cell(dashboard, 1, row, momentum_status,
+             text_color=color.white,
+             text_size=text_size_normal,
+             bgcolor=color.new(color_dark_bg, 65))
+
+// ============================================================================
+// ALERTS - Fixed for Pine v6
+// ============================================================================
+mania_alert = phase == "MANIA" and phase[1] != "MANIA"
+panic_alert = phase == "PANIC" and phase[1] != "PANIC"
+crash_alert = phase == "CRASH" and phase[1] != "CRASH"
+breadth_collapse_alert = breadth_proxy < 30 and breadth_proxy[1] >= 30
+vix_spike_alert = show_vix and not na(vix) and not na(vix_5) and vix > vix_5 * 1.30 and vix[1] <= vix_5[1] * 1.30
+credit_freeze_alert = credit_stress > 70 and credit_stress[1] <= 70
+
+alertcondition(mania_alert, title="🟡 Mania Phase Detected",
+     message="🟡 MANIA PHASE: Elevated crash risk detected. Consider reducing exposure and taking profits.")
+
+alertcondition(panic_alert, title="🟠 Panic Phase Detected",
+     message="🟠 PANIC PHASE: Severe market stress detected. Consider raising cash and avoiding buying dips.")
+
+alertcondition(crash_alert, title="🔴 CRASH DETECTED",
+     message="🔴 CRASH PHASE: Capitulation event detected. Extreme risk - prepare to buy quality after capitulation.")
+
+alertcondition(breadth_collapse_alert, title="⚠️ Breadth Collapse",
+     message="⚠️ Market breadth collapsed below 30% - participation deteriorating rapidly.")
+
+alertcondition(vix_spike_alert, title="⚠️ VIX Spike",
+     message="⚠️ VIX spiked >30% in 5 days - fear increasing rapidly.")
+
+alertcondition(credit_freeze_alert, title="⚠️ Credit Freeze",
+     message="⚠️ Credit stress extreme - potential liquidity crisis developing.")
+
+// ============================================================================
+// DATA WINDOW (For debugging)
+// ============================================================================
+plotchar(composite_risk, title="Composite Risk", char="", location=location.top, display=display.data_window)
+plotchar(mania_score, title="Mania Score", char="", location=location.top, display=display.data_window)
+plotchar(panic_score, title="Panic Score", char="", location=location.top, display=display.data_window)
+plotchar(crash_score, title="Crash Score", char="", location=location.top, display=display.data_window)
+plotchar(show_vix ? vix : na, title="VIX", char="", location=location.top, display=display.data_window)
+plotchar(credit_stress, title="Credit Stress", char="", location=location.top, display=display.data_window)
+plotchar(breadth_proxy, title="Breadth %", char="", location=location.top, display=display.data_window)

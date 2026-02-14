@@ -1,0 +1,83 @@
+// This work is licensed under a Attribution-NonCommercial-ShareAlike 4.0 International (CC BY-NC-SA 4.0) https://creativecommons.org/licenses/by-nc-sa/4.0/
+// © LuxAlgo
+
+//@version=6
+indicator("L1 Proximal Filter [LuxAlgo]", "LuxAlgo - L1 Proximal Filter", overlay = true)
+
+//---------------------------------------------------------------------------------------------------------------------}
+// Constants
+//---------------------------------------------------------------------------------------------------------------------{
+color BULL_COLOR    = #089981
+color BEAR_COLOR    = #f23645
+
+//---------------------------------------------------------------------------------------------------------------------}
+// Inputs
+//---------------------------------------------------------------------------------------------------------------------{
+srcInput           = input.source(close, "Source")
+atrMultInput       = input.float(1.5, "ATR Multiplier", minval = 0, step = 0.1, tooltip = "Defines the noise threshold by multiplying the 200-period ATR.")
+muInput            = input.float(0.6, "Adaptation Rate (μ)", minval = 0, maxval = 1, step = 0.1, tooltip = "Controls how fast the filter adapts to price changes.")
+
+//---------------------------------------------------------------------------------------------------------------------}
+// Calculations
+//---------------------------------------------------------------------------------------------------------------------{
+// Determine the actual threshold to use
+float threshold = ta.atr(200) * atrMultInput
+
+
+// L1 Proximal Filter State
+var float z = na
+var float v = 0.0
+
+if bar_index == 0
+    z := srcInput
+else
+    // Prediction step based on previous state
+    float zPrev = z[1]
+    float vPrev = v[1]
+    float zPred = zPrev + vPrev
+    
+    // Adaptation step: blend prediction with new data
+    float zTemp = zPred + muInput * (srcInput - zPred)
+    
+    // Innovation (velocity) calculation with L1 soft-thresholding
+    float diff = zTemp - zPrev
+    
+    if math.abs(diff) > threshold
+        v := math.sign(diff) * (math.abs(diff) - threshold)
+    else
+        v := 0.0
+        
+    // Update filtered state
+    z := zPrev + v
+
+// Trend Logic (Binary State)
+var int trend = 0
+if z > z[1]
+    trend := 1
+else if z < z[1]
+    trend := -1
+
+bool upChange   = trend == 1  and trend[1] == -1
+bool downChange = trend == -1 and trend[1] == 1
+
+//---------------------------------------------------------------------------------------------------------------------}
+// Visuals
+//---------------------------------------------------------------------------------------------------------------------{
+color zColor = trend == 1 ? BULL_COLOR : BEAR_COLOR
+zPlot        = plot(z, "L1 Proximal Filter", color = zColor, linewidth = 3)
+srcPlot      = plot(srcInput, "Source Plot", color = na)
+
+// Vertical Gradient Fill
+bool showFill   = (trend == 1 and srcInput > z) or (trend == -1 and srcInput < z)
+fillTopColor    = showFill ? color.new(zColor, 50) : na
+fillBottomColor = showFill ? color.new(zColor, 100) : na
+
+fill(srcPlot, zPlot, srcInput, z, fillTopColor, fillBottomColor, "Trend Fill")
+
+// Trend Change Dots
+float switchVal   = upChange or downChange ? z[1] : na
+color switchColor = upChange ? BULL_COLOR : BEAR_COLOR
+
+plot(switchVal, "Trend Switch Dot", color = switchColor, style = plot.style_circles, linewidth = 4, offset = -1)
+
+//---------------------------------------------------------------------------------------------------------------------{

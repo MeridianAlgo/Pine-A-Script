@@ -1,0 +1,3 @@
+Review: PASS
+Notes:
+- Used fallback syntax check (vm.SourceTextModule unavailable; exports stripped).
