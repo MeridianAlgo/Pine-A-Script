@@ -905,8 +905,8 @@ const pinescript = {
     const info = { ticker: 'AAPL', tickerid: 'NASDAQ:AAPL', prefix: 'NASDAQ', root: 'AAPL', suffix: '' };
     return info[type] || '';
   },
-  time: 1771040739870,
-  timenow: 1771040739870,
+  time: 1771178051221,
+  timenow: 1771178051221,
   barstate: "LAST",
   dividends: {},
   splits: {},
@@ -1217,23 +1217,15 @@ function main() {
   function ma(src, len) {
     let out = null;
     if ((maType === "SMA")) {
-      {
-        out = pinescript.sma(src, len);
-      }
+      out = pinescript.sma(src, len);
     } else {
       if ((maType === "EMA")) {
-        {
-          out = pinescript.ema(src, len);
-        }
+        out = pinescript.ema(src, len);
       } else {
         if ((maType === "WMA")) {
-          {
-            out = pinescript.wma(src, len);
-          }
+          out = pinescript.wma(src, len);
         } else {
-          {
-            out = pinescript.rma(src, len);
-          }
+          out = pinescript.rma(src, len);
         }
       }
     }
@@ -1256,14 +1248,10 @@ function main() {
   let enterLong = ((longBias && adxOK) && (pinescript.strategy.position_size <= 0));
   let enterShort = ((shortBias && adxOK) && (pinescript.strategy.position_size >= 0));
   if (enterLong) {
-    {
-      pinescript.strategyEntry("Long", pinescript.strategy.long);
-    }
+    pinescript.strategyEntry("Long", pinescript.strategy.long);
   }
   if (enterShort) {
-    {
-      pinescript.strategyEntry("Short", pinescript.strategy.short);
-    }
+    pinescript.strategyEntry("Short", pinescript.strategy.short);
   }
   pinescript.plot(fastMA, "Fast MA", ({ color: pinescript.color.blue, linewidth: 1 }));
   pinescript.plot(slowMA, "Slow MA", ({ color: pinescript.color.orange, linewidth: 3 }));

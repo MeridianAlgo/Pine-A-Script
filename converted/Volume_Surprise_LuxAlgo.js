@@ -905,8 +905,8 @@ const pinescript = {
     const info = { ticker: 'AAPL', tickerid: 'NASDAQ:AAPL', prefix: 'NASDAQ', root: 'AAPL', suffix: '' };
     return info[type] || '';
   },
-  time: 1771178051687,
-  timenow: 1771178051687,
+  time: 1771178053368,
+  timenow: 1771178053368,
   barstate: "LAST",
   dividends: {},
   splits: {},
@@ -1192,7 +1192,7 @@ pinescript.table = {
 
 // Input parameters
 
-const OrderBlock = { new: function(top, bottom, startTime, strength, isBullish, boxId, labelId, mitigated) { return { top: top, bottom: bottom, startTime: startTime, strength: strength, isBullish: isBullish, boxId: boxId, labelId: labelId, mitigated: mitigated }; } };
+const vector = { new: function(v) { return { v: v }; } };
 
 // Main script logic
 
@@ -1207,189 +1207,94 @@ function main() {
   volume = pinescript.asSeries(globalThis.volume);
   time = pinescript.asSeries(globalThis.time);
   null;
-  // Study: Institutional Order Flow Strength Classifier [LuxAlgo]
-  // Options: {"overlay":true,"max_boxes_count":100,"max_labels_count":100}
-  let BULL_COLOR = pinescript.color.hex("#089981");
-  let BEAR_COLOR = pinescript.color.hex("#f23645");
-  let TEXT_COLOR = chart.fg_color;
-  let OB_GROUP = "Order Block Settings";
-  let pivotLenInput = input.int(5, "Pivot Lookback", ({ minval: 2, group: OB_GROUP }));
-  let maxOBsInput = input.int(5, "Max Unmitigated OBs", ({ minval: 1, maxval: 50, group: OB_GROUP }));
-  let VIS_GROUP = "Visualization";
-  let bullColorInput = input.color(pinescript.color.new(BULL_COLOR, 80), "Bullish OB Color", ({ group: VIS_GROUP }));
-  let bearColorInput = input.color(pinescript.color.new(BEAR_COLOR, 80), "Bearish OB Color", ({ group: VIS_GROUP }));
-  let hideOverlappedInput = input.bool(true, "Hide Overlapped Zones", ({ group: VIS_GROUP }));
-  let showLabelsInput = input.bool(true, "Show Strength Labels", ({ group: VIS_GROUP }));
-  let showStrongestInput = input.bool(true, "Show Strongest OB Plot", ({ group: VIS_GROUP }));
-  let bufferSizeInput = input.int(5, "Strongest OB Buffer Size", ({ minval: 1, maxval: 100, group: VIS_GROUP }));
-  function calculateStrength(obRange, breakoutDist, relVol) {
-    let dispFactor = pinescript.min((breakoutDist / (obRange * 5)), 1);
-    let volFactor = pinescript.min((relVol / 2), 1);
-    let score = (((dispFactor * 0.6) + (volFactor * 0.4)) * 100);
-    return pinescript.round(score, 1);
+  // Study: Volume Surprise [LuxAlgo]
+  // Options: {"overlay":false,"format":null}
+  let length = input.int(50, ({ minval: 1 }));
+  let smooth = input.int(1, ({ minval: 1 }));
+  let autoFormat = input(true, "Auto Selection", ({ group: "Periods", tooltip: "Automatically choose a practical combination of periods based on the chart timeframe" }));
+  let considerMinutes = input(true, "Minutes", ({ group: "Periods" }));
+  let considerHours = input(true, "Hours", ({ group: "Periods" }));
+  let considerDays = input(false, "Days", ({ inline: "day", group: "Periods" }));
+  let daysOptions = input.string("Day of Week", "", ({ options: ["Day of Week", "Day of Month", "Day of Year"], inline: "day", group: "Periods" }));
+  let considerMonths = input(false, "Months", ({ group: "Periods" }));
+  let considerQuarters = input(false, "Quarters", ({ group: "Periods" }));
+  let summaryMethod = input.string("Mean", "Method", ({ options: ["Mean", "Percentile"], group: "Summary" }));
+  let percentile = input(50, ({ active: (summaryMethod === "Percentile"), group: "Summary" }));
+  let showForecast = input(true, "Show Forecast", ({ group: "Forecast" }));
+  let forecastWindow = input.int(50, "Forecast Window", ({ minval: 1, maxval: 499, group: "Forecast" }));
+  let forecastStyleColor = input(pinescript.color.hex("#2962ff"), "Style", ({ inline: "forecast_style", group: "Forecast" }));
+  let forecastStyleLine = input.string("Dotted", "", ({ options: ["Solid", "Dashed", "Dotted"], inline: "forecast_style", group: "Forecast" }));
+  function getSummary(id, key) {
+    id.get(key).v.percentile_linear_interpolation(percentile);
+    id.get(key).v.avg();
+    let summary = ((summaryMethod === "Mean") ? undefined : ((summaryMethod === "Percentile") ? undefined : null));
   }
-  if (state.obArray === undefined) state.obArray = pinescript.arrayNew();
-  let volSMA = pinescript.sma(volume, 20);
-  let hi = ta.pivothigh(pivotLenInput, pivotLenInput);
-  let lo = ta.pivotlow(pivotLenInput, pivotLenInput);
-  if (state.lastHi === undefined) state.lastHi = null;
-  if (state.lastLo === undefined) state.lastLo = null;
-  if (state.lastHiIdx === undefined) state.lastHiIdx = null;
-  if (state.lastLoIdx === undefined) state.lastLoIdx = null;
-  if (!pinescript.na(hi)) {
-    state.lastHi = hi;
-    state.lastHiIdx = (bar_index - pivotLenInput);
-  }
-  if (!pinescript.na(lo)) {
-    state.lastLo = lo;
-    state.lastLoIdx = (bar_index - pivotLenInput);
-  }
-  let bullBOS = pinescript.cross(close, state.lastHi);
-  let bearBOS = pinescript.cross(close, state.lastLo);
-  if ((bullBOS || bearBOS)) {
-    let searchLen = (bar_index - (bullBOS ? state.lastHiIdx : state.lastLoIdx));
-    let obTop = null;
-    let obBtm = null;
-    let obIdx = null;
-    let obVol = null;
-    if (bullBOS) {
-      let minLow = null;
-      for (let i = 1; i <= searchLen; i++) {
-        if ((pinescript.offset(close, i) < pinescript.offset(open, i))) {
-          if ((pinescript.na(minLow) || (pinescript.offset(low, i) < minLow))) {
-            minLow = pinescript.offset(low, i);
-            obTop = pinescript.offset(high, i);
-            obBtm = pinescript.offset(low, i);
-            obIdx = i;
-            obVol = pinescript.offset(volume, i);
-          }
-        }
-      }
-      state.lastHi = null;
+  if ((barstate.isfirst && autoFormat)) {
+    if (timeframe.isseconds) {
+      considerMinutes = true;
+      considerHours = true;
+      considerDays = false;
+      considerMonths = false;
+      considerQuarters = false;
     } else {
-      let maxHigh = null;
-      for (let i = 1; i <= searchLen; i++) {
-        if ((pinescript.offset(close, i) > pinescript.offset(open, i))) {
-          if ((pinescript.na(maxHigh) || (pinescript.offset(high, i) > maxHigh))) {
-            maxHigh = pinescript.offset(high, i);
-            obTop = pinescript.offset(high, i);
-            obBtm = pinescript.offset(low, i);
-            obIdx = i;
-            obVol = pinescript.offset(volume, i);
-          }
-        }
-      }
-      state.lastLo = null;
-    }
-    if (!pinescript.na(obIdx)) {
-      let obHeight = (obTop - obBtm);
-      let breakoutDist = (bullBOS ? (close - obTop) : (obBtm - close));
-      let avgVol = pinescript.offset(volSMA, obIdx);
-      let strength = calculateStrength(obHeight, breakoutDist, (obVol / avgVol));
-      let newOB = OrderBlock.new(obTop, obBtm, pinescript.offset(time, obIdx), strength, bullBOS, null, null, false);
-      pinescript.arrayUnshift(state.obArray, newOB);
-    }
-  }
-  if ((pinescript.arraySize(state.obArray) > 0)) {
-    for (let i = 0; i <= (pinescript.arraySize(state.obArray) - 1); i++) {
-      let ob = pinescript.arrayGet(state.obArray, i);
-      if (!ob.mitigated) {
-        let isMitigated = (ob.isBullish ? (low < ob.bottom) : (high > ob.top));
-        if (isMitigated) {
-          ob.mitigated = true;
-        }
-      }
-    }
-  }
-  let strongestTop = null;
-  let strongestBottom = null;
-  let strongestAvgPrice = null;
-  let strongestIsBullish = false;
-  let maxStrength = -1;
-  if ((pinescript.arraySize(state.obArray) > 0)) {
-    let checkedCount = 0;
-    for (let i = 0; i <= (pinescript.arraySize(state.obArray) - 1); i++) {
-      let ob = pinescript.arrayGet(state.obArray, i);
-      if (!ob.mitigated) {
-        if ((ob.strength > maxStrength)) {
-          maxStrength = ob.strength;
-          strongestTop = ob.top;
-          strongestBottom = ob.bottom;
-          strongestAvgPrice = ((ob.top + ob.bottom) / 2);
-          strongestIsBullish = ob.isBullish;
-        }
-        checkedCount += 1;
-        if ((checkedCount >= bufferSizeInput)) {
-          break;
-        }
-      }
-    }
-  }
-  let plotCol = (pinescript.na(strongestAvgPrice) ? null : (strongestIsBullish ? bullColorInput : bearColorInput));
-  let hasChanged = (strongestAvgPrice !== pinescript.offset(strongestAvgPrice, 1));
-  let plotTop = pinescript.plot((showStrongestInput ? strongestTop : null), "Strongest OB Top", ({ color: (hasChanged ? null : pinescript.color.new(plotCol, 70)) }));
-  let plotBtm = pinescript.plot((showStrongestInput ? strongestBottom : null), "Strongest OB Bottom", ({ color: (hasChanged ? null : pinescript.color.new(plotCol, 70)) }));
-  pinescript.fill(plotTop, plotBtm, (hasChanged ? null : pinescript.color.new(plotCol, 90)), "Strongest OB Zone Fill");
-  pinescript.plot((showStrongestInput ? strongestAvgPrice : null), "Strongest OB Median", ({ color: (hasChanged ? null : pinescript.color.new(plotCol, 40)), linewidth: 2 }));
-  if (barstate.islast) {
-    let activeCount = 0;
-    if (state.occupiedTops === undefined) state.occupiedTops = pinescript.arrayNew(0);
-    if (state.occupiedBtms === undefined) state.occupiedBtms = pinescript.arrayNew(0);
-    pinescript.arrayClear(state.occupiedTops);
-    pinescript.arrayClear(state.occupiedBtms);
-    if ((pinescript.arraySize(state.obArray) > 0)) {
-      for (let i = 0; i <= (pinescript.arraySize(state.obArray) - 1); i++) {
-        let ob = pinescript.arrayGet(state.obArray, i);
-        let isOverlapped = false;
-        if (((!ob.mitigated && hideOverlappedInput) && (pinescript.arraySize(state.occupiedTops) > 0))) {
-          for (let j = 0; j <= (pinescript.arraySize(state.occupiedTops) - 1); j++) {
-            let otherTop = pinescript.arrayGet(state.occupiedTops, j);
-            let otherBtm = pinescript.arrayGet(state.occupiedBtms, j);
-            if (((((ob.top <= otherTop) && (ob.top >= otherBtm)) || ((ob.bottom <= otherTop) && (ob.bottom >= otherBtm))) || ((ob.top >= otherTop) && (ob.bottom <= otherBtm)))) {
-              isOverlapped = true;
-              break;
-            }
-          }
-        }
-        if (((!ob.mitigated && !isOverlapped) && (activeCount < maxOBsInput))) {
-          activeCount += 1;
-          pinescript.arrayPush(state.occupiedTops, ob.top);
-          pinescript.arrayPush(state.occupiedBtms, ob.bottom);
-          let obCol = (ob.isBullish ? bullColorInput : bearColorInput);
-          let labelCol = (ob.isBullish ? BULL_COLOR : BEAR_COLOR);
-          if (pinescript.na(ob.boxId)) {
-            ob.boxId = box.new(ob.startTime, ob.top, time, ob.bottom, ({ bgcolor: obCol, border_color: obCol, border_style: line.style_dashed, xloc: xloc.bar_time }));
-          }
-          if (showLabelsInput) {
-            if (pinescript.na(ob.labelId)) {
-              ob.labelId = pinescript.labelNew(time, ((ob.top + ob.bottom) / 2), ({ text: str.format("{0}%", ob.strength), style: label.style_label_left, textcolor: labelCol, color: pinescript.color.hex("#00000000"), size: pinescript.size.small, textalign: pinescript.text.align_center, xloc: xloc.bar_time }));
-            }
-          }
-        } else {
-          if (!pinescript.na(ob.boxId)) {
-            box.delete(ob.boxId);
-            ob.boxId = null;
-          }
-          if (!pinescript.na(ob.labelId)) {
-            pinescript.labelDelete(ob.labelId);
-            ob.labelId = null;
-          }
-        }
-      }
-    }
-  }
-  if ((pinescript.arraySize(state.obArray) > 100)) {
-    for (let i = (pinescript.arraySize(state.obArray) - 1); i <= 0; i++) {
-      let ob = pinescript.arrayGet(state.obArray, i);
-      if ((ob.mitigated && (pinescript.arraySize(state.obArray) > 50))) {
-        pinescript.arrayRemove(state.obArray, i);
+      if ((timeframe.isminutes && (timeframe.in_seconds(timeframe.period) >= 3600))) {
+        considerMinutes = false;
+        considerHours = true;
+        considerDays = true;
+        considerMonths = false;
+        considerQuarters = false;
       } else {
-        if ((pinescript.arraySize(state.obArray) > 100)) {
-          pinescript.arrayPop(state.obArray);
+        if (timeframe.isminutes) {
+          considerMinutes = true;
+          considerHours = true;
+          considerDays = false;
+          considerMonths = false;
+          considerQuarters = false;
+        } else {
+          considerMinutes = false;
+          considerHours = false;
+          considerDays = false;
+          considerMonths = true;
+          considerQuarters = true;
         }
       }
     }
   }
+  if (state.format === undefined) state.format = str.format("{0}{1}{2}{3}{4}ss", (considerQuarters ? pinescript.strToString(math.ceil((month / 3))) : ""), (considerMonths ? "MM:" : ""), (considerDays ? ((daysOptions === "Day of Week") ? "EEE:" : ((daysOptions === "Day of Month") ? "dd:" : "DDD:")) : ""), (considerHours ? "hh:" : ""), (considerMinutes ? "mm:" : ""));
+  if (state.data === undefined) state.data = pinescript.mapNew();
+  let vol = pinescript.sma(volume, smooth);
+  let key = str.format_time(time, state.format);
+  if (!data.keys().includes(key)) {
+    data.put(key, vector.new(pinescript.arrayNew(0)));
+  }
+  summary = getSummary(state.data, key);
+  data.get(key).v.push(vol);
+  if ((data.get(key).v.size() > length)) {
+    data.get(key).v.shift();
+  }
+  line.style_dotted;
+  line.style_dashed;
+  line.style_solid;
+  if (state.forecastStyle === undefined) state.forecastStyle = ((forecastStyleLine === "Solid") ? undefined : ((forecastStyleLine === "Dashed") ? undefined : ((forecastStyleLine === "Dotted") ? undefined : null)));
+  if ((showForecast && barstate.islast)) {
+    let forecastCoordinates = pinescript.arrayNew(0);
+    forecastCoordinates.push(chart.point.from_time(time, summary));
+    for (let i = 1; i <= forecastWindow; i++) {
+      let t = pinescript.time(timeframe.period, ({ bars_back: -i }));
+      let forecastKey = str.format_time(t, state.format);
+      if (data.keys().includes(forecastKey)) {
+        let forecastValue = getSummary(state.data, forecastKey);
+        forecastCoordinates.push(chart.point.from_time(t, forecastValue));
+      } else {
+        forecastCoordinates.push(chart.point.from_time(t, null));
+      }
+    }
+    polyline.delete(pinescript.offset(polyline.new(forecastCoordinates, ({ xloc: xloc.bar_time, line_style: state.forecastStyle, line_color: forecastStyleColor })), 1));
+  }
+  let css = ((vol > summary) ? pinescript.color.new(pinescript.color.hex("#089981"), 50) : pinescript.color.new(pinescript.color.hex("#f23645"), 50));
+  let plotVolume = pinescript.plot(vol, "Volume", ({ color: pinescript.color.gray }));
+  let plotEv = pinescript.plot(summary, "Expected Volume", ({ color: pinescript.color.orange, linestyle: plot.linestyle_dotted }));
+  pinescript.plot((vol - summary), "Difference", ({ style: plot.style_columns, color: css }));
 }
 
 

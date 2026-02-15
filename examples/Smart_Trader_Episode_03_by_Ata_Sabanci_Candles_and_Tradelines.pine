@@ -1,0 +1,3016 @@
+//@version=6
+indicator("Smart Trader, Episode 03, by Ata Sabancı | Candles and Tradelines",
+     shorttitle = "ST-EP03",
+     overlay = true,
+     max_bars_back = 5000,
+     max_labels_count = 500,
+     max_boxes_count = 500,
+     max_lines_count = 500)
+
+import TradingView/ta/10 as tvta
+
+//━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// PURPOSE
+//━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// This indicator segments the most recent bars into a fixed number of groups and
+// prints the group number above the last bar of each group.
+// It is designed as a lightweight visual ruler for window/group boundaries.
+//━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+string G_MAIN = "═══ Main Settings ═══"
+
+int i_window = input.int(100, "Window Bars", minval = 1, group = G_MAIN)
+int i_groups = input.int(20, "Group Count", minval = 1, group = G_MAIN)
+
+string i_calcBasis = input.string("Closed (bar[1])", "Calculation Basis",
+     options = ["Closed (bar[1])", "Current (bar[0])"], group = G_MAIN)
+
+int baseOff = i_calcBasis == "Current (bar[0])" ? 0 : 1
+
+bool i_showGroupNums = input.bool(true, "Show Group Numbers", group = G_MAIN)
+bool i_showGroupBoxes = input.bool(true, "Show Group Boxes", group = G_MAIN)
+
+color i_boxColor  = input.color(color.gray, "Box Color", group = G_MAIN)
+int   i_boxTransp = input.int(85, "Box Transparency", minval = 0, maxval = 100, group = G_MAIN)
+
+string i_globalTextSizeStr = input.string("Small", "Global Text Size",
+     options = ["Tiny", "Small", "Normal", "Large"], group = G_MAIN,
+     tooltip = "Applies to ALL text elements on chart: labels, dashboard, trend lines, etc.")
+
+string GLOBAL_TEXT_SIZE =
+     i_globalTextSizeStr == "Tiny"   ? size.tiny   :
+     i_globalTextSizeStr == "Normal" ? size.normal :
+     i_globalTextSizeStr == "Large"  ? size.large  :
+                                       size.small
+
+//━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// BLOCK ANALYTICS SETTINGS
+//━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+string G_ANALYTICS = "═══ Block Analytics ═══"
+
+bool i_showCompositeCandle = input.bool(false, "Show Composite Candle", group = G_ANALYTICS,
+     tooltip = "Displays a ghost-like composite candle at the center of each block representing aggregated OHLC.")
+
+int i_compositeCandleTransp = input.int(50, "Composite Candle Transparency", minval = 50, maxval = 95, group = G_ANALYTICS,
+     tooltip = "Transparency level for the ghost-like composite candle (higher = more transparent).")
+
+bool i_dimOriginalCandles = input.bool(true, "Dim Original Candles", group = G_ANALYTICS,
+     tooltip = "When composite candles are shown, dims the original chart candles to make composites stand out.")
+
+int i_originalCandleDimLevel = input.int(95, "Original Candle Dim Level", minval = 50, maxval = 95, group = G_ANALYTICS,
+     tooltip = "Transparency level for dimmed original candles (higher = more transparent/faded).")
+
+int groupSize  = math.max(1, int(math.round(float(i_window) / i_groups)))
+int effWindow  = groupSize * i_groups
+
+//─────────────────────────────────────────────────────────────────────────────
+// ORIGINAL CANDLE DIMMING (when composite candles are active)
+//─────────────────────────────────────────────────────────────────────────────
+color _dimBullish = color.new(color.rgb(34, 197, 94), i_originalCandleDimLevel)
+color _dimBearish = color.new(color.rgb(239, 68, 68), i_originalCandleDimLevel)
+color _dimNeutral = color.new(color.rgb(120, 120, 120), i_originalCandleDimLevel)
+
+// Determine candle color based on close vs open
+color _originalCandleColor = close > open ? _dimBullish : close < open ? _dimBearish : _dimNeutral
+
+// Apply dimming only when composite candles are shown AND dimming is enabled
+barcolor(i_showCompositeCandle and i_dimOriginalCandles ? _originalCandleColor : na)
+
+//━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// TYPE DEFINITIONS
+//━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+type BlockAnalytics
+    bool  valid
+    float totalBuy
+    float totalSell
+    float delta
+    float blockHeight
+    float blockArea
+    float avgUpperPin
+    float avgLowerPin
+    float avgBody
+    float newOpen
+    float newHigh
+    float newLow
+    float newClose
+    int   startIdx
+    int   endIdx
+    int   centerIdx
+    float boxBottom
+    int   trendType       // 1 = UP, -1 = DOWN, 0 = RANGE/NEUTRAL
+    bool  trendLocked     // Once true, trendType never changes
+
+type BoxCore
+    bool  valid
+    float sumBuy
+    float sumSell
+    float delta
+    float pocPrice
+    int   pocOff
+    float pocVol
+    float maxBuyVal
+    int   maxBuyOff
+    float maxBuyHigh
+    float maxSellVal
+    int   maxSellOff
+    float maxSellLow
+    float minBuyVal
+    int   minBuyOff
+    float minBuyHigh
+    float minSellVal
+    int   minSellOff
+    float minSellLow
+
+type TrendChannel
+    int   channelType      // 1 = UPTREND, -1 = DOWNTREND, 0 = RANGE
+    int   startBlock       // Newest block (e.g., 1)
+    int   endBlock         // Oldest block (e.g., 4)
+    float angleDeg         // Channel angle in degrees
+    int   upperX1          // Upper line start X (left)
+    int   upperX2          // Upper line end X (right)
+    int   lowerX1          // Lower line start X (left)
+    int   lowerX2          // Lower line end X (right)
+    float upperY1          // Upper line start Y
+    float upperY2          // Upper line end Y
+    float lowerY1          // Lower line start Y
+    float lowerY2          // Lower line end Y
+    line  upperLine        // Upper channel line
+    line  lowerLine        // Lower channel line
+
+// TrendChannel methods
+method clear(TrendChannel this) =>
+    if not na(this.upperLine)
+        line.delete(this.upperLine)
+    if not na(this.lowerLine)
+        line.delete(this.lowerLine)
+
+//─────────────────────────────────────────────────────────────────────────────
+// NARRATIVE ENGINE UDTs
+//─────────────────────────────────────────────────────────────────────────────
+
+type CurrentBarAnalysis
+    // Raw measurements
+    float   barRange            // high - low
+    float   bodySize            // abs(close - open)
+    float   upperWick           // high - max(open, close)
+    float   lowerWick           // min(open, close) - low
+    // Ratios (0-100)
+    float   bodyRatio           // body / range * 100
+    float   upperWickRatio      // upperWick / range * 100
+    float   lowerWickRatio      // lowerWick / range * 100
+    // Pattern classification
+    string  pattern             // "DOJI", "HAMMER", "MARUBOZU", etc.
+    string  patternBias         // "BULLISH", "BEARISH", "NEUTRAL"
+    // Context
+    bool    isBullishBar        // close > open
+    float   rangeVsATR          // range / ATR ratio
+    string  rangeStatus         // "WIDE", "NORMAL", "NARROW"
+    float   volumeVsAvg         // volume ratio (if available)
+    string  volumeStatus        // "SPIKE", "NORMAL", "LOW"
+    // Volume data
+    float   buyVol
+    float   sellVol
+    float   delta
+    string  pressureStatus      // "BUYING", "SELLING", "BALANCED"
+
+type CompositeAnalysis
+    // Block 1 composite candle metrics
+    float   compRange
+    float   compBodySize
+    float   compUpperWick
+    float   compLowerWick
+    float   compBodyRatio
+    // Pattern
+    string  compositePattern    // Same patterns as current bar
+    string  compositeBias       // BULLISH/BEARISH/NEUTRAL
+    // Multi-block comparison (Block 1 vs Block 2)
+    string  blockRelation       // "ENGULFING", "INSIDE", "OUTSIDE", "NORMAL"
+    string  blockRelationBias   // Direction implication
+
+type TrendContext
+    // Current trend info
+    int     currentType         // DIR_UP, DIR_DOWN, DIR_RANGE
+    int     currentBlocks       // Number of blocks in current trend
+    string  currentLabel        // "UPTREND", "DOWNTREND", "RANGE"
+    // Previous trend info
+    int     prevType            // Previous trend type
+    string  prevLabel           // Previous trend label
+    // Sequence analysis
+    string  transition          // "REVERSAL_TO_UP", "REVERSAL_TO_DOWN", "CONTINUATION", "NEW_TREND"
+    int     trendChanges        // Count of trend changes in window
+    // Quality metrics
+    float   qualityScore
+    string  confidenceLevel     // "HIGH", "MEDIUM", "LOW"
+    string  strengthRating      // "VERY_STRONG", "STRONG", "MODERATE", "WEAK"
+
+type NarrativeData
+    // Section 1: Trend Identity
+    string  trendType
+    string  strengthLabel
+    int     qualityScore
+    string  blockRange
+    string  transitionType
+    // Section 2: Price Structure
+    string  pricePattern        // "HH/HL", "LH/LL", "MIXED"
+    string  channelStatus       // "EXPANDING", "CONTRACTING", "PARALLEL"
+    float   upperAngle
+    float   lowerAngle
+    string  blockPatternDesc
+    // Section 3: Volume Analysis
+    bool    hasDivergence
+    string  dominance           // "BUYERS", "SELLERS", "BALANCED"
+    float   trendDeltaPct
+    string  volumeMomentum      // "INCREASING", "DECREASING"
+    // Section 4: Current Bar
+    string  barPattern
+    string  barPatternBias
+    string  barRangeStatus
+    string  barVolumeStatus
+    float   barDelta
+    string  barPressure
+    // Section 5: Momentum
+    string  bodyTrend           // "EXPANDING", "CONTRACTING", "STABLE"
+    float   upperPinChgPct
+    float   lowerPinChgPct
+    string  pinSignal
+    string  compositeForm
+    // Section 6: Channel Position
+    float   channelPositionPct
+    string  positionZone        // "UPPER", "MIDDLE", "LOWER"
+    // Section 7: Key Levels
+    float   resistanceLevel1
+    string  resistanceSource1
+    float   resistanceLevel2
+    string  resistanceSource2
+    float   supportLevel1
+    string  supportSource1
+    float   supportLevel2
+    string  supportSource2
+    // Section 8: Assessment
+    string  trendAssessment
+    int     contradictionCount
+    array<string> warnings
+
+// NarrativeData method: Initialize with empty/default values
+method init(NarrativeData this) =>
+    this.warnings := array.new<string>()
+    this
+
+//─────────────────────────────────────────────────────────────────────────────
+// DISPLAYED LEVELS SNAPSHOT (State Engine for Narrative sync)
+//─────────────────────────────────────────────────────────────────────────────
+type DisplayedLevels
+    bool  hasPOCUp
+    float pocUp
+    int   pocUpBox
+    bool  hasPOCDn
+    float pocDn
+    int   pocDnBox
+    bool  hasCoreUp
+    float coreUp
+    int   coreUpType
+    int   coreUpBox
+    bool  hasCoreDn
+    float coreDn
+    int   coreDnType
+    int   coreDnBox
+
+method syncFromCore(DisplayedLevels this,
+     float pocUpP, int pocUpBox,
+     float pocDnP, int pocDnBox,
+     float coreUpP, int coreUpType, int coreUpBox,
+     float coreDnP, int coreDnType, int coreDnBox) =>
+
+    // Reset
+    this.hasPOCUp := false
+    this.pocUp := na
+    this.pocUpBox := na
+
+    this.hasPOCDn := false
+    this.pocDn := na
+    this.pocDnBox := na
+
+    this.hasCoreUp := false
+    this.coreUp := na
+    this.coreUpType := na
+    this.coreUpBox := na
+
+    this.hasCoreDn := false
+    this.coreDn := na
+    this.coreDnType := na
+    this.coreDnBox := na
+
+    // Apply (final displayed values)
+    if not na(pocUpP)
+        this.hasPOCUp := true
+        this.pocUp := pocUpP
+        this.pocUpBox := pocUpBox
+
+    if not na(pocDnP)
+        this.hasPOCDn := true
+        this.pocDn := pocDnP
+        this.pocDnBox := pocDnBox
+
+    if not na(coreUpP)
+        this.hasCoreUp := true
+        this.coreUp := coreUpP
+        this.coreUpType := coreUpType
+        this.coreUpBox := coreUpBox
+
+    if not na(coreDnP)
+        this.hasCoreDn := true
+        this.coreDn := coreDnP
+        this.coreDnType := coreDnType
+        this.coreDnBox := coreDnBox
+
+    this
+
+//━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// GLOBAL ARRAYS
+//━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+var array<label> lblNums  = array.new<label>()
+var array<box>   grpBoxes = array.new<box>()
+
+var array<BlockAnalytics> analyticsData = array.new<BlockAnalytics>()
+
+var array<box>  compositeBodies     = array.new<box>()
+var array<line> compositeUpperWicks = array.new<line>()
+var array<line> compositeLowerWicks = array.new<line>()
+
+var array<BoxCore> coreBoxes = array.new<BoxCore>()
+
+var array<TrendChannel> trendChannels = array.new<TrendChannel>()
+
+var label lblTrendResist = na
+var label lblTrendSupport = na
+
+// Narrative Engine global state
+var CurrentBarAnalysis  g_currentBar    = CurrentBarAnalysis.new()
+var CompositeAnalysis   g_composite     = CompositeAnalysis.new()
+var TrendContext        g_trendContext  = TrendContext.new()
+var NarrativeData       g_narrative     = NarrativeData.new()
+
+// POC variables for narrative (global scope)
+var float g_pocUpP = na
+var float g_pocDnP = na
+
+// Displayed levels snapshot (single source of truth for Narrative)
+var DisplayedLevels g_levels = DisplayedLevels.new()
+
+// Pre-computed bin profile POC cache (global scope for Pine v6 consistency)
+var array<float> g_binPocPrice = array.new<float>()
+var array<int>   g_binPocOff   = array.new<int>()
+var array<float> g_binPocVol   = array.new<float>()
+
+//━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// HELPER FUNCTIONS
+//━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+f_ensureLabelCount(int n) =>
+    while array.size(lblNums) < n
+        array.push(lblNums, label.new(bar_index, high, "",
+             style = label.style_label_down, size = GLOBAL_TEXT_SIZE,
+             textcolor = color.white, color = color.new(color.black, 70)))
+    while array.size(lblNums) > n
+        label.delete(array.pop(lblNums))
+    if array.size(lblNums) > 0
+        for j = 0 to array.size(lblNums) - 1
+            label.set_size(array.get(lblNums, j), GLOBAL_TEXT_SIZE)
+
+f_ensureBoxCount(int n) =>
+    while array.size(grpBoxes) < n
+        array.push(grpBoxes, box.new(bar_index, high, bar_index, low,
+             bgcolor = color.new(i_boxColor, i_boxTransp),
+             border_color = color.new(color.black, 100), border_width = 0))
+    while array.size(grpBoxes) > n
+        box.delete(array.pop(grpBoxes))
+
+f_analyticsEmpty() =>
+    BlockAnalytics.new(false, na, na, na, na, na, na, na, na, na, na, na, na, na, na, na, na, 0, false)
+
+f_ensureAnalyticsDataCount(int n) =>
+    while array.size(analyticsData) < n
+        array.push(analyticsData, f_analyticsEmpty())
+    while array.size(analyticsData) > n
+        array.pop(analyticsData)
+
+f_ensureCompositeBodyCount(int n) =>
+    while array.size(compositeBodies) < n
+        array.push(compositeBodies, box.new(bar_index, high, bar_index, low,
+             bgcolor = color.new(color.gray, 75),
+             border_color = color.new(color.gray, 60), border_width = 1))
+    while array.size(compositeBodies) > n
+        box.delete(array.pop(compositeBodies))
+
+f_ensureCompositeUpperWickCount(int n) =>
+    while array.size(compositeUpperWicks) < n
+        array.push(compositeUpperWicks, line.new(bar_index, high, bar_index, high,
+             color = color.new(color.gray, 70), width = 1))
+    while array.size(compositeUpperWicks) > n
+        line.delete(array.pop(compositeUpperWicks))
+
+f_ensureCompositeLowerWickCount(int n) =>
+    while array.size(compositeLowerWicks) < n
+        array.push(compositeLowerWicks, line.new(bar_index, low, bar_index, low,
+             color = color.new(color.gray, 70), width = 1))
+    while array.size(compositeLowerWicks) > n
+        line.delete(array.pop(compositeLowerWicks))
+
+f_coreEmpty() =>
+    BoxCore.new(false, na, na, na, na, na, na, na, na, na, na, na, na, na, na, na, na, na, na)
+
+f_ensureCoreCount(int n) =>
+    while array.size(coreBoxes) < n
+        array.push(coreBoxes, f_coreEmpty())
+    while array.size(coreBoxes) > n
+        array.pop(coreBoxes)
+
+//━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// MODERN TREND CHANNEL DETECTION ENGINE
+//━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+// Direction constants for trend classification
+int DIR_UP    =  1   // Uptrend: higher highs, higher lows
+int DIR_DOWN  = -1   // Downtrend: lower highs, lower lows
+int DIR_RANGE =  0   // Range/Sideways: no clear direction
+
+//─────────────────────────────────────────────────────────────────────────────
+// NARRATIVE ENGINE INPUTS (Must be declared before localization functions)
+//─────────────────────────────────────────────────────────────────────────────
+string G_NARRATIVE = "═══ Market Narrative ═══"
+
+bool i_narrativeEnable = input.bool(true, "Enable Market Narrative", group = G_NARRATIVE,
+     tooltip = "Displays -generated market analysis based on calculated data. Educational purposes only.")
+
+string i_narrativeLang = input.string("English", "Narrative Language",
+     options = ["English", "Türkçe", "हिन्दी", "العربية"], group = G_NARRATIVE,
+     tooltip = "Select language for market narrative output.")
+
+bool i_narrativeShowDisclaimer = input.bool(true, "Show Educational Disclaimer", group = G_NARRATIVE,
+     tooltip = "Display legal disclaimer: Not investment advice, educational purposes only.")
+
+//─────────────────────────────────────────────────────────────────────────────
+// LOCALIZATION STRING MAPS
+//─────────────────────────────────────────────────────────────────────────────
+
+// Language selector function
+f_L(string en, string tr, string hi, string ar) =>
+    i_narrativeLang == "Türkçe" ? tr : i_narrativeLang == "हिन्दी" ? hi : i_narrativeLang == "العربية" ? ar : en
+
+// Trend Types
+f_trendTypeStr(int t) =>
+    t == DIR_UP    ? f_L("UPTREND", "YÜKSELİŞ TRENDİ", "तेजी का रुझान", "اتجاه صاعد") :
+     t == DIR_DOWN  ? f_L("DOWNTREND", "DÜŞÜŞ TRENDİ", "मंदी का रुझान", "اتجاه هابط") :
+                     f_L("RANGE", "YATAY SEYİR", "दायरा", "نطاق عرضي")
+
+// Strength Ratings
+f_strengthStr(float angle) =>
+    math.abs(angle) > 45 ? f_L("VERY STRONG", "ÇOK GÜÇLÜ", "बहुत मजबूत", "قوي جداً") :
+     math.abs(angle) > 30 ? f_L("STRONG", "GÜÇLÜ", "मजबूत", "قوي") :
+     math.abs(angle) > 15 ? f_L("MODERATE", "ORTA", "मध्यम", "متوسط") :
+                           f_L("WEAK", "ZAYIF", "कमजोर", "ضعيف")
+
+// Confidence Levels
+f_confidenceStr(float q) =>
+    q >= 80 ? f_L("HIGH", "YÜKSEK", "उच्च", "مرتفع") :
+     q >= 60 ? f_L("MEDIUM", "ORTA", "मध्यम", "متوسط") :
+              f_L("LOW", "DÜŞÜK", "निम्न", "منخفض")
+
+// Channel Status
+f_channelStatusStr(float upperA, float lowerA) =>
+    float diff = math.abs(upperA) - math.abs(lowerA)
+    diff > 3.0  ? f_L("EXPANDING", "GENİŞLEYEN", "विस्तारित", "متوسع") :
+     diff < -3.0 ? f_L("CONTRACTING", "DARALAN", "संकुचित", "متقلص") :
+                  f_L("PARALLEL", "PARALEL", "समानांतर", "متوازي")
+
+// Dominance
+f_dominanceStr(float delta) =>
+    delta > 0 ? f_L("BUYERS", "ALICILAR", "खरीदार", "المشترون") :
+     delta < 0 ? f_L("SELLERS", "SATICILAR", "विक्रेता", "البائعون") :
+                 f_L("BALANCED", "DENGELİ", "संतुलित", "متوازن")
+
+// Position Zones
+f_positionZoneStr(float pos) =>
+    pos > 66.67 ? f_L("UPPER ZONE", "ÜST BÖLGE", "ऊपरी क्षेत्र", "المنطقة العليا") :
+     pos < 33.33 ? f_L("LOWER ZONE", "ALT BÖLGE", "निचला क्षेत्र", "المنطقة السفلى") :
+                  f_L("MIDDLE ZONE", "ORTA BÖLGE", "मध्य क्षेत्र", "المنطقة الوسطى")
+
+// Body Status
+f_bodyStatusStr(string s) =>
+    s == "EXPANDING"   ? f_L("EXPANDING", "GENİŞLEYEN", "विस्तारित", "متوسع") :
+     s == "CONTRACTING" ? f_L("CONTRACTING", "DARALAN", "संकुचित", "متقلص") :
+                         f_L("STABLE", "STABLE", "स्थिर", "مستقر")
+
+// Volume Momentum
+f_volMomentumStr(string s) =>
+    str.contains(s, "INCREASING") ? f_L("INCREASING", "ARTIYOR", "बढ़ रहा है", "متزايد") :
+                                     f_L("DECREASING", "AZALIYOR", "घट रहा है", "متناقص")
+
+// Candle Patterns
+f_candlePatternStr(string p) =>
+    p == "DOJI"            ? f_L("DOJI", "DOJI", "डोजी", "دوجي") :
+     p == "SPINNING_TOP"    ? f_L("SPINNING TOP", "TOPAÇ", "स्पिनिंग टॉप", "قمة دوّارة") :
+     p == "MARUBOZU"        ? f_L("MARUBOZU", "MARUBOZU", "मारूबोज़ू", "ماروبوزو") :
+     p == "HAMMER"          ? f_L("HAMMER", "ÇEKİÇ", "हैमर", "مطرقة") :
+     p == "INV_HAMMER"      ? f_L("INVERTED HAMMER", "TERS ÇEKİÇ", "उल्टा हैमर", "مطرقة مقلوبة") :
+     p == "DRAGONFLY"       ? f_L("DRAGONFLY DOJI", "YUSUFÇUK DOJI", "ड्रैगनफ्लाई डोजी", "دوجي اليعسوب") :
+     p == "GRAVESTONE"      ? f_L("GRAVESTONE DOJI", "MEZAR TAŞI DOJI", "ग्रेवस्टोन डोजी", "دوجي شاهد القبر") :
+     p == "LONG_UPPER"      ? f_L("LONG UPPER WICK", "UZUN ÜST FİTİL", "लंबी ऊपरी बत्ती", "فتيل علوي طويل") :
+     p == "LONG_LOWER"      ? f_L("LONG LOWER WICK", "UZUN ALT FİTİL", "लंबी निचली बत्ती", "فتيل سفلي طويل") :
+                             f_L("STANDARD", "STANDART", "मानक", "قياسي")
+
+// Pattern Bias
+f_patternBiasStr(string b) =>
+    b == "BULLISH"  ? f_L("BULLISH", "BOĞA", "तेजी", "صعودي") :
+     b == "BEARISH"  ? f_L("BEARISH", "AYI", "मंदी", "هبوطي") :
+                      f_L("NEUTRAL", "NÖTR", "तटस्थ", "محايد")
+
+// Range Status
+f_rangeStatusStr(string s) =>
+    s == "WIDE"   ? f_L("WIDE RANGE", "GENİŞ ARALIK", "विस्तृत रेंज", "نطاق واسع") :
+     s == "NARROW" ? f_L("NARROW RANGE", "DAR ARALIK", "संकीर्ण रेंज", "نطاق ضيق") :
+                     f_L("NORMAL RANGE", "NORMAL ARALIK", "सामान्य रेंज", "نطاق طبيعي")
+
+// Pressure Status
+f_pressureStr(string s) =>
+    s == "BUYING"   ? f_L("Buying pressure", "Alım baskısı", "खरीद दबाव", "ضغط شرائي") :
+     s == "SELLING"  ? f_L("Selling pressure", "Satış baskısı", "बिक्री दबाव", "ضغط بيعي") :
+                      f_L("Balanced pressure", "Dengeli baskı", "संतुलित दबाव", "ضغط متوازن")
+
+// Transition Types
+f_transitionStr(string t) =>
+    t == "REVERSAL_TO_UP"   ? f_L("Reversal from downtrend", "Düşüşten dönüş", "गिरावट से पलटाव", "انعكاس من الاتجاه الهابط") :
+     t == "REVERSAL_TO_DOWN" ? f_L("Reversal from uptrend", "Yükselişten dönüş", "तेजी से पलटाव", "انعكاس من الاتجاه الصاعد") :
+     t == "CONTINUATION"     ? f_L("Trend continuation", "Trend devamı", "रुझान जारी", "استمرار الاتجاه") :
+                              f_L("New trend forming", "Yeni trend oluşuyor", "नया रुझान बन रहा है", "تشكّل اتجاه جديد")
+
+// Block Relation
+f_blockRelationStr(string r) =>
+    r == "ENGULFING" ? f_L("Engulfing pattern", "Yutan formasyonu", "इंगल्फिंग पैटर्न", "نموذج ابتلاعي") :
+     r == "INSIDE"    ? f_L("Inside bar pattern", "İç bar formasyonu", "इनसाइड बार पैटर्न", "نموذج الشمعة الداخلية") :
+     r == "OUTSIDE"   ? f_L("Outside bar pattern", "Dış bar formasyonu", "आउटसाइड बार पैटर्न", "نموذج الشمعة الخارجية") :
+                       f_L("Normal structure", "Normal yapı", "सामान्य संरचना", "هيكل طبيعي")
+
+// Section Headers
+f_sectionHeader(int n) =>
+    n == 1 ? f_L("TREND ANALYSIS", "TREND ANALİZİ", "रुझान विश्लेषण", "تحليل الاتجاه") :
+     n == 2 ? f_L("PRICE STRUCTURE", "FİYAT YAPISI", "मूल्य संरचना", "هيكل السعر") :
+     n == 3 ? f_L("VOLUME ANALYSIS", "HACİM ANALİZİ", "वॉल्यूम विश्लेषण", "تحليل الحجم") :
+     n == 4 ? f_L("CURRENT BAR", "GÜNCEL BAR", "वर्तमान बार", "الشمعة الحالية") :
+     n == 5 ? f_L("MOMENTUM", "MOMENTUM", "गति", "الزخم") :
+     n == 6 ? f_L("CHANNEL POSITION", "KANAL POZİSYONU", "चैनल स्थिति", "موقع القناة") :
+     n == 7 ? f_L("KEY LEVELS", "KRİTİK SEVİYELER", "महत्वपूर्ण स्तर", "المستويات الرئيسية") :
+     n == 8 ? f_L("ASSESSMENT", "DEĞERLENDİRME", "मूल्यांकन", "التقييم") :
+             f_L("DISCLAIMER", "YASAL UYARI", "अस्वीकरण", "إخلاء المسؤولية")
+
+// Common phrases
+f_phrase(string key) =>
+    key == "DIVERGENCE"      ? f_L("Divergence detected", "Uyumsuzluk tespit edildi", "विचलन पाया गया", "تم رصد تباين") :
+     key == "NO_DIVERGENCE"   ? f_L("No divergence", "Uyumsuzluk yok", "कोई विचलन नहीं", "لا يوجد تباين") :
+     key == "RESISTANCE"      ? f_L("Resistance", "Direnç", "प्रतिरोध", "مقاومة") :
+     key == "SUPPORT"         ? f_L("Support", "Destek", "समर्थन", "دعم") :
+     key == "UPPER_CHANNEL"   ? f_L("Upper channel", "Üst kanal", "ऊपरी चैनल", "القناة العليا") :
+     key == "LOWER_CHANNEL"   ? f_L("Lower channel", "Alt kanal", "निचला चैनल", "القناة السفلى") :
+     key == "HH_HL"           ? f_L("Higher Highs / Higher Lows", "Yükselen Tepeler / Yükselen Dipler", "उच्च ऊंचाई / उच्च निम्न", "قمم أعلى / قيعان أعلى") :
+     key == "LH_LL"           ? f_L("Lower Highs / Lower Lows", "Alçalan Tepeler / Alçalan Dipler", "निम्न ऊंचाई / निम्न निम्न", "قمم أدنى / قيعان أدنى") :
+     key == "DISCLAIMER_TEXT" ? f_L(
+         "⚠️ IMPORTANT: This analysis is for educational purposes only and does not constitute investment advice. Always conduct your own research and consult with a qualified financial advisor before making investment decisions.",
+         "⚠️ ÖNEMLİ: Bu analiz sadece eğitim amaçlıdır ve yatırım tavsiyesi teşkil etmez. Yatırım kararları vermeden önce her zaman kendi araştırmanızı yapın ve kalifiye bir finansal danışmana danışın.",
+         "⚠️ महत्वपूर्ण: यह विश्लेषण केवल शैक्षिक उद्देश्यों के लिए है और निवेश सलाह नहीं है। निवेश निर्णय लेने से पहले हमेशा अपना शोध करें और योग्य वित्तीय सलाहकार से परामर्श करें।",
+         "⚠️ هام: هذا التحليل لأغراض تعليمية فقط ولا يُشكّل نصيحة استثمارية. قم دائماً بإجراء بحثك الخاص واستشر مستشاراً مالياً مؤهلاً قبل اتخاذ قرارات الاستثمار.") :
+     key == "CONTRADICTIONS"  ? f_L("Contradictions", "Çelişkiler", "विरोधाभास", "تناقضات") :
+     key == "WARNING"         ? f_L("Warning", "Uyarı", "चेतावनी", "تحذير") :
+     key == "QUALITY"         ? f_L("Quality", "Kalite", "गुणवत्ता", "الجودة") :
+     key == "BLOCKS"          ? f_L("Blocks", "Bloklar", "ब्लॉक", "الكتل") :
+                               ""
+
+//─────────────────────────────────────────────────────────────────────────────
+// DASHBOARD LOCALIZATION (Volume Engine Table)
+//─────────────────────────────────────────────────────────────────────────────
+
+// Volume Engine Headers
+f_dashVolumeEngine() => f_L("VOLUME ENGINE", "HACİM MOTORU", "वॉल्यूम इंजन", "محرك الحجم")
+f_dashEngine() => f_L("Engine:", "Motor:", "इंजन:", "المحرك:")
+f_dashData() => f_L("Data:", "Veri:", "डेटा:", "البيانات:")
+f_dashBar() => f_L("bar", "bar", "बार", "شمعة")
+f_dashCurrentCandle() => f_L("CURRENT CANDLE • VOLUMETRIC", "MEVCUT MUM • HACİMSEL", "वर्तमान कैंडल • वॉल्यूमेट्रिक", "الشمعة الحالية • حجمي")
+f_dashClosedCandle() => f_L("CLOSED CANDLE • VOLUMETRIC", "KAPALI MUM • HACİMSEL", "बंद कैंडल • वॉल्यूमेट्रिक", "الشمعة المغلقة • حجمي")
+f_dashGeometric() => f_L("(Geometric)", "(Geometrik)", "(ज्यामितीय)", "(هندسي)")
+f_dashIntrabar() => f_L("(Intrabar • LTF:", "(Intrabar • LTF:", "(इंट्राबार • LTF:", "(داخل الشمعة • LTF:")
+
+// Buy/Sell/Total/Delta
+f_dashBuy() => f_L("▲ Buy", "▲ Alım", "▲ खरीद", "▲ شراء")
+f_dashSell() => f_L("▼ Sell", "▼ Satış", "▼ बिक्री", "▼ بيع")
+f_dashTotal() => f_L("◆ Total", "◆ Toplam", "◆ कुल", "◆ الإجمالي")
+f_dashDelta() => f_L("Delta", "Delta", "डेल्टा", "الدلتا")
+
+// Trend Volumetrics
+f_dashTrendVolumetrics() => f_L("TREND VOLUMETRICS", "TREND HACİMSEL", "रुझान वॉल्यूमेट्रिक", "حجم الاتجاه")
+f_dashType() => f_L("Type", "Tür", "प्रकार", "النوع")
+f_dashUptrend() => f_L("UPTREND", "YÜKSELİŞ", "तेजी", "صاعد")
+f_dashDowntrend() => f_L("DOWNTREND", "DÜŞÜŞ", "मंदी", "هابط")
+f_dashRange() => f_L("RANGE", "YATAY", "दायरा", "عرضي")
+
+// Pressure & Momentum
+f_dashPressureMomentum() => f_L("PRESSURE & MOMENTUM", "BASKI & MOMENTUM", "दबाव और गति", "الضغط والزخم")
+f_dashSellers() => f_L("▲ Sellers", "▲ Satıcılar", "▲ विक्रेता", "▲ البائعون")
+f_dashBuyers() => f_L("▼ Buyers", "▼ Alıcılar", "▼ खरीदार", "▼ المشترون")
+f_dashBodyAVG() => f_L("Body AVG", "Gövde ORT", "बॉडी औसत", "متوسط الجسم")
+f_dashTrend() => f_L("Trend", "Trend", "रुझान", "الاتجاه")
+f_dashExpanding() => f_L("EXPANDING", "GENİŞLEYEN", "विस्तारित", "متوسع")
+f_dashContracting() => f_L("CONTRACTING", "DARALAN", "संकुचित", "متقلص")
+f_dashStable() => f_L("STABLE", "STABLE", "स्थिर", "مستقر")
+
+// Trend Channel Boundaries
+f_dashTrendChannelBoundaries() => f_L("TREND CHANNEL BOUNDARIES", "TREND KANAL SINIRLARI", "रुझान चैनल सीमाएं", "حدود قناة الاتجاه")
+f_dashUpperChannel() => f_L("▲ Upper Channel @", "▲ Üst Kanal @", "▲ ऊपरी चैनल @", "▲ القناة العليا @")
+f_dashLowerChannel() => f_L("▼ Lower Channel @", "▼ Alt Kanal @", "▼ निचला चैनल @", "▼ القناة السفلى @")
+f_dashNeutral() => f_L("NEUTRAL", "NÖTR", "तटस्थ", "محايد")
+f_dashOverbought() => f_L("OVERBOUGHT", "AŞIRI ALIM", "अधिक खरीद", "تشبّع شرائي")
+f_dashOversold() => f_L("OVERSOLD", "AŞIRI SATIM", "अधिक बिक्री", "تشبّع بيعي")
+
+// Trend Intelligence
+f_dashTrendIntelligence() => f_L("TREND INTELLIGENCE", "TREND ZEKASI", "रुझान बुद्धि", "ذكاء الاتجاه")
+f_dashHigh() => f_L("HIGH", "YÜKSEK", "उच्च", "مرتفع")
+f_dashMedium() => f_L("MEDIUM", "ORTA", "मध्यम", "متوسط")
+f_dashLow() => f_L("LOW", "DÜŞÜK", "निम्न", "منخفض")
+f_dashVeryStrong() => f_L("VERY STRONG", "ÇOK GÜÇLÜ", "बहुत मजबूत", "قوي جداً")
+f_dashStrong() => f_L("STRONG", "GÜÇLÜ", "मजबूत", "قوي")
+f_dashModerate() => f_L("MODERATE", "ORTA", "मध्यम", "متوسط")
+f_dashWeak() => f_L("WEAK", "ZAYIF", "कमजोर", "ضعيف")
+f_dashIncreasing() => f_L("INCREASING ▲", "ARTIYOR ▲", "बढ़ रहा है ▲", "متزايد ▲")
+f_dashDecreasing() => f_L("DECREASING ▼", "AZALIYOR ▼", "घट रहा है ▼", "متناقص ▼")
+
+// Tooltips
+f_dashTooltipEngine() => f_L("Real-time volume calculation engine", "Gerçek zamanlı hacim hesaplama motoru", "वास्तविक समय वॉल्यूम गणना इंजन", "محرك حساب الحجم في الوقت الفعلي")
+f_dashTooltipMethod() => f_L("Intrabar: precise LTF data | Geometric: approximation", "Intrabar: kesin LTF verisi | Geometrik: yaklaşık", "इंट्राबार: सटीक LTF डेटा | ज्यामितीय: अनुमान", "داخل الشمعة: بيانات LTF دقيقة | هندسي: تقريبي")
+f_dashTooltipData() => f_L("Available historical bars", "Mevcut geçmiş barlar", "उपलब्ध ऐतिहासिक बार", "الشموع التاريخية المتاحة")
+f_dashTooltipScannable() => f_L("Total scannable bars with valid volume data", "Geçerli hacim verisi olan toplam taranabilir barlar", "मान्य वॉल्यूम डेटा वाले कुल स्कैन करने योग्य बार", "إجمالي الشموع القابلة للمسح ببيانات حجم صالحة")
+f_dashTooltipBuy() => f_L("Buying volume (aggressive buyers)", "Alım hacmi (agresif alıcılar)", "खरीद वॉल्यूम (आक्रामक खरीदार)", "حجم الشراء (مشترون عدوانيون)")
+f_dashTooltipSell() => f_L("Selling volume (aggressive sellers)", "Satış hacmi (agresif satıcılar)", "बिक्री वॉल्यूम (आक्रामक विक्रेता)", "حجم البيع (بائعون عدوانيون)")
+f_dashTooltipTotal() => f_L("Total volume (buy + sell)", "Toplam hacim (alım + satış)", "कुल वॉल्यूम (खरीद + बिक्री)", "الحجم الإجمالي (شراء + بيع)")
+f_dashTooltipDelta() => f_L("Net delta (buy - sell)", "Net delta (alım - satış)", "शुद्ध डेल्टा (खरीद - बिक्री)", "صافي الدلتا (شراء - بيع)")
+f_dashTooltipTrendVolume() => f_L("Aggregated volume data across latest active trend", "En son aktif trend boyunca toplanan hacim verisi", "नवीनतम सक्रिय रुझान में एकत्रित वॉल्यूम डेटा", "بيانات الحجم المجمّعة عبر أحدث اتجاه نشط")
+f_dashTooltipTrendBuy() => f_L("Total buy volume across trend blocks", "Trend blokları boyunca toplam alım hacmi", "रुझान ब्लॉकों में कुल खरीद वॉल्यूम", "إجمالي حجم الشراء عبر كتل الاتجاه")
+f_dashTooltipTrendSell() => f_L("Total sell volume across trend blocks", "Trend blokları boyunca toplam satış hacmi", "रुझान ब्लॉकों में कुल बिक्री वॉल्यूम", "إجمالي حجم البيع عبر كتل الاتجاه")
+f_dashTooltipTrendDelta() => f_L("Net delta with percentage", "Yüzde ile net delta", "प्रतिशत के साथ शुद्ध डेल्टा", "صافي الدلتا مع النسبة المئوية")
+f_dashTooltipType() => f_L("Trend direction classification", "Trend yönü sınıflandırması", "रुझान दिशा वर्गीकरण", "تصنيف اتجاه الترند")
+f_dashTooltipPressure() => f_L("Pin rejection pressure and volume momentum analysis", "Pin reddetme baskısı ve hacim momentum analizi", "पिन अस्वीकृति दबाव और वॉल्यूम गति विश्लेषण", "تحليل ضغط رفض الفتيل وزخم الحجم")
+f_dashTooltipSellersPin() => f_L("Average upper pin (seller rejection)", "Ortalama üst pin (satıcı reddi)", "औसत ऊपरी पिन (विक्रेता अस्वीकृति)", "متوسط الفتيل العلوي (رفض البائعين)")
+f_dashTooltipBuyersPin() => f_L("Average lower pin (buyer rejection)", "Ortalama alt pin (alıcı reddi)", "औसत निचली पिन (खरीदार अस्वीकृति)", "متوسط الفتيل السفلي (رفض المشترين)")
+f_dashTooltipBodyAVG() => f_L("Average candle body size", "Ortalama mum gövdesi boyutu", "औसत कैंडल बॉडी आकार", "متوسط حجم جسم الشمعة")
+f_dashTooltipBodyTrend() => f_L("Body expansion status", "Gövde genişleme durumu", "बॉडी विस्तार स्थिति", "حالة توسّع الجسم")
+f_dashTooltipChannelBounds() => f_L("Upper/Lower trend-channel boundaries (display-aligned)", "Üst/Alt trend-kanal sınırları (görüntüye hizalı)", "ऊपरी/निचली रुझान-चैनल सीमाएं (प्रदर्शन-संरेखित)", "الحدود العليا/السفلى لقناة الاتجاه (محاذاة العرض)")
+f_dashTooltipUpper() => f_L("Upper channel boundary | Δ vs current price", "Üst kanal sınırı | Mevcut fiyat karşısında Δ", "ऊपरी चैनल सीमा | वर्तमान मूल्य बनाम Δ", "حد القناة العليا | Δ مقابل السعر الحالي")
+f_dashTooltipLower() => f_L("Lower channel boundary | Δ vs current price", "Alt kanal sınırı | Mevcut fiyat karşısında Δ", "निचली चैनल सीमा | वर्तमान मूल्य बनाम Δ", "حد القناة السفلى | Δ مقابل السعر الحالي")
+f_dashTooltipWidth() => f_L("Channel width (upper - lower)", "Kanal genişliği (üst - alt)", "चैनल चौड़ाई (ऊपरी - निचली)", "عرض القناة (العليا - السفلى)")
+f_dashTooltipPosition() => f_L("Price position within channel (0%=lower, 100%=upper)", "Kanal içinde fiyat pozisyonu (0%=alt, 100%=üst)", "चैनल के भीतर मूल्य स्थिति (0%=निचला, 100%=ऊपरी)", "موقع السعر داخل القناة (0%=السفلى، 100%=العليا)")
+f_dashTooltipRR() => f_L("Risk/Reward ratio (distance to upper : distance to lower)", "Risk/Ödül oranı (üste mesafe : alta mesafe)", "जोखिम/इनाम अनुपात (ऊपर की दूरी : नीचे की दूरी)", "نسبة المخاطرة/العائد (المسافة للعليا : المسافة للسفلى)")
+f_dashTooltipStatus() => f_L("Position status within channel", "Kanal içinde pozisyon durumu", "चैनल के भीतर स्थिति स्थिति", "حالة الموقع داخل القناة")
+f_dashTooltipQuality(float q, int c) => f_L(
+    "Trend quality: Score: " + str.tostring(q, "#") + "/100 | Angle(15) + Delta(10) + Volume(10) + Body(10) + Pins(8) - Conflicts(" + str.tostring(c) + ")",
+    "Trend kalitesi: Puan: " + str.tostring(q, "#") + "/100 | Açı(15) + Delta(10) + Hacim(10) + Gövde(10) + Pinler(8) - Çatışmalar(" + str.tostring(c) + ")",
+    "रुझान गुणवत्ता: स्कोर: " + str.tostring(q, "#") + "/100 | कोण(15) + डेल्टा(10) + वॉल्यूम(10) + बॉडी(10) + पिन(8) - संघर्ष(" + str.tostring(c) + ")",
+    "جودة الاتجاه: النقاط: " + str.tostring(q, "#") + "/100 | الزاوية(15) + الدلتا(10) + الحجم(10) + الجسم(10) + الفتيل(8) - التناقضات(" + str.tostring(c) + ")")
+f_dashTooltipConfidence() => f_L("Confidence level based on quality score", "Kalite puanına dayalı güven seviyesi", "गुणवत्ता स्कोर के आधार पर विश्वास स्तर", "مستوى الثقة بناءً على نقاط الجودة")
+f_dashTooltipStrength() => f_L("Trend strength based on angle steepness", "Açı dikliğine dayalı trend gücü", "कोण तीव्रता के आधार पर रुझान शक्ति", "قوة الاتجاه بناءً على حدّة الزاوية")
+f_dashTooltipVolMomentum() => f_L("Volume momentum direction across blocks", "Bloklar boyunca hacim momentum yönü", "ब्लॉकों में वॉल्यूम गति दिशा", "اتجاه زخم الحجم عبر الكتل")
+
+// Position comparison: Is block A positioned higher than block B?
+f_isHigherPosition(BlockAnalytics a, BlockAnalytics b) =>
+    if not a.valid or not b.valid
+        DIR_RANGE
+    else
+        float midA = (a.newHigh + a.newLow) / 2
+        float midB = (b.newHigh + b.newLow) / 2
+        midA > midB ? DIR_UP : (midA < midB ? DIR_DOWN : DIR_RANGE)
+
+// Yang-Zhang (2000) volatility estimator
+// Combines overnight (close-to-open), open-to-close, and Rogers-Satchell
+// intraday components into the most efficient unbiased volatility measure.
+// Returns per-bar volatility in PRICE UNITS (σ × close).
+f_yangZhangVolatility(int period) =>
+    float sumOvSq = 0.0
+    float sumOv   = 0.0
+    float sumClSq = 0.0
+    float sumCl   = 0.0
+    float sumRS   = 0.0
+    int   n       = math.max(2, period)
+
+    for i = 0 to n - 1
+        // Overnight return: log(open_i / close_{i-1})
+        float ov = math.log(open[i] / close[i + 1])
+        sumOv   += ov
+        sumOvSq += ov * ov
+
+        // Open-to-close return: log(close_i / open_i)
+        float cl = math.log(close[i] / open[i])
+        sumCl   += cl
+        sumClSq += cl * cl
+
+        // Rogers-Satchell intraday component
+        float logHO = math.log(high[i] / open[i])
+        float logHC = math.log(high[i] / close[i])
+        float logLO = math.log(low[i] / open[i])
+        float logLC = math.log(low[i] / close[i])
+        sumRS += logHO * logHC + logLO * logLC
+
+    float nm1     = float(n - 1)
+    float varOv   = sumOvSq / nm1 - (sumOv * sumOv) / (float(n) * nm1)
+    float varCl   = sumClSq / nm1 - (sumCl * sumCl) / (float(n) * nm1)
+    float varRS   = sumRS / float(n)
+
+    float k       = 0.34 / (1.34 + float(n + 1) / float(n - 1))
+    float varYZ   = varOv + k * varCl + (1.0 - k) * varRS
+    float sigma   = math.sqrt(math.max(0.0, varYZ))
+
+    // Per-bar volatility in price units
+    sigma * close
+
+// Calculate channel angle from price movement (Yang-Zhang normalized)
+// Result: volatility-normalized degrees — 45° = 1σ move per √T.
+// Comparable across ANY instrument and ANY timeframe.
+f_calcChannelAngle(float priceChange, int barSpan, float yzVolPrice) =>
+    if barSpan == 0 or yzVolPrice <= 0.0
+        0.0
+    else
+        float expectedMove = yzVolPrice * math.sqrt(float(barSpan))
+        float normalizedChange = expectedMove > 0.0 ? priceChange / expectedMove : 0.0
+        math.todegrees(math.atan(normalizedChange))
+
+// Clear all existing channels
+f_clearAllChannels() =>
+    int n = array.size(trendChannels)
+    if n > 0
+        for i = 0 to n - 1
+            TrendChannel ch = array.get(trendChannels, i)
+            ch.clear()
+    array.clear(trendChannels)
+
+// Lock trend type for a block (once locked, never changes)
+f_lockBlockTrend(int blockIdx, int trendType) =>
+    if blockIdx < array.size(analyticsData)
+        BlockAnalytics blk = array.get(analyticsData, blockIdx)
+        if not blk.trendLocked
+            blk.trendType := trendType
+            blk.trendLocked := true
+            array.set(analyticsData, blockIdx, blk)
+
+// Find extreme points within a segment for channel drawing
+f_findSegmentExtremes(int segStart, int segEnd) =>
+    float highestHigh = na
+    float lowestHigh = na
+    float highestLow = na
+    float lowestLow = na
+    int highestHighIdx = na
+    int lowestHighIdx = na
+    int highestLowIdx = na
+    int lowestLowIdx = na
+    
+    for i = segStart to segEnd
+        if i < array.size(analyticsData)
+            BlockAnalytics blk = array.get(analyticsData, i)
+            if blk.valid
+                // Track highest high
+                if na(highestHigh) or blk.newHigh > highestHigh
+                    highestHigh := blk.newHigh
+                    highestHighIdx := blk.centerIdx
+                // Track lowest high
+                if na(lowestHigh) or blk.newHigh < lowestHigh
+                    lowestHigh := blk.newHigh
+                    lowestHighIdx := blk.centerIdx
+                // Track highest low
+                if na(highestLow) or blk.newLow > highestLow
+                    highestLow := blk.newLow
+                    highestLowIdx := blk.centerIdx
+                // Track lowest low
+                if na(lowestLow) or blk.newLow < lowestLow
+                    lowestLow := blk.newLow
+                    lowestLowIdx := blk.centerIdx
+    
+    [highestHigh, lowestHigh, highestLow, lowestLow, highestHighIdx, lowestHighIdx, highestLowIdx, lowestLowIdx]
+
+// Main detection: Scan blocks and build continuous trend channels
+f_detectTrendChannels(float rangeThreshold, float yzVol) =>
+    int numBlocks = array.size(analyticsData)
+    if numBlocks < 2
+        false
+    else
+        int i = 0
+        while i < numBlocks - 1
+            BlockAnalytics newerBlk = array.get(analyticsData, i)      // i=0 is most recent
+            BlockAnalytics olderBlk = array.get(analyticsData, i + 1)  // i+1 is older
+            
+            // Check if newer block already has locked trend
+            int dir = 0
+            if newerBlk.trendLocked
+                dir := newerBlk.trendType
+            else
+                dir := f_isHigherPosition(newerBlk, olderBlk)
+            
+            if dir == DIR_RANGE
+                f_lockBlockTrend(i, DIR_RANGE)
+                i += 1
+                continue
+            
+            // Found a direction, extend as far as possible
+            int segStart = i
+            int segEnd = i + 1
+            
+            // Lock the starting block
+            f_lockBlockTrend(segStart, dir)
+            
+            // Scan forward while direction holds OR next block has same locked trend
+            while segEnd < numBlocks - 1
+                BlockAnalytics blkNewer = array.get(analyticsData, segEnd)
+                BlockAnalytics blkOlder = array.get(analyticsData, segEnd + 1)
+                
+                int nextDir = 0
+                if blkNewer.trendLocked
+                    nextDir := blkNewer.trendType
+                else
+                    nextDir := f_isHigherPosition(blkNewer, blkOlder)
+                
+                // Continue if same direction OR if older block already locked with same trend
+                if nextDir == dir or (blkOlder.trendLocked and blkOlder.trendType == dir)
+                    f_lockBlockTrend(segEnd, dir)
+                    segEnd += 1
+                else
+                    f_lockBlockTrend(segEnd, nextDir)
+                    break
+            
+            // Lock the last block in segment
+            f_lockBlockTrend(segEnd, dir)
+            
+            // Find extreme points for channel drawing
+            [highestHigh, lowestHigh, highestLow, lowestLow, hhIdx, lhIdx, hlIdx, llIdx] = 
+                 f_findSegmentExtremes(segStart, segEnd)
+            
+            if not na(highestHigh) and not na(lowestHigh) and not na(highestLow) and not na(lowestLow)
+                // Get segment boundary X coordinates
+                BlockAnalytics blkOldest = array.get(analyticsData, segEnd)
+                BlockAnalytics blkNewest = array.get(analyticsData, segStart)
+                int segmentX1 = blkOldest.centerIdx  // Oldest block (left)
+                int segmentX2 = blkNewest.centerIdx  // Newest block (right)
+                
+                // Calculate slopes from extreme points
+                float upperSlope = na
+                float lowerSlope = na
+                float upperY1 = na
+                float upperY2 = na
+                float lowerY1 = na
+                float lowerY2 = na
+                
+                if dir == DIR_DOWN
+                    // DOWNTREND: Calculate slopes from extreme points
+                    int upperSpan = lhIdx - hhIdx
+                    int lowerSpan = llIdx - hlIdx
+                    upperSlope := upperSpan != 0 ? (lowestHigh - highestHigh) / upperSpan : 0.0
+                    lowerSlope := lowerSpan != 0 ? (lowestLow - highestLow) / lowerSpan : 0.0
+                    
+                    // Extend lines to segment boundaries
+                    upperY1 := highestHigh + (upperSlope * (segmentX1 - hhIdx))
+                    upperY2 := highestHigh + (upperSlope * (segmentX2 - hhIdx))
+                    lowerY1 := highestLow + (lowerSlope * (segmentX1 - hlIdx))
+                    lowerY2 := highestLow + (lowerSlope * (segmentX2 - hlIdx))
+                    
+                else if dir == DIR_UP
+                    // UPTREND: Calculate slopes from extreme points
+                    int upperSpan = hhIdx - lhIdx
+                    int lowerSpan = hlIdx - llIdx
+                    upperSlope := upperSpan != 0 ? (highestHigh - lowestHigh) / upperSpan : 0.0
+                    lowerSlope := lowerSpan != 0 ? (highestLow - lowestLow) / lowerSpan : 0.0
+                    
+                    // Extend lines to segment boundaries
+                    upperY1 := lowestHigh + (upperSlope * (segmentX1 - lhIdx))
+                    upperY2 := lowestHigh + (upperSlope * (segmentX2 - lhIdx))
+                    lowerY1 := lowestLow + (lowerSlope * (segmentX1 - llIdx))
+                    lowerY2 := lowestLow + (lowerSlope * (segmentX2 - llIdx))
+                    
+                else
+                    // RANGE: Connect segment boundaries
+                    upperSlope := 0.0
+                    lowerSlope := 0.0
+                    upperY1 := blkOldest.newHigh
+                    upperY2 := blkNewest.newHigh
+                    lowerY1 := blkOldest.newLow
+                    lowerY2 := blkNewest.newLow
+                
+                // Calculate angle using segment span
+                float midY1 = (upperY1 + lowerY1) / 2
+                float midY2 = (upperY2 + lowerY2) / 2
+                float priceChange = midY2 - midY1
+                int segmentSpan = math.abs(segmentX2 - segmentX1)
+                float angleDeg = f_calcChannelAngle(priceChange, segmentSpan, yzVol)
+                
+                // Store segment X coordinates for drawing
+                int upperX1 = segmentX1
+                int upperX2 = segmentX2
+                int lowerX1 = segmentX1
+                int lowerX2 = segmentX2
+                
+                // Determine final type based on angle
+                int finalType = dir
+                if math.abs(angleDeg) <= rangeThreshold
+                    finalType := 0
+                
+                // Create channel object
+                TrendChannel channel = TrendChannel.new(
+                     finalType,
+                     segStart + 1,
+                     segEnd + 1,
+                     angleDeg,
+                     upperX1, upperX2,
+                     lowerX1, lowerX2,
+                     upperY1, upperY2,
+                     lowerY1, lowerY2,
+                     na, na)
+                
+                array.push(trendChannels, channel)
+            
+            i := segEnd + 1
+        
+        true
+
+// Draw all detected channels (projection only for latest)
+f_drawAllChannels(int projLen, color upCol, color dnCol, color rangeCol, int lineWidth, string lineStyle, bool showRange) =>
+    string lstyle = lineStyle == "solid" ? line.style_solid : 
+                     lineStyle == "dashed" ? line.style_dashed : line.style_dotted
+    
+    int n = array.size(trendChannels)
+    if n > 0
+        for i = 0 to n - 1
+            TrendChannel ch = array.get(trendChannels, i)
+            
+            if ch.channelType == DIR_RANGE and not showRange
+                continue
+            
+            color chCol = ch.channelType == DIR_UP ? upCol : 
+                          ch.channelType == DIR_DOWN ? dnCol : rangeCol
+            
+            // Projection only for latest trend (i == 0)
+            int currentProjLen = (i == 0) ? projLen : 0
+            
+            // Calculate slopes for each line independently
+            int upperBarSpan = ch.upperX2 - ch.upperX1
+            int lowerBarSpan = ch.lowerX2 - ch.lowerX1
+            float upperSlope = upperBarSpan > 0 ? (ch.upperY2 - ch.upperY1) / upperBarSpan : 0.0
+            float lowerSlope = lowerBarSpan > 0 ? (ch.lowerY2 - ch.lowerY1) / lowerBarSpan : 0.0
+            
+            // Project endpoints
+            int upperX2Proj = ch.upperX2 + currentProjLen
+            int lowerX2Proj = ch.lowerX2 + currentProjLen
+            float upperY2Proj = ch.upperY2 + (upperSlope * currentProjLen)
+            float lowerY2Proj = ch.lowerY2 + (lowerSlope * currentProjLen)
+            
+            // Draw upper line
+            line upperLn = line.new(ch.upperX1, ch.upperY1, upperX2Proj, upperY2Proj,
+                                   xloc = xloc.bar_index, extend = extend.none,
+                                   color = chCol, width = lineWidth, style = lstyle)
+            
+            // Draw lower line
+            line lowerLn = line.new(ch.lowerX1, ch.lowerY1, lowerX2Proj, lowerY2Proj,
+                                   xloc = xloc.bar_index, extend = extend.none,
+                                   color = chCol, width = lineWidth, style = lstyle)
+            
+            ch.upperLine := upperLn
+            ch.lowerLine := lowerLn
+            array.set(trendChannels, i, ch)
+
+//━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// VOLUME ENGINE SETTINGS
+//━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+string G_VOL  = "═══ Volume Engine ═══"
+string G_DASH = "═══ Smart Dashboard ═══"
+
+string i_calcMethod = input.string("Geometry (Approx)", "Calculation Method",
+     options = ["Geometry (Approx)", "Intrabar (Precise)"], group = G_VOL)
+
+bool   i_useCustomLTF = input.bool(true, "Use custom lower timeframe", group = G_VOL)
+string i_customLTF = input.timeframe("15S", "Lower timeframe (LTF)", group = G_VOL)
+
+int i_globalPeriodBoxes = input.int(5, "Global Period (Boxes)", minval = 1, maxval = 200, group = G_VOL)
+
+bool   i_showDash = input.bool(true, "Show Dashboard", group = G_DASH)
+string i_dashPos  = input.string(position.top_right, "Position",
+     options=[position.top_right, position.bottom_right, position.bottom_left], group = G_DASH)
+
+//━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// CORE CALCULATION SETTINGS
+//━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+//━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// MULTI-SEGMENT TREND SETTINGS
+//━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+string G_TREND = "═══ Multi-Segment Trend ═══"
+
+bool i_trendEnable = input.bool(true, "Enable Trend Detection", group = G_TREND,
+     tooltip = "Multi-segment trend system using ghost candle HH/HL/LH/LL pattern detection.")
+
+float i_rangeAngleThreshold = input.float(10.0, "Range Angle Threshold (°)", minval = 1.0, maxval = 45.0, step = 1.0, group = G_TREND,
+     tooltip = "Lines with angle ≤ this value are classified as RANGE.")
+
+int i_trendMinBlocks = input.int(2, "Minimum Blocks per Segment", minval = 2, maxval = 10, group = G_TREND,
+     tooltip = "Minimum blocks required to draw a segment line.")
+
+bool i_showRangeSegments = input.bool(true, "Show Range Segments", group = G_TREND,
+     tooltip = "Draw lines for range/sideways segments.")
+
+color i_trendUpColor = input.color(color.rgb(34, 197, 94), "Uptrend Line Color", group = G_TREND,
+     tooltip = "Color for uptrend support lines (green).")
+
+color i_trendDnColor = input.color(color.rgb(239, 68, 68), "Downtrend Line Color", group = G_TREND,
+     tooltip = "Color for downtrend resistance lines (red).")
+
+color i_trendRangeColor = input.color(color.rgb(148, 163, 184), "Range Line Color", group = G_TREND,
+     tooltip = "Color for range/sideways lines (gray).")
+
+int i_trendLineWidth = input.int(2, "Trend Line Width", minval = 1, maxval = 5, group = G_TREND)
+
+string i_trendLineStyle = input.string("solid", "Trend Line Style",
+     options = ["solid", "dashed", "dotted"], group = G_TREND)
+
+bool i_trendProject = input.bool(true, "Project to Future", group = G_TREND,
+     tooltip = "Extend trend lines into the future by one block width.")
+
+string G_CORE = "═══ Core Calculation ═══"
+
+bool i_coreEnable      = input.bool(true, "Enable Core Calculation", group = G_CORE)
+bool i_coreDrawLines   = input.bool(true, "Draw Core Lines", group = G_CORE)
+bool i_coreProjectFwd  = input.bool(true, "Offset / Projection (to Future)", group = G_CORE)
+bool i_coreNearestOnly = input.bool(true, "Nearest Only (1 Up / 1 Down)", group = G_CORE)
+bool i_coreShowMax     = input.bool(true, "Include MAX Buy/Sell Levels", group = G_CORE)
+bool i_coreShowMin     = input.bool(true, "Include MIN Buy/Sell Levels", group = G_CORE)
+bool i_pocEnable       = input.bool(true, "Enable POC", group = G_CORE)
+bool i_pocShowNearest  = input.bool(true, "Show POC Nearest Up/Down", group = G_CORE)
+
+bool i_pocBinProfile = input.bool(true, "POC: Volume Profile Bins (All Plans)", group = G_CORE,
+     tooltip = "True Volume Profile POC — available on ALL TradingView plans (Free, Plus, Premium, Ultimate).\n\nHow it works: Divides each block's price range into equal bins, distributes each bar's volume proportionally across the bins its range overlaps, and selects the bin with the highest accumulated volume as the Point of Control.\n\nThis is significantly more accurate than the default single-bar method (which simply uses the average price of the highest-volume bar). When ON, POC reflects the actual high-volume price zone across all bars in the block.\n\nWhen OFF, the original single-bar method is used as fallback.\n\nNote: A future update will add native TradingView Footprint POC via request.footprint(), which provides tick-level precision but requires a Premium or Ultimate plan.")
+
+int i_pocBinCount = input.int(25, "POC Bin Resolution", minval = 10, maxval = 100, group = G_CORE,
+     tooltip = "Number of equal price bins used to build the Volume Profile within each block.\n\nHigher values = finer price resolution = more precise POC, but heavier computation.\nLower values = coarser resolution = faster, but POC may be less precise.\n\nRecommended ranges:\n• 10–15: Fast, suitable for high-timeframe or low-volatility instruments.\n• 20–30: Good balance for most instruments and timeframes (default: 25).\n• 50–100: High precision for scalping or tick-level analysis on lower timeframes.\n\nThis setting has no effect when 'POC: Volume Profile Bins' is OFF.")
+
+int  i_coreLineWidth   = input.int(1, "Line Width", minval = 1, maxval = 4, group = G_CORE)
+
+color _coreBuyCol  = color.rgb(59, 130, 246)
+color _coreSellCol = color.rgb(244, 63, 94)
+color _pocCol      = color.rgb(234, 179, 8)
+color _pocColDim   = color.new(_pocCol, 25)
+
+//━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// CORE LINE VARIABLES & FUNCTIONS
+//━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+var line lnCoreUp = na, var line lnCoreDn = na
+var line lnPOCUp  = na, var line lnPOCDn  = na
+var label lblCoreUp = na, var label lblCoreDn = na
+var label lblPOCUp  = na, var label lblPOCDn  = na
+
+int _T_MAX_BUY = 0, int _T_MAX_SELL = 1, int _T_MIN_BUY = 2, int _T_MIN_SELL = 3, int _T_POC = 10
+
+var array<int>   _consSrc   = array.new_int()
+var array<int>   _consType  = array.new_int()
+var array<float> _consPrice = array.new_float()
+int _CONS_MAX = 260
+
+f_isConsumed(int src, int typ, float prc) =>
+    float tol = syminfo.mintick * 0.5
+    bool hit = false
+    int n = array.size(_consSrc)
+    if n > 0
+        for i = 0 to n - 1
+            if array.get(_consSrc, i) == src and array.get(_consType, i) == typ and math.abs(array.get(_consPrice, i) - prc) <= tol
+                hit := true
+    hit
+
+f_markConsumed(int src, int typ, float prc) =>
+    array.push(_consSrc, src)
+    array.push(_consType, typ)
+    array.push(_consPrice, prc)
+    while array.size(_consSrc) > _CONS_MAX
+        array.shift(_consSrc)
+        array.shift(_consType)
+        array.shift(_consPrice)
+
+f_pruneConsumed(int minSrc) =>
+    while array.size(_consSrc) > 0 and array.get(_consSrc, 0) < minSrc
+        array.shift(_consSrc)
+        array.shift(_consType)
+        array.shift(_consPrice)
+
+f_ensureLine(line l, color col, st) =>
+    line out = l
+    if na(out)
+        out := line.new(bar_index, close, bar_index, close,
+             xloc = xloc.bar_index, extend = extend.none,
+             color = col, style = st, width = i_coreLineWidth)
+    else
+        line.set_width(out, i_coreLineWidth)
+        line.set_style(out, st)
+        line.set_color(out, col)
+    out
+
+f_hideLine(line l, int x, float y) =>
+    if not na(l)
+        line.set_xy1(l, x, y)
+        line.set_xy2(l, x, y)
+        line.set_color(l, color.new(color.gray, 100))
+
+f_setHLine(line l, int x1, int x2, float y, color col) =>
+    if not na(l)
+        line.set_xy1(l, x1, y)
+        line.set_xy2(l, x2, y)
+        line.set_color(l, col)
+        line.set_width(l, i_coreLineWidth)
+
+f_typeName(int typ) =>
+    typ == _T_MAX_BUY  ? "MAX BUY"  :
+     typ == _T_MAX_SELL ? "MAX SELL" :
+     typ == _T_MIN_BUY  ? "MIN BUY"  :
+     typ == _T_MIN_SELL ? "MIN SELL" : "LEVEL"
+
+f_ensureLabel(label lb, color col) =>
+    label out = lb
+    if na(out)
+        out := label.new(bar_index, close, "",
+             style = label.style_label_left, size = GLOBAL_TEXT_SIZE,
+             textcolor = col, color = color.new(color.black, 85))
+    else
+        label.set_size(out, GLOBAL_TEXT_SIZE)
+    out
+
+f_hideLabel(label lb) =>
+    if not na(lb)
+        label.set_text(lb, "")
+        label.set_xy(lb, bar_index, close)
+        label.set_textcolor(lb, color.new(color.gray, 100))
+
+f_setLineLabel(label lb, int x, float y, string txt, color col) =>
+    if not na(lb)
+        label.set_xy(lb, x, y)
+        label.set_text(lb, txt)
+        label.set_textcolor(lb, col)
+        label.set_style(lb, label.style_label_left)
+        label.set_size(lb, GLOBAL_TEXT_SIZE)
+
+f_pickNearestExt(float refP) =>
+    float upP = na, float upDist = na, int upSrc = na, int upTyp = na, int upBox = na
+    float dnP = na, float dnDist = na, int dnSrc = na, int dnTyp = na, int dnBox = na
+
+    for gi = 0 to i_groups - 1
+        BoxCore bc = array.get(coreBoxes, gi)
+        if bc.valid
+            if i_coreShowMax
+                float p1 = bc.maxBuyHigh
+                int   s1 = bar_index - bc.maxBuyOff
+                if not na(p1) and not f_isConsumed(s1, _T_MAX_BUY, p1)
+                    if p1 > refP
+                        float d1 = p1 - refP
+                        if na(upDist) or d1 < upDist
+                            upDist := d1, upP := p1, upSrc := s1, upTyp := _T_MAX_BUY, upBox := gi + 1
+                    if p1 < refP
+                        float d1d = refP - p1
+                        if na(dnDist) or d1d < dnDist
+                            dnDist := d1d, dnP := p1, dnSrc := s1, dnTyp := _T_MAX_BUY, dnBox := gi + 1
+
+                float p2 = bc.maxSellLow
+                int   s2 = bar_index - bc.maxSellOff
+                if not na(p2) and not f_isConsumed(s2, _T_MAX_SELL, p2)
+                    if p2 > refP
+                        float d2 = p2 - refP
+                        if na(upDist) or d2 < upDist
+                            upDist := d2, upP := p2, upSrc := s2, upTyp := _T_MAX_SELL, upBox := gi + 1
+                    if p2 < refP
+                        float d2d = refP - p2
+                        if na(dnDist) or d2d < dnDist
+                            dnDist := d2d, dnP := p2, dnSrc := s2, dnTyp := _T_MAX_SELL, dnBox := gi + 1
+
+            if i_coreShowMin
+                float p3 = bc.minBuyHigh
+                int   s3 = bar_index - bc.minBuyOff
+                if not na(p3) and not f_isConsumed(s3, _T_MIN_BUY, p3)
+                    if p3 > refP
+                        float d3 = p3 - refP
+                        if na(upDist) or d3 < upDist
+                            upDist := d3, upP := p3, upSrc := s3, upTyp := _T_MIN_BUY, upBox := gi + 1
+                    if p3 < refP
+                        float d3d = refP - p3
+                        if na(dnDist) or d3d < dnDist
+                            dnDist := d3d, dnP := p3, dnSrc := s3, dnTyp := _T_MIN_BUY, dnBox := gi + 1
+
+                float p4 = bc.minSellLow
+                int   s4 = bar_index - bc.minSellOff
+                if not na(p4) and not f_isConsumed(s4, _T_MIN_SELL, p4)
+                    if p4 > refP
+                        float d4 = p4 - refP
+                        if na(upDist) or d4 < upDist
+                            upDist := d4, upP := p4, upSrc := s4, upTyp := _T_MIN_SELL, upBox := gi + 1
+                    if p4 < refP
+                        float d4d = refP - p4
+                        if na(dnDist) or d4d < dnDist
+                            dnDist := d4d, dnP := p4, dnSrc := s4, dnTyp := _T_MIN_SELL, dnBox := gi + 1
+
+    [upP, upSrc, upTyp, upBox, dnP, dnSrc, dnTyp, dnBox]
+
+f_pickNearestPOC(float refP) =>
+    float upP = na, int upSrc = na, float upDist = na, int upBox = na
+    float dnP = na, int dnSrc = na, float dnDist = na, int dnBox = na
+
+    for gi = 0 to i_groups - 1
+        BoxCore bc = array.get(coreBoxes, gi)
+        if bc.valid
+            float p = bc.pocPrice
+            int src = bar_index - bc.pocOff
+            if not na(p) and not f_isConsumed(src, _T_POC, p)
+                if p > refP
+                    float d = p - refP
+                    if na(upDist) or d < upDist
+                        upDist := d, upP := p, upSrc := src, upBox := gi + 1
+                if p < refP
+                    float d2 = refP - p
+                    if na(dnDist) or d2 < dnDist
+                        dnDist := d2, dnP := p, dnSrc := src, dnBox := gi + 1
+
+    [upP, upSrc, upBox, dnP, dnSrc, dnBox]
+
+//━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// NARRATIVE ENGINE: CANDLE PATTERN ANALYSIS
+//━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+// Classify single candle pattern based on body/wick ratios
+f_classifyCandlePattern(float bodyR, float upperR, float lowerR, bool isBull) =>
+    string pattern = "STANDARD"
+    string bias = "NEUTRAL"
+    
+    // DOJI variants (very small body)
+    if bodyR < 10.0
+        if lowerR > 65.0 and upperR < 15.0
+            pattern := "DRAGONFLY"
+            bias := "BULLISH"
+        else if upperR > 65.0 and lowerR < 15.0
+            pattern := "GRAVESTONE"
+            bias := "BEARISH"
+        else
+            pattern := "DOJI"
+            bias := "NEUTRAL"
+    
+    // SPINNING TOP (small body, balanced wicks)
+    else if bodyR < 35.0 and math.abs(upperR - lowerR) < 20.0
+        pattern := "SPINNING_TOP"
+        bias := "NEUTRAL"
+    
+    // MARUBOZU (large body, minimal wicks)
+    else if bodyR > 80.0
+        pattern := "MARUBOZU"
+        bias := isBull ? "BULLISH" : "BEARISH"
+    
+    // HAMMER / INVERTED HAMMER (small body, one dominant wick)
+    else if bodyR < 40.0
+        if lowerR > 55.0 and upperR < 20.0
+            pattern := "HAMMER"
+            bias := "BULLISH"
+        else if upperR > 55.0 and lowerR < 20.0
+            pattern := "INV_HAMMER"
+            bias := isBull ? "BULLISH" : "BEARISH"
+        else if upperR > 45.0
+            pattern := "LONG_UPPER"
+            bias := "BEARISH"
+        else if lowerR > 45.0
+            pattern := "LONG_LOWER"
+            bias := "BULLISH"
+    
+    // Standard candle with directional bias
+    else
+        pattern := "STANDARD"
+        bias := isBull ? "BULLISH" : "BEARISH"
+    
+    [pattern, bias]
+
+// Calculate range status relative to ATR
+f_calcRangeStatus(float barRange, float atr) =>
+    float ratio = atr > 0 ? barRange / atr : 1.0
+    string status = ratio > 1.5 ? "WIDE" : ratio < 0.6 ? "NARROW" : "NORMAL"
+    [ratio, status]
+
+// Calculate volume status relative to average
+f_calcVolumeStatus(float vol, int period, int offset) =>
+    float sumVol = 0.0
+    int count = 0
+    for i = offset to offset + period - 1
+        float v = volume[i]
+        if not na(v)
+            sumVol += v
+            count += 1
+    float avgVol = count > 0 ? sumVol / count : na
+    float ratio = not na(avgVol) and avgVol > 0 ? vol / avgVol : 1.0
+    string status = ratio > 2.0 ? "SPIKE" : ratio < 0.5 ? "LOW" : "NORMAL"
+    [ratio, status]
+
+// Calculate pressure status from delta
+f_calcPressureStatus(float buyVol, float sellVol) =>
+    float total = buyVol + sellVol
+    if total == 0
+        "BALANCED"
+    else
+        float buyPct = buyVol / total * 100
+        buyPct > 55 ? "BUYING" : buyPct < 45 ? "SELLING" : "BALANCED"
+
+// Build complete CurrentBarAnalysis
+f_analyzeCurrentBar(int offset, float atr, float buyV, float sellV) =>
+    float h = high[offset]
+    float l = low[offset]
+    float o = open[offset]
+    float c = close[offset]
+    float v = volume[offset]
+    
+    float barRange = h - l
+    float bodySize = math.abs(c - o)
+    float upperWick = h - math.max(o, c)
+    float lowerWick = math.min(o, c) - l
+    
+    float bodyR = barRange > 0 ? (bodySize / barRange) * 100 : 0.0
+    float upperR = barRange > 0 ? (upperWick / barRange) * 100 : 0.0
+    float lowerR = barRange > 0 ? (lowerWick / barRange) * 100 : 0.0
+    
+    bool isBull = c > o
+    [pattern, patternBias] = f_classifyCandlePattern(bodyR, upperR, lowerR, isBull)
+    [rangeRatio, rangeStatus] = f_calcRangeStatus(barRange, atr)
+    [volRatio, volStatus] = f_calcVolumeStatus(v, 20, offset)
+    
+    float delta = buyV - sellV
+    string pressure = f_calcPressureStatus(buyV, sellV)
+    
+    CurrentBarAnalysis.new(
+         barRange, bodySize, upperWick, lowerWick,
+         bodyR, upperR, lowerR,
+         pattern, patternBias,
+         isBull, rangeRatio, rangeStatus, volRatio, volStatus,
+         buyV, sellV, delta, pressure)
+
+//━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// NARRATIVE ENGINE: COMPOSITE CANDLE ANALYSIS
+//━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+// Analyze composite candle from BlockAnalytics
+f_analyzeComposite(BlockAnalytics blk1, BlockAnalytics blk2) =>
+    CompositeAnalysis result = CompositeAnalysis.new()
+    
+    if blk1.valid
+        // Calculate composite candle metrics
+        float cRange = blk1.newHigh - blk1.newLow
+        float cBody = math.abs(blk1.newClose - blk1.newOpen)
+        float cUpper = blk1.newHigh - math.max(blk1.newOpen, blk1.newClose)
+        float cLower = math.min(blk1.newOpen, blk1.newClose) - blk1.newLow
+        float cBodyR = cRange > 0 ? (cBody / cRange) * 100 : 0.0
+        float cUpperR = cRange > 0 ? (cUpper / cRange) * 100 : 0.0
+        float cLowerR = cRange > 0 ? (cLower / cRange) * 100 : 0.0
+        
+        bool isBull = blk1.newClose > blk1.newOpen
+        [pattern, bias] = f_classifyCandlePattern(cBodyR, cUpperR, cLowerR, isBull)
+        
+        result.compRange := cRange
+        result.compBodySize := cBody
+        result.compUpperWick := cUpper
+        result.compLowerWick := cLower
+        result.compBodyRatio := cBodyR
+        result.compositePattern := pattern
+        result.compositeBias := bias
+        
+        // Multi-block pattern detection (Block 1 vs Block 2)
+        if blk2.valid
+            float b1High = blk1.newHigh, float b1Low = blk1.newLow
+            float b2High = blk2.newHigh, float b2Low = blk2.newLow
+            float b1Body = math.abs(blk1.newClose - blk1.newOpen)
+            float b2Body = math.abs(blk2.newClose - blk2.newOpen)
+            
+            // Inside bar: Block 1 range completely inside Block 2
+            if b1High <= b2High and b1Low >= b2Low
+                result.blockRelation := "INSIDE"
+                result.blockRelationBias := "NEUTRAL"
+            // Outside bar: Block 1 range exceeds Block 2
+            else if b1High > b2High and b1Low < b2Low
+                result.blockRelation := "OUTSIDE"
+                result.blockRelationBias := isBull ? "BULLISH" : "BEARISH"
+            // Engulfing: Block 1 body engulfs Block 2 body
+            else if b1Body > b2Body * 1.3
+                result.blockRelation := "ENGULFING"
+                result.blockRelationBias := isBull ? "BULLISH" : "BEARISH"
+            else
+                result.blockRelation := "NORMAL"
+                result.blockRelationBias := "NEUTRAL"
+        else
+            result.blockRelation := "NORMAL"
+            result.blockRelationBias := "NEUTRAL"
+    
+    result
+
+//━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// NARRATIVE ENGINE: TREND CONTEXT ANALYSIS
+//━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+// Analyze trend sequence and context
+f_analyzeTrendContext(array<TrendChannel> channels, float quality) =>
+    TrendContext result = TrendContext.new()
+    
+    int numChannels = array.size(channels)
+    
+    if numChannels > 0
+        TrendChannel current = array.get(channels, 0)
+        result.currentType := current.channelType
+        result.currentBlocks := current.endBlock - current.startBlock + 1
+        result.currentLabel := current.channelType == DIR_UP ? "UPTREND" :
+                               current.channelType == DIR_DOWN ? "DOWNTREND" : "RANGE"
+        
+        // Get previous trend if exists
+        if numChannels > 1
+            TrendChannel prev = array.get(channels, 1)
+            result.prevType := prev.channelType
+            result.prevLabel := prev.channelType == DIR_UP ? "UPTREND" :
+                                 prev.channelType == DIR_DOWN ? "DOWNTREND" : "RANGE"
+            
+            // Determine transition type
+            if result.prevType != result.currentType
+                if result.currentType == DIR_UP
+                    result.transition := "REVERSAL_TO_UP"
+                else if result.currentType == DIR_DOWN
+                    result.transition := "REVERSAL_TO_DOWN"
+                else
+                    result.transition := "NEW_TREND"
+            else
+                result.transition := "CONTINUATION"
+        else
+            result.prevType := na
+            result.prevLabel := ""
+            result.transition := "NEW_TREND"
+        
+        // Count trend changes
+        result.trendChanges := 0
+        if numChannels > 1
+            for i = 0 to numChannels - 2
+                TrendChannel ch1 = array.get(channels, i)
+                TrendChannel ch2 = array.get(channels, i + 1)
+                if ch1.channelType != ch2.channelType
+                    result.trendChanges += 1
+    else
+        result.currentType := DIR_RANGE
+        result.currentLabel := "RANGE"
+        result.transition := "NEW_TREND"
+        result.trendChanges := 0
+    
+    // Quality metrics
+    result.qualityScore := quality
+    result.confidenceLevel := quality >= 80 ? "HIGH" : quality >= 60 ? "MEDIUM" : "LOW"
+    
+    // Strength from latest channel angle
+    if numChannels > 0
+        TrendChannel ch = array.get(channels, 0)
+        result.strengthRating := math.abs(ch.angleDeg) > 45 ? "VERY_STRONG" :
+                                 math.abs(ch.angleDeg) > 30 ? "STRONG" :
+                                 math.abs(ch.angleDeg) > 15 ? "MODERATE" : "WEAK"
+    else
+        result.strengthRating := "WEAK"
+    
+    result
+
+//━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// NARRATIVE ENGINE: ADVANCED MULTILINGUAL BUILDER
+//━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+// Check proximity to key levels
+f_checkProximity(float price, float level, float threshold) =>
+    if na(level)
+        [false, 0.0]
+    else
+        float dist = math.abs(price - level)
+        float pct = price != 0 ? (dist / price) * 100 : 0.0
+        bool isNear = pct <= threshold
+        [isNear, pct]
+
+// Localized connecting phrases
+f_connect(string key) =>
+    key == "CURRENT_CANDLE" ? f_L("The current candle presents", "Mevcut mum", "वर्तमान कैंडल", "الشمعة الحالية تُظهر") :
+     key == "WITH_RANGE" ? f_L("with", "ile", "के साथ", "مع") :
+     key == "SHOWING" ? f_L("showing", "gösteriyor", "दिखा रहा है", "تُظهر") :
+     key == "BROADER_CONTEXT" ? f_L("In the broader timeframe, the market is in", "Daha geniş zaman diliminde piyasa", "व्यापक समय सीमा में बाजार", "في الإطار الزمني الأوسع، السوق في") :
+     key == "WITH_STRENGTH" ? f_L("with", "ile", "के साथ", "بقوة") :
+     key == "AND_QUALITY" ? f_L("and quality", "ve kalite", "और गुणवत्ता", "وجودة") :
+     key == "STRUCTURE_SHOWS" ? f_L("The price structure shows", "Fiyat yapısı gösteriyor", "मूल्य संरचना दिखाती है", "هيكل السعر يُظهر") :
+     key == "CURRENT_BLOCK" ? f_L("The current block", "Mevcut blok", "वर्तमान ब्लॉक", "الكتلة الحالية") :
+     key == "PREVIOUS_BLOCK" ? f_L("the previous block", "önceki bloğu", "पिछले ब्लॉक को", "الكتلة السابقة") :
+     key == "WHICH_INDICATES" ? f_L("which indicates", "bu da gösterir", "जो संकेत देता है", "مما يُشير إلى") :
+     key == "HOWEVER" ? f_L("However", "Ancak", "हालांकि", "ومع ذلك") :
+     key == "IMPORTANT_CONTRADICTION" ? f_L("an important contradiction exists", "önemli bir çelişki var", "एक महत्वपूर्ण विरोधाभास है", "يوجد تناقض مهم") :
+     key == "WHILE_PRICE" ? f_L("while price moves", "fiyat hareket ederken", "जबकि मूल्य चलता है", "بينما يتحرك السعر") :
+     key == "VOLUME_SHOWS" ? f_L("volume shows", "hacim gösteriyor", "वॉल्यूम दिखाता है", "الحجم يُظهر") :
+     key == "DOMINANCE_WITH" ? f_L("dominance with", "hakimiyet ile", "के साथ प्रभुत्व", "هيمنة بنسبة") :
+     key == "THIS_DIVERGENCE" ? f_L("This divergence between price direction and volume flow indicates", 
+                                    "Fiyat yönü ile hacim akışı arasındaki bu uyumsuzluk gösterir", 
+                                    "मूल्य दिशा और वॉल्यूम प्रवाह के बीच यह विचलन संकेत देता है",
+                                    "هذا التباين بين اتجاه السعر وتدفق الحجم يُشير إلى") :
+     key == "CONFIRMS_TREND" ? f_L("Volume also confirms this trend", "Hacim de bu trendi doğruluyor", "वॉल्यूम भी इस रुझान की पुष्टि करता है", "الحجم يؤكد هذا الاتجاه أيضاً") :
+     key == "VOLUME_MOMENTUM" ? f_L("Volume momentum is", "Hacim momentumu", "वॉल्यूम गति", "زخم الحجم") :
+     key == "INDICATING" ? f_L("indicating", "gösteriyor", "संकेत दे रहा है", "مما يُشير إلى") :
+     key == "CANDLE_BODIES" ? f_L("Candle bodies are", "Mum gövdeleri", "कैंडल बॉडी", "أجسام الشموع") :
+     key == "UPPER_WICKS" ? f_L("Upper wicks have", "Üst fitiller", "ऊपरी बत्तियां", "الفتائل العلوية") :
+     key == "BY_PERCENT" ? f_L("by", "ile", "द्वारा", "بنسبة") :
+     key == "INDICATING_PRESSURE" ? f_L("indicating", "göstererek", "संकेत करते हुए", "مما يدل على") :
+     key == "SELL_PRESSURE_ABOVE" ? f_L("selling pressure at higher levels", "üst seviyelerde satış baskısı", "उच्च स्तर पर बिक्री दबाव", "ضغط بيعي عند المستويات العليا") :
+     key == "LOWER_WICKS" ? f_L("Lower wicks have", "Alt fitiller", "निचली बत्तियां", "الفتائل السفلية") :
+     key == "BUY_SUPPORT" ? f_L("buying support strengthening", "alım desteği güçleniyor", "खरीद समर्थन मजबूत हो रहा", "تعزّز دعم الشراء") :
+     key == "PRICE_POSITION" ? f_L("Price is positioned in", "Fiyat konumlanmış", "मूल्य स्थित है", "السعر يتموضع في") :
+     key == "OF_CHANNEL" ? f_L("of the channel", "kanalın", "चैनल का", "من القناة") :
+     key == "KEY_NOTE" ? f_L("Important note", "Önemli not", "महत्वपूर्ण नोट", "ملاحظة مهمة") :
+     key == "NEAR_RESISTANCE" ? f_L("Price has approached the upper channel at", "Fiyat üst kanal sınırına yaklaştı", "मूल्य ऊपरी चैनल सीमा के करीब पहुंच गया है", "السعر اقترب من حد القناة العليا عند") :
+     key == "NEAR_SUPPORT" ? f_L("Price has approached the lower channel at", "Fiyat alt kanal sınırına yaklaştı", "मूल्य निचली चैनल सीमा के करीब पहुंच गया है", "السعر اقترب من حد القناة السفلى عند") :
+     key == "DISTANCE" ? f_L("distance", "mesafe", "दूरी", "المسافة") :
+     key == "POC_LEVEL" ? f_L("Price is near POC level at", "Fiyat POC seviyesine yakın", "मूल्य POC स्तर के पास है", "السعر قريب من مستوى POC عند") :
+     key == "HIGH_VOLUME_AREA" ? f_L("which typically has high trading volume", "ki genellikle yüksek işlem hacmi vardır", "जिसमें आमतौर पर उच्च ट्रेडिंग वॉल्यूम होता है", "والتي عادةً تشهد حجم تداول مرتفع") :
+     key == "DISTANCE_TO_LEVELS" ? f_L("Distance to upper channel", "Üst kanala mesafe", "ऊपरी चैनल की दूरी", "المسافة إلى القناة العليا") :
+     key == "TO_SUPPORT" ? f_L("to lower channel", "alt kanala", "निचले चैनल तक", "إلى القناة السفلى") :
+     key == "OVERALL" ? f_L("Overall", "Genel olarak", "कुल मिलाकर", "بشكل عام") :
+     key == "DESPITE" ? f_L("despite", "rağmen", "के बावजूद", "على الرغم من") :
+     key == "CONTRADICTIONS" ? f_L("technical contradictions", "teknik çelişkiler", "तकनीकी विरोधाभास", "تناقضات فنية") :
+     key == "PATTERN_MAINTAINS" ? f_L("the overall pattern maintains", "genel yapı koruyor", "समग्र पैटर्न बनाए रखता है", "النمط العام يحافظ على") :
+     key == "UPTREND_CHAR" ? f_L("uptrend characteristics", "yükseliş özelliklerini", "तेजी की विशेषताएं", "خصائص الاتجاه الصاعد") :
+     key == "DOWNTREND_CHAR" ? f_L("downtrend characteristics", "düşüş özelliklerini", "मंदी की विशेषताएं", "خصائص الاتجاه الهابط") :
+     key == "CONSOLIDATION" ? f_L("a consolidation phase", "konsolidasyon fazında", "एक समेकन चरण में", "مرحلة تجميع") :
+     key == "THESE_CONTRADICTIONS" ? f_L("but these contradictions suggest potential change in market behavior", 
+                                         "ancak bu çelişkiler piyasa davranışında potansiyel değişim gösteriyor", 
+                                         "लेकिन ये विरोधाभास बाजार व्यवहार में संभावित परिवर्तन का सुझाव देते हैं",
+                                         "لكن هذه التناقضات تُشير إلى تغيّر محتمل في سلوك السوق") :
+     key == "ALL_ALIGNED" ? f_L("all technical and volume indicators are aligned confirming", 
+                                "tüm teknik ve hacim göstergeleri uyumlu ve doğruluyor", 
+                                "सभी तकनीकी और वॉल्यूम संकेतक संरेखित हैं और पुष्टि करते हैं",
+                                "جميع المؤشرات الفنية والحجمية متوافقة وتؤكد") :
+     key == "NO_CLEAR_DIR" ? f_L("and has not yet selected a clear direction", 
+                                 "ve henüz net bir yön seçmedi", 
+                                 "और अभी तक स्पष्ट दिशा नहीं चुनी है",
+                                 "ولم يختر اتجاهاً واضحاً بعد") :
+     ""
+
+// Pattern descriptions
+f_patternDesc(string pattern) =>
+    pattern == "DOJI" ? f_L("a doji indicating market indecision and uncertainty", 
+                            "belirsizlik ve kararsızlığı gösteren bir doji", 
+                            "एक डोजी जो बाजार में अनिश्चितता दर्शाता है",
+                            "دوجي يُشير إلى تردد السوق وعدم اليقين") :
+     pattern == "HAMMER" ? f_L("a hammer suggesting rejection at lower levels and potential bullish reversal", 
+                              "alt seviyelerde reddedilme ve potansiyel yükseliş dönüşünü gösteren bir çekiç", 
+                              "एक हैमर जो निचले स्तर पर अस्वीकृति और संभावित तेजी उलटफेर का सुझाव देता है",
+                              "مطرقة تُشير إلى رفض عند المستويات الدنيا واحتمال انعكاس صعودي") :
+     pattern == "INV_HAMMER" ? f_L("an inverted hammer", "ters çekiç", "एक उल्टा हैमर", "مطرقة مقلوبة") :
+     pattern == "DRAGONFLY" ? f_L("a dragonfly doji showing strong rejection at lows and buying pressure", 
+                                  "güçlü alış baskısı ve dipte reddedilme gösteren yusufçuk doji", 
+                                  "एक ड्रैगनफ्लाई डोजी जो निम्न स्तर पर मजबूत अस्वीकृति दिखाता है",
+                                  "دوجي اليعسوب يُظهر رفضاً قوياً عند القيعان وضغطاً شرائياً") :
+     pattern == "GRAVESTONE" ? f_L("a gravestone doji showing strong rejection at highs and selling pressure", 
+                                   "güçlü satış baskısı ve tepede reddedilme gösteren mezar taşı doji", 
+                                   "एक ग्रेवस्टोन डोजी जो उच्च स्तर पर मजबूत अस्वीकृति दिखाता है",
+                                   "دوجي شاهد القبر يُظهر رفضاً قوياً عند القمم وضغطاً بيعياً") :
+     pattern == "MARUBOZU" ? f_L("a marubozu with large body and small wicks indicating one-sided market power", 
+                                 "tek taraflı piyasa gücünü gösteren büyük gövdeli ve küçük fitilli marubozu", 
+                                 "एक मारूबोज़ू जो एकतरफा बाजार शक्ति दर्शाता है",
+                                 "ماروبوزو بجسم كبير وفتائل صغيرة يدل على قوة سوقية أحادية الاتجاه") :
+     pattern == "LONG_UPPER" ? f_L("a candle with long upper wick indicating selling pressure and rejection at higher levels", 
+                                   "satış baskısı ve üst seviyelerde reddedilmeyi gösteren uzun üst fitilli mum", 
+                                   "एक कैंडल जो बिक्री दबाव दिखाती है",
+                                   "شمعة بفتيل علوي طويل تدل على ضغط بيعي ورفض عند المستويات العليا") :
+     pattern == "LONG_LOWER" ? f_L("a candle with long lower wick indicating buying pressure and rejection at lower levels", 
+                                   "alım baskısı ve alt seviyelerde reddedilmeyi gösteren uzun alt fitilli mum", 
+                                   "एक कैंडल जो खरीद दबाव दिखाती है",
+                                   "شمعة بفتيل سفلي طويل تدل على ضغط شرائي ورفض عند المستويات الدنيا") :
+     pattern == "SPINNING_TOP" ? f_L("a spinning top with small body and long wicks indicating imbalance between buyers and sellers", 
+                                     "alıcı ve satıcılar arasındaki dengesizliği gösteren küçük gövdeli topaç", 
+                                     "एक स्पिनिंग टॉप जो खरीदारों और विक्रेताओं के बीच असंतुलन दिखाता है",
+                                     "قمة دوّارة بجسم صغير وفتائل طويلة تدل على اختلال التوازن بين المشترين والبائعين") :
+     f_L("a standard candle", "standart bir mum", "एक मानक कैंडल", "شمعة قياسية")
+
+// Block relationship descriptions
+f_blockRelDesc(string relation, string bias) =>
+    relation == "ENGULFING" ? f_L("completely encompasses the previous block, indicating increased power in current direction", 
+                                  "önceki bloğu tamamen kapsar ve mevcut yöndeki gücün arttığını gösterir", 
+                                  "पिछले ब्लॉक को पूरी तरह घेरता है, वर्तमान दिशा में बढ़ी शक्ति का संकेत देता है",
+                                  "تبتلع الكتلة السابقة بالكامل، مما يدل على تزايد القوة في الاتجاه الحالي") :
+     relation == "INSIDE" ? f_L("is completely within the previous block range, indicating reduced volatility and potential accumulation", 
+                                "tamamen önceki blok aralığında ve azalan oynaklık gösterir", 
+                                "पिछले ब्लॉक के दायरे में है, कम अस्थिरता का संकेत देता है",
+                                "تقع بالكامل ضمن نطاق الكتلة السابقة، مما يدل على انخفاض التذبذب واحتمال التجميع") :
+     relation == "OUTSIDE" ? f_L("exceeds the previous block range, indicating increased volatility and market strength", 
+                                 "önceki blok aralığını aşar ve artan oynaklık gösterir", 
+                                 "पिछले ब्लॉक की सीमा से अधिक है, बढ़ी अस्थिरता का संकेत देता है",
+                                 "تتجاوز نطاق الكتلة السابقة، مما يدل على تزايد التذبذب وقوة السوق") :
+     ""
+
+//─────────────────────────────────────────────────────────────────────────────
+// NARRATIVE TEXT WRAPPER (Auto line breaks for table cells)
+//─────────────────────────────────────────────────────────────────────────────
+f_wrapNarrative(string txt, int maxWords, int maxChars) =>
+    array<string> lines = array.new<string>()
+    array<string> words = str.split(txt, " ")
+    int n = array.size(words)
+
+    if n > 0
+        string line = ""
+        int wcnt = 0
+
+        for i = 0 to n - 1
+            string w = array.get(words, i)
+            if str.length(w) == 0
+                continue
+
+            string cand = (wcnt == 0) ? w : (line + " " + w)
+            bool overflow = (wcnt >= maxWords) or (str.length(cand) > maxChars)
+
+            if overflow and wcnt > 0
+                array.push(lines, line)
+                line := w
+                wcnt := 1
+            else
+                line := cand
+                wcnt += 1
+
+        if wcnt > 0
+            array.push(lines, line)
+
+    lines
+
+// Build narrative in parts (returns array of strings, one per section)
+f_buildProfessionalNarrativeParts(CurrentBarAnalysis cBar, CompositeAnalysis comp, TrendContext ctx, 
+     TrendChannel ch, float trendBuy, float trendSell, float trendDelta, float trendDeltaPct,
+     string bodyStatus, float upperPinChg, float lowerPinChg, string volMom,
+     float channelPos, string posStatus, float resistPrice, float supportPrice,
+     DisplayedLevels lvls, int contradictions, bool hasDivergence) =>
+    
+    string narrative = ""
+    float currentPrice = close[baseOff]
+    
+    // Part 1: Current candle status
+    narrative += f_connect("CURRENT_CANDLE") + " " + f_patternDesc(cBar.pattern) + " "
+    narrative += f_connect("WITH_RANGE") + " " + f_rangeStatusStr(cBar.rangeStatus) + ". "
+    
+    // Current pressure
+    if cBar.pressureStatus == "BUYING"
+        narrative += f_connect("SHOWING") + " " + f_pressureStr("BUYING") + " (" + 
+                     (cBar.delta > 0 ? "+" : "") + str.tostring(cBar.delta, format.volume) + "). "
+    else if cBar.pressureStatus == "SELLING"
+        narrative += f_connect("SHOWING") + " " + f_pressureStr("SELLING") + " (" + 
+                     str.tostring(cBar.delta, format.volume) + "). "
+    else
+        narrative += f_connect("SHOWING") + " " + f_pressureStr("BALANCED") + ". "
+    
+    // Part 2: Broader trend context
+    narrative += f_connect("BROADER_CONTEXT") + " " + f_trendTypeStr(ctx.currentType) + " "
+    narrative += f_connect("WITH_STRENGTH") + " " + f_strengthStr(ch.angleDeg) + " "
+    narrative += f_connect("AND_QUALITY") + " " + f_confidenceStr(ctx.qualityScore) + 
+                 " (" + str.tostring(ctx.qualityScore, "#") + "/100). "
+    
+    // Part 3: Block structure pattern
+    narrative += f_connect("STRUCTURE_SHOWS") + " "
+    if ctx.currentType == DIR_UP
+        narrative += f_phrase("HH_HL") + ". "
+    else if ctx.currentType == DIR_DOWN
+        narrative += f_phrase("LH_LL") + ". "
+    else
+        narrative += f_L("mixed pattern with no clear direction", 
+                        "net yön olmayan karışık yapı", 
+                        "कोई स्पष्ट दिशा नहीं के साथ मिश्रित पैटर्न",
+                        "نمط مختلط بدون اتجاه واضح") + ". "
+    
+    // Composite candle vs previous block
+    if comp.blockRelation != "NORMAL" and comp.blockRelation != ""
+        narrative += f_connect("CURRENT_BLOCK") + " " + f_blockRelDesc(comp.blockRelation, comp.blockRelationBias) + ". "
+    
+    // Store part 1 (candle + trend + structure)
+    string part1 = narrative
+    narrative := ""
+    
+    // Part 4: Volume analysis - CRITICAL
+    if hasDivergence
+        narrative += f_connect("HOWEVER") + ", " + f_connect("IMPORTANT_CONTRADICTION") + ": "
+        narrative += f_connect("WHILE_PRICE") + " "
+        if ctx.currentType == DIR_UP
+            narrative += f_L("upward", "yukarı", "ऊपर", "صعوداً") + ", "
+        else if ctx.currentType == DIR_DOWN
+            narrative += f_L("downward", "aşağı", "नीचे", "هبوطاً") + ", "
+
+        
+        narrative += f_connect("VOLUME_SHOWS") + " "
+        if trendDelta < 0
+            narrative += f_L("selling", "satış", "बिक्री", "بيع") + " " + f_connect("DOMINANCE_WITH") + " " + 
+                         str.tostring(math.abs(trendDeltaPct), "#.##") + "%. "
+            narrative += f_connect("THIS_DIVERGENCE") + " " + 
+                         f_L("sellers are active despite price rise", 
+                            "satıcılar fiyat artışına rağmen aktif", 
+                            "विक्रेता मूल्य वृद्धि के बावजूद सक्रिय हैं",
+                            "البائعون نشطون رغم ارتفاع السعر") + ". "
+        else
+            narrative += f_L("buying", "alım", "खरीद", "شراء") + " " + f_connect("DOMINANCE_WITH") + " " + 
+                         str.tostring(trendDeltaPct, "#.##") + "%. "
+            narrative += f_connect("THIS_DIVERGENCE") + " " + 
+                         f_L("buyers are accumulating despite price decline", 
+                            "alıcılar fiyat düşüşüne rağmen toplanıyor", 
+                            "खरीदार मूल्य गिरावट के बावजूद संचय कर रहे हैं",
+                            "المشترون يُجمّعون رغم انخفاض السعر") + ". "
+    else
+        narrative += f_connect("CONFIRMS_TREND") + ", "
+        if trendDelta > 0
+            narrative += f_L("buyers", "alıcılar", "खरीदार", "المشترون") + " " + f_connect("DOMINANCE_WITH") + " " + 
+                         str.tostring(trendDeltaPct, "#.##") + "%. "
+        else if trendDelta < 0
+            narrative += f_L("sellers", "satıcılar", "विक्रेता", "البائعون") + " " + f_connect("DOMINANCE_WITH") + " " + 
+                         str.tostring(math.abs(trendDeltaPct), "#.##") + "%. "
+        else
+            narrative += f_L("balanced with no dominant side", "dengeli hakimiyet yok", "कोई प्रभावी पक्ष नहीं", "متوازن بدون طرف مهيمن") + ". "
+    
+    // Volume momentum
+    narrative += f_connect("VOLUME_MOMENTUM") + " " + f_volMomentumStr(volMom) + ", " + f_connect("INDICATING") + " "
+    if str.pos(volMom, "INCREASING") >= 0
+        narrative += f_L("increased market participation", "artan piyasa katılımı", "बढ़ती बाजार भागीदारी", "تزايد المشاركة في السوق") + ". "
+    else
+        narrative += f_L("decreased market participation", "azalan piyasa katılımı", "घटती बाजार भागीदारी", "تراجع المشاركة في السوق") + ". "
+    
+    // Store part 2 (volume analysis)
+    string part2 = narrative
+    narrative := ""
+    
+    // Part 5: Momentum signals (pins & bodies)
+    narrative += f_connect("CANDLE_BODIES") + " " + f_bodyStatusStr(bodyStatus)
+    if bodyStatus == "EXPANDING"
+        narrative += ", " + f_connect("INDICATING") + " " + 
+                     f_L("increasing power and momentum", "artan güç ve momentum", "बढ़ती शक्ति और गति", "تزايد القوة والزخم") + ". "
+    else if bodyStatus == "CONTRACTING"
+        narrative += ", " + f_L("which may indicate weakening trend strength", 
+                               "bu trend gücünün zayıflamasını gösterebilir", 
+                               "जो रुझान की कमजोरी का संकेत हो सकता है",
+                               "مما قد يُشير إلى ضعف قوة الاتجاه") + ". "
+    else
+        narrative += ". "
+    
+    // Pin analysis
+    if math.abs(upperPinChg) > 15 or math.abs(lowerPinChg) > 15
+        if upperPinChg > 15
+            narrative += f_connect("UPPER_WICKS") + " " + 
+                         f_L("increased", "arttı", "बढ़ा है", "ازدادت") + " " + 
+                         f_connect("BY_PERCENT") + " " + str.tostring(upperPinChg, "#.##") + "%, " + 
+                         f_connect("INDICATING_PRESSURE") + " " + f_connect("SELL_PRESSURE_ABOVE") + ". "
+        
+        if lowerPinChg > 15
+            narrative += f_connect("LOWER_WICKS") + " " + 
+                         f_L("increased", "arttı", "बढ़ा है", "ازدادت") + " " + 
+                         f_connect("BY_PERCENT") + " " + str.tostring(lowerPinChg, "#.##") + "%, " + 
+                         f_connect("INDICATING_PRESSURE") + " " + f_connect("BUY_SUPPORT") + ". "
+        
+        if lowerPinChg < -15
+            narrative += f_connect("LOWER_WICKS") + " " + 
+                         f_L("decreased", "azaldı", "घटा है", "انخفضت") + " " + 
+                         f_connect("BY_PERCENT") + " " + str.tostring(math.abs(lowerPinChg), "#.##") + "%, " + 
+                         f_L("which may indicate weakening support", 
+                            "bu desteğin zayıflamasını gösterebilir", 
+                            "जो समर्थन कमजोर होने का संकेत हो सकता है",
+                            "مما قد يُشير إلى ضعف الدعم") + ". "
+    
+    // Part 6: Position within channel
+    if not na(channelPos)
+        narrative += f_connect("PRICE_POSITION") + " " + 
+                     f_positionZoneStr(channelPos) + " (" + 
+                     str.tostring(channelPos, "#.##") + "% " + f_connect("OF_CHANNEL") + ")"
+        
+        if posStatus == "OVERBOUGHT"
+            narrative += " " + f_L("in overbought zone", "aşırı alım bölgesinde", "अधिक खरीद क्षेत्र में", "في منطقة التشبّع الشرائي") + ". "
+        else if posStatus == "OVERSOLD"
+            narrative += " " + f_L("in oversold zone", "aşırı satım bölgesinde", "अधिक बिक्री क्षेत्र में", "في منطقة التشبّع البيعي") + ". "
+        else
+            narrative += ". "
+    
+    // Store part 3 (momentum + position)
+    string part3 = narrative
+    narrative := ""
+    
+    // KEY LEVEL PROXIMITY - Snapshot Driven (what is ACTUALLY displayed)
+    float pocUpLevel  = lvls.hasPOCUp  ? lvls.pocUp  : na
+    float pocDnLevel  = lvls.hasPOCDn  ? lvls.pocDn  : na
+    float coreUpLevel = lvls.hasCoreUp ? lvls.coreUp : na
+    float coreDnLevel = lvls.hasCoreDn ? lvls.coreDn : na
+
+    [nearResist, resistPct] = f_checkProximity(currentPrice, resistPrice, 2.0)
+    [nearSupport, supportPct] = f_checkProximity(currentPrice, supportPrice, 2.0)
+    [nearPOCUp, pocUpPct] = f_checkProximity(currentPrice, pocUpLevel, 1.5)
+    [nearPOCDn, pocDnPct] = f_checkProximity(currentPrice, pocDnLevel, 1.5)
+    [nearCoreUp, coreUpPct] = f_checkProximity(currentPrice, coreUpLevel, 1.0)
+    [nearCoreDn, coreDnPct] = f_checkProximity(currentPrice, coreDnLevel, 1.0)
+
+    bool hasKeyEvent = nearResist or nearSupport or nearPOCUp or nearPOCDn or nearCoreUp or nearCoreDn
+
+    if hasKeyEvent
+        narrative += f_connect("KEY_NOTE") + ": "
+
+        if nearResist
+            narrative += f_connect("NEAR_RESISTANCE") + " " +
+                         str.tostring(resistPrice, format.mintick) + " (" +
+                         f_connect("DISTANCE") + " " + str.tostring(resistPct, "#.##") + "%). "
+
+        if nearSupport
+            narrative += f_connect("NEAR_SUPPORT") + " " +
+                         str.tostring(supportPrice, format.mintick) + " (" +
+                         f_connect("DISTANCE") + " " + str.tostring(supportPct, "#.##") + "%). "
+
+        if nearPOCUp
+            narrative += f_connect("POC_LEVEL") + " " +
+                         str.tostring(pocUpLevel, format.mintick) + " (" +
+                         f_connect("DISTANCE") + " " + str.tostring(pocUpPct, "#.##") + "%), " +
+                         f_connect("HIGH_VOLUME_AREA") + ". "
+
+        if nearPOCDn
+            narrative += f_connect("POC_LEVEL") + " " +
+                         str.tostring(pocDnLevel, format.mintick) + " (" +
+                         f_connect("DISTANCE") + " " + str.tostring(pocDnPct, "#.##") + "%), " +
+                         f_connect("HIGH_VOLUME_AREA") + ". "
+
+        if nearCoreUp
+            narrative += f_L("Price is near ", "Fiyat şu seviyeye yakın: ", "मूल्य इसके पास है: ", "السعر قريب من ") +
+                         f_typeName(lvls.coreUpType) + " | Box " + str.tostring(lvls.coreUpBox) + " @ " +
+                         str.tostring(coreUpLevel, format.mintick) + " (" +
+                         f_connect("DISTANCE") + " " + str.tostring(coreUpPct, "#.##") + "%). "
+
+        if nearCoreDn
+            narrative += f_L("Price is near ", "Fiyat şu seviyeye yakın: ", "मूल्य इसके पास है: ", "السعر قريب من ") +
+                         f_typeName(lvls.coreDnType) + " | Box " + str.tostring(lvls.coreDnBox) + " @ " +
+                         str.tostring(coreDnLevel, format.mintick) + " (" +
+                         f_connect("DISTANCE") + " " + str.tostring(coreDnPct, "#.##") + "%). "
+
+    else
+        // Even if not "near", report distances to key displayed levels (avoids blind spots)
+        if not na(resistPrice) and not na(supportPrice)
+            float resistDist = resistPrice - currentPrice
+            float supportDist = currentPrice - supportPrice
+            narrative += f_connect("DISTANCE_TO_LEVELS") + " " +
+                         str.tostring(resistDist, "#.##") + ", " +
+                         f_connect("TO_SUPPORT") + " " +
+                         str.tostring(supportDist, "#.##") + ". "
+
+        if not na(pocUpLevel) or not na(pocDnLevel)
+            float dUp = not na(pocUpLevel) ? math.abs(currentPrice - pocUpLevel) : na
+            float dDn = not na(pocDnLevel) ? math.abs(currentPrice - pocDnLevel) : na
+            float nearestPOC = na(dUp) ? pocDnLevel : na(dDn) ? pocUpLevel : (dUp <= dDn ? pocUpLevel : pocDnLevel)
+            [_, pocPct] = f_checkProximity(currentPrice, nearestPOC, 100.0)
+            narrative += f_L(" Nearest POC: ", " En yakın POC: ", " निकटतम POC: ", " أقرب POC: ") +
+                         str.tostring(nearestPOC, format.mintick) + " (" + str.tostring(pocPct, "#.##") + "%). "
+
+        if not na(coreUpLevel) or not na(coreDnLevel)
+            float cdUp = not na(coreUpLevel) ? math.abs(currentPrice - coreUpLevel) : na
+            float cdDn = not na(coreDnLevel) ? math.abs(currentPrice - coreDnLevel) : na
+            float nearestCore = na(cdUp) ? coreDnLevel : na(cdDn) ? coreUpLevel : (cdUp <= cdDn ? coreUpLevel : coreDnLevel)
+            [_, corePct] = f_checkProximity(currentPrice, nearestCore, 100.0)
+            narrative += f_L(" Nearest core level: ", " En yakın çekirdek seviye: ", " निकटतम कोर स्तर: ", " أقرب مستوى جوهري: ") +
+                         str.tostring(nearestCore, format.mintick) + " (" + str.tostring(corePct, "#.##") + "%). "
+    
+    // Store part 4 (key levels)
+    string part4 = narrative
+    narrative := ""
+    
+    // Part 7: Final assessment
+    narrative += f_connect("OVERALL") + ", "
+    
+    if contradictions > 0 or hasDivergence
+        narrative += f_connect("DESPITE") + " " + 
+                     str.tostring(contradictions) + " " + 
+                     f_connect("CONTRADICTIONS") + ", " + 
+                     f_connect("PATTERN_MAINTAINS") + " "
+        
+        if ctx.currentType == DIR_UP
+            narrative += f_connect("UPTREND_CHAR")
+        else if ctx.currentType == DIR_DOWN
+            narrative += f_connect("DOWNTREND_CHAR")
+        else
+            narrative += f_connect("CONSOLIDATION")
+        
+        narrative += ", " + f_connect("THESE_CONTRADICTIONS") + "."
+    else
+        narrative += f_connect("ALL_ALIGNED") + " "
+        
+        if ctx.currentType == DIR_UP
+            narrative += f_connect("UPTREND_CHAR") + "."
+        else if ctx.currentType == DIR_DOWN
+            narrative += f_connect("DOWNTREND_CHAR") + "."
+        else
+            narrative += f_connect("CONSOLIDATION") + " " + f_connect("NO_CLEAR_DIR") + "."
+    
+    // Store part 5 (final assessment)
+    string part5 = narrative
+    
+    // Return array of parts
+    array<string> parts = array.new<string>()
+    array.push(parts, part1)
+    array.push(parts, part2)
+    array.push(parts, part3)
+    array.push(parts, part4)
+    array.push(parts, part5)
+    parts
+
+//━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// VOLUME ENGINE FUNCTIONS
+//━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+f_resolveLTF(bool useCustom, string customTF) =>
+    useCustom ? customTF :
+      timeframe.isseconds  ? "1S" :
+      timeframe.isintraday ? "1"  :
+      timeframe.isdaily    ? "5"  : "60"
+
+f_ltfVol(string ltf) =>
+    [u, d, dl] = tvta.requestUpAndDownVolume(ltf)
+    [math.abs(u), math.abs(d), dl]
+
+f_geoVol() =>
+    float r = high - low
+    float b = na, float s = na
+    if na(volume)
+        b := na, s := na
+    else if r == 0
+        b := volume * 0.5, s := volume * 0.5
+    else
+        b := volume * ((close - low) / r)
+        s := volume * ((high - close) / r)
+    [b, s, b - s]
+
+var float vBuy  = na
+var float vSell = na
+var float vDel  = na
+
+string ltf = f_resolveLTF(i_useCustomLTF, i_customLTF)
+
+if i_calcMethod == "Intrabar (Precise)"
+    [b1, s1, d1] = f_ltfVol(ltf)
+    vBuy := b1, vSell := s1, vDel := d1
+else
+    [b2, s2, d2] = f_geoVol()
+    vBuy := b2, vSell := s2, vDel := d2
+
+//━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// TRUE VOLUME PROFILE POC ENGINE
+//━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// Divides each block's price range into N equal bins, distributes each bar's
+// volume proportionally across the bins its range overlaps, then selects the
+// bin with the highest accumulated volume as the true Point of Control (POC).
+// Returns: [pocPrice (bin midpoint), pocOff (nearest bar offset), pocVol (bin volume)]
+
+f_binProfilePOC(int startOff, int endOff, int numBins) =>
+    // Step 1: Determine block price range
+    float blockHigh = na
+    float blockLow = na
+    for k = startOff to endOff
+        float h = high[k]
+        float l = low[k]
+        if na(blockHigh) or h > blockHigh
+            blockHigh := h
+        if na(blockLow) or l < blockLow
+            blockLow := l
+
+    float resultPrice = na
+    int resultOff = na
+    float resultVol = 0.0
+
+    if not na(blockHigh) and not na(blockLow) and blockHigh > blockLow
+        float binSize = (blockHigh - blockLow) / numBins
+
+        // Step 2: Accumulate volume into bins
+        array<float> binVol = array.new<float>(numBins, 0.0)
+
+        for k = startOff to endOff
+            float barH = high[k]
+            float barL = low[k]
+            float barTotalVol = nz(vBuy[k], 0.0) + nz(vSell[k], 0.0)
+            if barTotalVol > 0.0 and barH > barL
+                // Identify overlapping bin range for this bar
+                int firstBin = math.max(0, int(math.floor((barL - blockLow) / binSize)))
+                int lastBin  = math.min(numBins - 1, int(math.floor((barH - blockLow - syminfo.mintick * 0.01) / binSize)))
+                lastBin := math.max(firstBin, lastBin)
+                float barRange = barH - barL
+                // Distribute volume proportionally by price overlap
+                for b = firstBin to lastBin
+                    float bLow  = blockLow + b * binSize
+                    float bHigh = bLow + binSize
+                    float overlap = math.min(barH, bHigh) - math.max(barL, bLow)
+                    float proportion = barRange > 0.0 ? math.max(0.0, overlap / barRange) : 0.0
+                    array.set(binVol, b, array.get(binVol, b) + barTotalVol * proportion)
+
+        // Step 3: Find the bin with maximum accumulated volume (= POC)
+        float maxVol = 0.0
+        int maxBin = 0
+        for b = 0 to numBins - 1
+            float bv = array.get(binVol, b)
+            if bv > maxVol
+                maxVol := bv
+                maxBin := b
+
+        // POC price = midpoint of the winning bin
+        resultPrice := blockLow + (maxBin + 0.5) * binSize
+        resultVol   := maxVol
+
+        // Step 4: Find the nearest bar to POC price (for chart positioning)
+        float minDist = na
+        for k = startOff to endOff
+            float dist = math.abs(hlc3[k] - resultPrice)
+            if na(minDist) or dist < minDist
+                minDist   := dist
+                resultOff := k
+
+    [resultPrice, resultOff, resultVol]
+
+ 
+
+//━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// GLOBAL CALCULATIONS
+//━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+float globalAvgRange = ta.atr(20)
+float globalYZVol    = f_yangZhangVolatility(20)
+
+int histBarsDash = math.max(0, bar_index - baseOff + 1)
+histBarsDash := math.min(histBarsDash, 5000)
+
+int scannableBars = 0
+if i_calcMethod == "Intrabar (Precise)"
+    int probe = math.min(histBarsDash, effWindow)
+    for off = baseOff to baseOff + probe - 1
+        bool ok = not na(vBuy[off]) and not na(vSell[off]) and not na(vDel[off])
+        if ok
+            scannableBars += 1
+        else
+            break
+else
+    scannableBars := math.min(histBarsDash, effWindow)
+
+//━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// MAIN RENDERING - GROUP BOXES & COMPOSITE CANDLE
+//━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+var int lastAnalyticsBar = -1
+
+if barstate.islast
+    int maxOff = baseOff + effWindow - 1
+    bool enoughHistory = bar_index >= maxOff
+    
+    // Current mode (baseOff=0): update every tick
+    // Closed mode (baseOff=1): only update on new bar (preserves trendLocked)
+    bool isNewBarForAnalytics = bar_index != lastAnalyticsBar
+    bool shouldRebuildAnalytics = (baseOff == 0) or isNewBarForAnalytics
+    
+    if shouldRebuildAnalytics
+        lastAnalyticsBar := bar_index
+
+    if not enoughHistory
+        f_ensureLabelCount(0)
+        f_ensureBoxCount(0)
+    else
+        if i_showGroupNums
+            f_ensureLabelCount(i_groups)
+            for gi = 0 to i_groups - 1
+                int endOff = baseOff + (gi + 1) * groupSize - 1
+                label lb = array.get(lblNums, gi)
+                label.set_xy(lb, bar_index - endOff, high[endOff])
+                label.set_text(lb, str.tostring(gi + 1))
+        else
+            f_ensureLabelCount(0)
+
+        if i_showGroupBoxes
+            f_ensureBoxCount(i_groups)
+            f_ensureAnalyticsDataCount(i_groups)
+
+            if i_showCompositeCandle
+                f_ensureCompositeBodyCount(i_groups)
+                f_ensureCompositeUpperWickCount(i_groups)
+                f_ensureCompositeLowerWickCount(i_groups)
+            else
+                f_ensureCompositeBodyCount(0)
+                f_ensureCompositeUpperWickCount(0)
+                f_ensureCompositeLowerWickCount(0)
+
+            color bullishCol = color.rgb(34, 197, 94)
+            color bearishCol = color.rgb(239, 68, 68)
+            color neutralCol = color.rgb(156, 163, 175)
+
+            for gi = 0 to i_groups - 1
+                // Skip full recalculation if not needed (preserves trendLocked in Closed mode)
+                if not shouldRebuildAnalytics
+                    // Only update visual positions, not analytics data
+                    int startOff = baseOff + gi * groupSize
+                    int endOff   = baseOff + (gi + 1) * groupSize - 1
+                    int xRight = bar_index - startOff
+                    int xLeft  = bar_index - endOff
+                    box bx = array.get(grpBoxes, gi)
+                    box.set_lefttop(bx, xLeft, high[endOff])
+                    box.set_rightbottom(bx, xRight, low[startOff])
+                    continue
+                int startOff = baseOff + gi * groupSize
+                int endOff   = baseOff + (gi + 1) * groupSize - 1
+
+                float top = na, float bot = na
+                float sumBuyBlock = 0.0, float sumSellBlock = 0.0
+                float sumUpperPin = 0.0, float sumLowerPin = 0.0, float sumBody = 0.0
+                float compOpen = na, float compHigh = na, float compLow = na, float compClose = na
+
+                for k = startOff to endOff
+                    float h = high[k], float l = low[k], float o = open[k], float c = close[k]
+                    if na(top) or h > top
+                        top := h
+                    if na(bot) or l < bot
+                        bot := l
+
+                    float bVol = vBuy[k], float sVol = vSell[k]
+                    if not na(bVol) and not na(sVol)
+                        sumBuyBlock += bVol, sumSellBlock += sVol
+
+                    sumUpperPin += h - math.max(o, c)
+                    sumLowerPin += math.min(o, c) - l
+                    sumBody     += math.abs(c - o)
+
+                    if k == endOff
+                        compOpen := o
+                    if k == startOff
+                        compClose := c
+                    if na(compHigh) or h > compHigh
+                        compHigh := h
+                    if na(compLow) or l < compLow
+                        compLow := l
+
+                int xRight = bar_index - startOff
+                int xLeft  = bar_index - endOff
+                int xCenter = int(math.round((xLeft + xRight) / 2.0))
+
+                box bx = array.get(grpBoxes, gi)
+                box.set_lefttop(bx, xLeft, top)
+                box.set_rightbottom(bx, xRight, bot)
+                box.set_bgcolor(bx, color.new(i_boxColor, i_boxTransp))
+                box.set_border_color(bx, color.new(color.black, 100))
+                box.set_border_width(bx, 0)
+
+                int n = groupSize
+                float blockDelta  = sumBuyBlock - sumSellBlock
+                float blockHeight = top - bot
+                float blockArea   = blockHeight * n
+
+                BlockAnalytics ba = BlockAnalytics.new(true,
+                    sumBuyBlock, sumSellBlock, blockDelta,
+                    blockHeight, blockArea,
+                    n > 0 ? sumUpperPin / n : na,
+                    n > 0 ? sumLowerPin / n : na,
+                    n > 0 ? sumBody / n : na,
+                    compOpen, compHigh, compLow, compClose,
+                    xLeft, xRight, xCenter, bot)
+                array.set(analyticsData, gi, ba)
+
+                if i_showCompositeCandle and not na(compOpen) and not na(compHigh) and not na(compLow) and not na(compClose)
+                    color candleCol = blockDelta > 0 ? bullishCol : blockDelta < 0 ? bearishCol : neutralCol
+                    color wickCol   = color.new(candleCol, i_compositeCandleTransp - 15)
+                    color bodyCol   = color.new(candleCol, i_compositeCandleTransp)
+                    color borderCol = color.new(candleCol, i_compositeCandleTransp - 25)
+
+                    float bodyTop = math.max(compOpen, compClose)
+                    float bodyBot = math.min(compOpen, compClose)
+                    int bodyLeft  = xCenter - 1, int bodyRight = xCenter + 1
+
+                    box bodyBox = array.get(compositeBodies, gi)
+                    box.set_lefttop(bodyBox, bodyLeft, bodyTop)
+                    box.set_rightbottom(bodyBox, bodyRight, bodyBot)
+                    box.set_bgcolor(bodyBox, bodyCol)
+                    box.set_border_color(bodyBox, borderCol)
+                    box.set_border_width(bodyBox, 1)
+
+                    line upperWick = array.get(compositeUpperWicks, gi)
+                    line.set_xy1(upperWick, xCenter, bodyTop)
+                    line.set_xy2(upperWick, xCenter, compHigh)
+                    line.set_color(upperWick, wickCol)
+                    line.set_width(upperWick, 1)
+
+                    line lowerWick = array.get(compositeLowerWicks, gi)
+                    line.set_xy1(lowerWick, xCenter, bodyBot)
+                    line.set_xy2(lowerWick, xCenter, compLow)
+                    line.set_color(lowerWick, wickCol)
+                    line.set_width(lowerWick, 1)
+
+        else
+            f_ensureBoxCount(0)
+            f_ensureAnalyticsDataCount(0)
+            f_ensureCompositeBodyCount(0)
+            f_ensureCompositeUpperWickCount(0)
+            f_ensureCompositeLowerWickCount(0)
+
+//━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// CORE CALCULATION RUNNER
+//━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+// Pre-compute bin profile POC at global scope (Pine v6 consistency requirement)
+// NOTE: Warning about f_binProfilePOC is expected and harmless — the function uses
+// variable-offset series access inside a loop, which Pine v6 cannot statically verify
+// but produces correct results since all series data is fully materialized at runtime.
+    while array.size(g_binPocPrice) < i_groups
+        array.push(g_binPocPrice, na)
+        array.push(g_binPocOff, na)
+        array.push(g_binPocVol, na)
+    while array.size(g_binPocPrice) > i_groups
+        array.pop(g_binPocPrice)
+        array.pop(g_binPocOff)
+        array.pop(g_binPocVol)
+
+    for _gi = 0 to i_groups - 1
+        int _sOff = baseOff + _gi * groupSize
+        int _eOff = baseOff + (_gi + 1) * groupSize - 1
+
+        // ── Inlined bin profile POC (eliminates Pine v6 function-call warning) ──
+        // Step 1: Determine block price range
+        float _blockHigh = na
+        float _blockLow  = na
+        for k = _sOff to _eOff
+            float _h = high[k]
+            float _l = low[k]
+            if na(_blockHigh) or _h > _blockHigh
+                _blockHigh := _h
+            if na(_blockLow) or _l < _blockLow
+                _blockLow := _l
+
+        float _bp = na
+        int   _bo = na
+        float _bv = 0.0
+
+        if not na(_blockHigh) and not na(_blockLow) and _blockHigh > _blockLow
+            float _binSize = (_blockHigh - _blockLow) / i_pocBinCount
+
+            // Step 2: Accumulate volume into bins
+            array<float> _binVol = array.new<float>(i_pocBinCount, 0.0)
+            for k = _sOff to _eOff
+                float _barH = high[k]
+                float _barL = low[k]
+                float _barTotalVol = nz(vBuy[k], 0.0) + nz(vSell[k], 0.0)
+                if _barTotalVol > 0.0 and _barH > _barL
+                    int _firstBin = math.max(0, int(math.floor((_barL - _blockLow) / _binSize)))
+                    int _lastBin  = math.min(i_pocBinCount - 1, int(math.floor((_barH - _blockLow - syminfo.mintick * 0.01) / _binSize)))
+                    _lastBin := math.max(_firstBin, _lastBin)
+                    float _barRange = _barH - _barL
+                    for b = _firstBin to _lastBin
+                        float _bLow  = _blockLow + b * _binSize
+                        float _bHigh = _bLow + _binSize
+                        float _overlap = math.min(_barH, _bHigh) - math.max(_barL, _bLow)
+                        float _proportion = _barRange > 0.0 ? math.max(0.0, _overlap / _barRange) : 0.0
+                        array.set(_binVol, b, array.get(_binVol, b) + _barTotalVol * _proportion)
+
+            // Step 3: Find bin with maximum accumulated volume (= POC)
+            float _maxVol = 0.0
+            int   _maxBin = 0
+            for b = 0 to i_pocBinCount - 1
+                float _bvol = array.get(_binVol, b)
+                if _bvol > _maxVol
+                    _maxVol := _bvol
+                    _maxBin := b
+
+            _bp := _blockLow + (_maxBin + 0.5) * _binSize
+            _bv := _maxVol
+
+            // Step 4: Nearest bar to POC price (for chart positioning)
+            float _minDist = na
+            for k = _sOff to _eOff
+                float _dist = math.abs(hlc3[k] - _bp)
+                if na(_minDist) or _dist < _minDist
+                    _minDist := _dist
+                    _bo     := k
+
+        array.set(g_binPocPrice, _gi, _bp)
+        array.set(g_binPocOff, _gi, nz(_bo, 0))
+        array.set(g_binPocVol, _gi, nz(_bv, 0.0))
+
+if barstate.islast
+    bool enoughHistoryCore = bar_index >= (baseOff + effWindow - 1)
+    int refX = bar_index - baseOff
+    int projLen = (i_coreProjectFwd ? groupSize : 0)
+    int x2 = refX + projLen
+    float refPrice = close[baseOff]
+    float hiBasis = high[baseOff], float loBasis = low[baseOff]
+
+    int minKeepSrc = bar_index - (effWindow + groupSize + 25)
+    f_pruneConsumed(minKeepSrc)
+
+    lnCoreUp := f_ensureLine(lnCoreUp, _coreBuyCol,  line.style_solid)
+    lnCoreDn := f_ensureLine(lnCoreDn, _coreSellCol, line.style_solid)
+    lnPOCUp  := f_ensureLine(lnPOCUp,  _pocCol,      line.style_dashed)
+    lnPOCDn  := f_ensureLine(lnPOCDn,  _pocColDim,   line.style_dashed)
+
+    if not enoughHistoryCore
+        f_ensureCoreCount(0)
+        f_hideLine(lnCoreUp, refX, refPrice)
+        f_hideLine(lnCoreDn, refX, refPrice)
+        f_hideLine(lnPOCUp,  refX, refPrice)
+        f_hideLine(lnPOCDn,  refX, refPrice)
+
+        // Clear snapshot to prevent stale Narrative
+        g_levels := g_levels.syncFromCore(na, na, na, na, na, na, na, na, na, na)
+        g_pocUpP := na
+        g_pocDnP := na
+    else
+        f_ensureCoreCount(i_groups)
+        int validBarsCore = i_calcMethod == "Intrabar (Precise)" ? scannableBars : math.min(histBarsDash, effWindow)
+        int validGroupsCore = groupSize > 0 ? int(math.floor(float(validBarsCore) / groupSize)) : 0
+        validGroupsCore := math.min(validGroupsCore, i_groups)
+
+        if not i_coreEnable
+            for gi = 0 to i_groups - 1
+                array.set(coreBoxes, gi, f_coreEmpty())
+        else
+            for gi = 0 to i_groups - 1
+                bool gActive = gi < validGroupsCore
+                int startOff = baseOff + gi * groupSize
+                int endOff = baseOff + (gi + 1) * groupSize - 1
+
+                // Read pre-computed bin profile POC from global cache
+                float _bpP = array.get(g_binPocPrice, gi)
+                int   _bpOff = array.get(g_binPocOff, gi)
+                float _bpV = array.get(g_binPocVol, gi)
+
+                if not gActive
+                    array.set(coreBoxes, gi, f_coreEmpty())
+                else
+                    bool gValid = true
+                    float sumB = 0.0, float sumS = 0.0
+                    float maxB = -1.0, int maxBOff = na, float minB = na, int minBOff = na
+                    float maxS = -1.0, int maxSOff = na, float minS = na, int minSOff = na
+                    float pocV = -1.0, int pocOff = na
+
+                    for k = startOff to endOff
+                        float b = vBuy[k], float s = vSell[k]
+                        if na(b) or na(s)
+                            gValid := false
+                        else
+                            sumB += b, sumS += s
+                            if b > maxB
+                                maxB := b, maxBOff := k
+                            if na(minB) or b < minB
+                                minB := b, minBOff := k
+                            if s > maxS
+                                maxS := s, maxSOff := k
+                            if na(minS) or s < minS
+                                minS := s, minSOff := k
+                            float tv = b + s
+                            if tv > pocV
+                                pocV := tv, pocOff := k
+
+                    if not gValid or na(maxBOff) or na(maxSOff) or na(minBOff) or na(minSOff) or na(pocOff)
+                        array.set(coreBoxes, gi, f_coreEmpty())
+                    else
+                        // Resolve POC: use pre-computed bin profile or original single-bar fallback
+                        float finalPocPrice = hlc3[pocOff]
+                        int   finalPocOff   = pocOff
+                        float finalPocVol   = pocV
+                        if i_pocBinProfile and not na(_bpP)
+                            finalPocPrice := _bpP
+                            finalPocOff   := nz(_bpOff, pocOff)
+                            finalPocVol   := _bpV
+
+                        BoxCore bc = BoxCore.new(true, sumB, sumS, sumB - sumS,
+                            finalPocPrice, finalPocOff, finalPocVol,
+                            maxB, maxBOff, high[maxBOff],
+                            maxS, maxSOff, low[maxSOff],
+                            minB, minBOff, high[minBOff],
+                            minS, minSOff, low[minSOff])
+                        array.set(coreBoxes, gi, bc)
+
+        bool showCoreNearest = i_coreDrawLines and i_coreNearestOnly and (i_coreShowMax or i_coreShowMin)
+        float extUpP = na, int extUpSrc = na, int extUpTyp = na, int extUpBox = na
+        float extDnP = na, int extDnSrc = na, int extDnTyp = na, int extDnBox = na
+
+        if showCoreNearest and i_coreEnable
+            [_eUpP, _eUpSrc, _eUpTyp, _eUpBox, _eDnP, _eDnSrc, _eDnTyp, _eDnBox] = f_pickNearestExt(refPrice)
+            extUpP := _eUpP, extUpSrc := _eUpSrc, extUpTyp := _eUpTyp, extUpBox := _eUpBox
+            extDnP := _eDnP, extDnSrc := _eDnSrc, extDnTyp := _eDnTyp, extDnBox := _eDnBox
+
+        bool showPOCNearest = i_pocEnable and i_pocShowNearest and i_coreEnable
+        float pocUpP = na, int pocUpSrc = na, int pocUpBox = na
+        float pocDnP = na, int pocDnSrc = na, int pocDnBox = na
+
+        if showPOCNearest
+            [_pUpP, _pUpSrc, _pUpBox, _pDnP, _pDnSrc, _pDnBox] = f_pickNearestPOC(refPrice)
+            pocUpP := _pUpP, pocUpSrc := _pUpSrc, pocUpBox := _pUpBox
+            pocDnP := _pDnP, pocDnSrc := _pDnSrc, pocDnBox := _pDnBox
+        else
+            pocUpP := na, pocUpSrc := na, pocUpBox := na
+            pocDnP := na, pocDnSrc := na, pocDnBox := na
+
+        for pass = 0 to 1
+            bool changed = false
+            if showCoreNearest and not na(extUpP) and loBasis <= extUpP and extUpP <= hiBasis
+                f_markConsumed(extUpSrc, extUpTyp, extUpP), changed := true
+            if showCoreNearest and not na(extDnP) and loBasis <= extDnP and extDnP <= hiBasis
+                f_markConsumed(extDnSrc, extDnTyp, extDnP), changed := true
+            if showPOCNearest and not na(pocUpP) and loBasis <= pocUpP and pocUpP <= hiBasis
+                f_markConsumed(pocUpSrc, _T_POC, pocUpP), changed := true
+            if showPOCNearest and not na(pocDnP) and loBasis <= pocDnP and pocDnP <= hiBasis
+                f_markConsumed(pocDnSrc, _T_POC, pocDnP), changed := true
+
+            if changed
+                if showCoreNearest
+                    [_extUpP, _extUpSrc, _extUpTyp, _extUpBox, _extDnP, _extDnSrc, _extDnTyp, _extDnBox] = f_pickNearestExt(refPrice)
+                    extUpP := _extUpP, extUpSrc := _extUpSrc, extUpTyp := _extUpTyp, extUpBox := _extUpBox
+                    extDnP := _extDnP, extDnSrc := _extDnSrc, extDnTyp := _extDnTyp, extDnBox := _extDnBox
+                if showPOCNearest
+                    [_pocUpP, _pocUpSrc, _pocUpBox, _pocDnP, _pocDnSrc, _pocDnBox] = f_pickNearestPOC(refPrice)
+                    pocUpP := _pocUpP, pocUpSrc := _pocUpSrc, pocUpBox := _pocUpBox
+                    pocDnP := _pocDnP, pocDnSrc := _pocDnSrc, pocDnBox := _pocDnBox
+
+        // Sync FINAL displayed levels for Narrative (after consumed re-picks)
+        g_levels := g_levels.syncFromCore(
+             pocUpP, pocUpBox,
+             pocDnP, pocDnBox,
+             extUpP, extUpTyp, extUpBox,
+             extDnP, extDnTyp, extDnBox)
+
+        // Keep legacy globals aligned (if other parts rely on them)
+        g_pocUpP := g_levels.hasPOCUp ? g_levels.pocUp : na
+        g_pocDnP := g_levels.hasPOCDn ? g_levels.pocDn : na
+
+        lblCoreUp := f_ensureLabel(lblCoreUp, _coreBuyCol)
+        lblCoreDn := f_ensureLabel(lblCoreDn, _coreSellCol)
+        lblPOCUp  := f_ensureLabel(lblPOCUp,  _pocCol)
+        lblPOCDn  := f_ensureLabel(lblPOCDn,  _pocColDim)
+
+        if showCoreNearest and not na(extUpP)
+            f_setHLine(lnCoreUp, extUpSrc, x2, extUpP, _coreBuyCol)
+            f_setLineLabel(lblCoreUp, x2, extUpP, f_typeName(extUpTyp) + " | Box " + str.tostring(extUpBox) + " | " + str.tostring(extUpP, format.mintick), _coreBuyCol)
+        else
+            f_hideLine(lnCoreUp, refX, refPrice), f_hideLabel(lblCoreUp)
+
+        if showCoreNearest and not na(extDnP)
+            f_setHLine(lnCoreDn, extDnSrc, x2, extDnP, _coreSellCol)
+            f_setLineLabel(lblCoreDn, x2, extDnP, f_typeName(extDnTyp) + " | Box " + str.tostring(extDnBox) + " | " + str.tostring(extDnP, format.mintick), _coreSellCol)
+        else
+            f_hideLine(lnCoreDn, refX, refPrice), f_hideLabel(lblCoreDn)
+
+        if showPOCNearest and not na(pocUpP)
+            f_setHLine(lnPOCUp, pocUpSrc, x2, pocUpP, _pocCol)
+            f_setLineLabel(lblPOCUp, x2, pocUpP, "POC | Box " + str.tostring(pocUpBox) + " | " + str.tostring(pocUpP, format.mintick), _pocCol)
+        else
+            f_hideLine(lnPOCUp, refX, refPrice), f_hideLabel(lblPOCUp)
+
+        if showPOCNearest and not na(pocDnP)
+            f_setHLine(lnPOCDn, pocDnSrc, x2, pocDnP, _pocColDim)
+            f_setLineLabel(lblPOCDn, x2, pocDnP, "POC | Box " + str.tostring(pocDnBox) + " | " + str.tostring(pocDnP, format.mintick), _pocColDim)
+        else
+            f_hideLine(lnPOCDn, refX, refPrice), f_hideLabel(lblPOCDn)
+
+//━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// TREND CHANNEL RUNNER
+//━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+var int lastTrendCalcBar = -1
+
+if barstate.islast
+    // Current mode (baseOff=0): update every tick (live repainting is acceptable)
+    // Closed mode (baseOff=1): only update on new bar (stable, no repainting)
+    bool isNewBar = bar_index != lastTrendCalcBar
+    bool shouldUpdateTrends = (baseOff == 0) or isNewBar
+    
+    if shouldUpdateTrends
+        f_clearAllChannels()
+        lastTrendCalcBar := bar_index
+        
+        if i_trendEnable and array.size(analyticsData) >= i_trendMinBlocks
+            // Detect all trend channels
+            f_detectTrendChannels(i_rangeAngleThreshold, globalYZVol)
+            
+            // Draw all channels (projection only for latest trend, +2 to compensate for center offset)
+            int projLen = i_trendProject ? (groupSize + 2) : 0
+            f_drawAllChannels(projLen, i_trendUpColor, i_trendDnColor, i_trendRangeColor,
+                              i_trendLineWidth, i_trendLineStyle, i_showRangeSegments)
+            
+            // Draw Upper & Lower Channel labels
+            if array.size(trendChannels) > 0
+                TrendChannel latestCh = array.get(trendChannels, 0)
+                
+                // Calculate projection endpoints (same as channels)
+                int upperBarSpan = latestCh.upperX2 - latestCh.upperX1
+                int lowerBarSpan = latestCh.lowerX2 - latestCh.lowerX1
+                float upperSlope = upperBarSpan > 0 ? (latestCh.upperY2 - latestCh.upperY1) / upperBarSpan : 0.0
+                float lowerSlope = lowerBarSpan > 0 ? (latestCh.lowerY2 - latestCh.lowerY1) / lowerBarSpan : 0.0
+                int upperX2Proj = latestCh.upperX2 + projLen
+                int lowerX2Proj = latestCh.lowerX2 + projLen
+                float upperY2Proj = latestCh.upperY2 + (upperSlope * projLen)
+                float lowerY2Proj = latestCh.lowerY2 + (lowerSlope * projLen)
+                
+                // Calculate individual angles for each line
+                float upperAngleDeg = upperBarSpan > 0 and globalYZVol > 0.0 ? math.todegrees(math.atan(upperSlope * math.sqrt(float(upperBarSpan)) / globalYZVol)) : 0.0
+                float lowerAngleDeg = lowerBarSpan > 0 and globalYZVol > 0.0 ? math.todegrees(math.atan(lowerSlope * math.sqrt(float(lowerBarSpan)) / globalYZVol)) : 0.0
+                
+                // Calculate distances and percentages
+                float currentPrice = close[baseOff]
+                float resistDiff = upperY2Proj - currentPrice
+                float supportDiff = currentPrice - lowerY2Proj
+                float resistPct = currentPrice != 0 ? (resistDiff / currentPrice) * 100 : 0.0
+                float supportPct = currentPrice != 0 ? (supportDiff / currentPrice) * 100 : 0.0
+                
+                // Determine color based on trend
+                color chCol = latestCh.channelType == DIR_UP ? i_trendUpColor : 
+                              latestCh.channelType == DIR_DOWN ? i_trendDnColor : i_trendRangeColor
+                
+                // Block range text
+                string blockRange = "Blk " + str.tostring(latestCh.startBlock) + "-" + str.tostring(latestCh.endBlock)
+                
+                // Format label texts with block range and angles
+                string upperText = "▲ Upper | " + blockRange + " | " + 
+                                  str.tostring(upperY2Proj, format.mintick) + 
+                                  " (+" + str.tostring(resistDiff, "#.##") + " | +" + 
+                                  str.tostring(resistPct, "#.##") + "%) | " +
+                                  str.tostring(upperAngleDeg, "#.#") + "°"
+                
+                string lowerText = "▼ Lower | " + blockRange + " | " + 
+                                  str.tostring(lowerY2Proj, format.mintick) + 
+                                  " (-" + str.tostring(supportDiff, "#.##") + " | -" + 
+                                  str.tostring(supportPct, "#.##") + "%) | " +
+                                  str.tostring(lowerAngleDeg, "#.#") + "°"
+                
+                // Create or update Upper Channel label
+                if na(lblTrendResist)
+                    lblTrendResist := label.new(upperX2Proj, upperY2Proj, upperText,
+                                               style = label.style_label_left, 
+                                               size = GLOBAL_TEXT_SIZE,
+                                               textcolor = chCol, 
+                                               color = color.new(color.black, 85),
+                                               tooltip = "Upper channel line: Block range | Price | Distance | Angle")
+                else
+                    label.set_xy(lblTrendResist, upperX2Proj, upperY2Proj)
+                    label.set_text(lblTrendResist, upperText)
+                    label.set_textcolor(lblTrendResist, chCol)
+                    label.set_size(lblTrendResist, GLOBAL_TEXT_SIZE)
+                    label.set_tooltip(lblTrendResist, "Upper channel line: Block range | Price | Distance | Angle")
+                
+                // Create or update Lower Channel label
+                if na(lblTrendSupport)
+                    lblTrendSupport := label.new(lowerX2Proj, lowerY2Proj, lowerText,
+                                                style = label.style_label_left, 
+                                                size = GLOBAL_TEXT_SIZE,
+                                                textcolor = chCol, 
+                                                color = color.new(color.black, 85),
+                                                tooltip = "Lower channel line: Block range | Price | Distance | Angle")
+                else
+                    label.set_xy(lblTrendSupport, lowerX2Proj, lowerY2Proj)
+                    label.set_text(lblTrendSupport, lowerText)
+                    label.set_textcolor(lblTrendSupport, chCol)
+                    label.set_size(lblTrendSupport, GLOBAL_TEXT_SIZE)
+                    label.set_tooltip(lblTrendSupport, "Lower channel line: Block range | Price | Distance | Angle")
+            else
+                // No trend detected - hide labels
+                if not na(lblTrendResist)
+                    label.set_xy(lblTrendResist, bar_index, close)
+                    label.set_text(lblTrendResist, "")
+                    label.set_textcolor(lblTrendResist, color.new(color.gray, 100))
+                if not na(lblTrendSupport)
+                    label.set_xy(lblTrendSupport, bar_index, close)
+                    label.set_text(lblTrendSupport, "")
+                    label.set_textcolor(lblTrendSupport, color.new(color.gray, 100))
+
+
+int maxBoxesByHist = groupSize > 0 ? int(math.floor(float(math.min(histBarsDash, effWindow)) / groupSize)) : 0
+int maxBoxesByScan = groupSize > 0 ? int(math.floor(float(scannableBars) / groupSize)) : 0
+int maxBoxesAllowedDash = math.max(0, math.min(i_groups, maxBoxesByHist))
+if i_calcMethod == "Intrabar (Precise)"
+    maxBoxesAllowedDash := math.min(maxBoxesAllowedDash, maxBoxesByScan)
+
+int boxesEff = math.max(0, math.min(i_globalPeriodBoxes, maxBoxesAllowedDash))
+int globalPeriodBars = boxesEff * groupSize
+
+f_fmtVol(float v) => na(v) ? "-" : str.tostring(v, format.volume)
+f_fmtPrice(float v) => na(v) ? "-" : str.tostring(v, format.mintick)
+
+var table dashT = na
+int DASH_COLS = 4
+int DASH_ROWS = 50
+
+if i_showDash
+    if na(dashT)
+        dashT := table.new(i_dashPos, DASH_COLS, DASH_ROWS,
+             frame_color = color.new(color.white, 85), frame_width = 1,
+             border_color = color.new(color.white, 92), border_width = 1)
+else
+    if not na(dashT)
+        table.clear(dashT, 0, 0, DASH_COLS - 1, DASH_ROWS - 1)
+        dashT := na
+
+if i_showDash and not na(dashT) and barstate.islast
+    table.clear(dashT, 0, 0, DASH_COLS - 1, DASH_ROWS - 1)
+
+    // Get latest trend data
+    TrendChannel latestTrend = array.size(trendChannels) > 0 ? array.get(trendChannels, 0) : na
+    bool trendValid = not na(latestTrend) and i_trendEnable
+    
+    // Aggregate trend data
+    float trendBuy = 0.0, float trendSell = 0.0
+    float sumUpperPin = 0.0, float sumLowerPin = 0.0, float sumBody = 0.0
+    float firstBlockUpperPin = na, float lastBlockUpperPin = na
+    float firstBlockLowerPin = na, float lastBlockLowerPin = na
+    float firstBlockBody = na, float lastBlockBody = na
+    float firstBlockVol = na, float lastBlockVol = na
+    float firstBlockDelta = na, float lastBlockDelta = na
+    int trendBlocks = 0
+    
+    if trendValid
+        int trendStart = latestTrend.startBlock - 1
+        int trendEnd = latestTrend.endBlock - 1
+        trendBlocks := trendEnd - trendStart + 1
+        
+        for i = trendStart to trendEnd
+            if i < array.size(analyticsData)
+                BlockAnalytics ba = array.get(analyticsData, i)
+                if ba.valid
+                    trendBuy += ba.totalBuy
+                    trendSell += ba.totalSell
+                    sumUpperPin += ba.avgUpperPin
+                    sumLowerPin += ba.avgLowerPin
+                    sumBody += ba.avgBody
+                    
+                    if i == trendEnd
+                        firstBlockUpperPin := ba.avgUpperPin
+                        firstBlockLowerPin := ba.avgLowerPin
+                        firstBlockBody := ba.avgBody
+                        firstBlockVol := ba.totalBuy + ba.totalSell
+                        firstBlockDelta := ba.delta
+                    if i == trendStart
+                        lastBlockUpperPin := ba.avgUpperPin
+                        lastBlockLowerPin := ba.avgLowerPin
+                        lastBlockBody := ba.avgBody
+                        lastBlockVol := ba.totalBuy + ba.totalSell
+                        lastBlockDelta := ba.delta
+    
+    float trendDelta = trendBuy - trendSell
+    float trendDeltaPct = trendBuy + trendSell > 0 ? (trendDelta / (trendBuy + trendSell)) * 100 : 0.0
+    float avgUpperPin = trendBlocks > 0 ? sumUpperPin / trendBlocks : na
+    float avgLowerPin = trendBlocks > 0 ? sumLowerPin / trendBlocks : na
+    float avgBody = trendBlocks > 0 ? sumBody / trendBlocks : na
+    
+    // Pin change percentages
+    float upperPinChg = not na(firstBlockUpperPin) and not na(lastBlockUpperPin) and firstBlockUpperPin != 0 ? ((lastBlockUpperPin - firstBlockUpperPin) / firstBlockUpperPin) * 100 : 0.0
+    float lowerPinChg = not na(firstBlockLowerPin) and not na(lastBlockLowerPin) and firstBlockLowerPin != 0 ? ((lastBlockLowerPin - firstBlockLowerPin) / firstBlockLowerPin) * 100 : 0.0
+    
+    // Body expansion status
+    string bodyStatus = not na(firstBlockBody) and not na(lastBlockBody) ? (lastBlockBody > firstBlockBody ? "EXPANDING" : lastBlockBody < firstBlockBody ? "CONTRACTING" : "STABLE") : "-"
+    
+    // Volume momentum
+    string volMom = not na(firstBlockVol) and not na(lastBlockVol) ? (lastBlockVol > firstBlockVol ? "INCREASING ▲" : "DECREASING ▼") : "-"
+    
+    // Delta direction
+    string deltaDir = not na(firstBlockDelta) and not na(lastBlockDelta) ? (lastBlockDelta > firstBlockDelta ? "POSITIVE ▲" : "NEGATIVE ▼") : "-"
+    
+    // Pin ratio and control
+    float pinRatio = not na(avgUpperPin) and not na(avgLowerPin) and avgLowerPin != 0 ? avgUpperPin / avgLowerPin : 1.0
+    string control = trendDelta > 0 ? "BUYERS" : trendDelta < 0 ? "SELLERS" : "BALANCED"
+    
+    // Trend Channel Boundaries (display-aligned with projection)
+    float currentPrice = close[baseOff]
+
+    int projLenCh = (trendValid and i_trendProject) ? (groupSize + 2) : 0
+    float upperChPrice = na
+    float lowerChPrice = na
+
+    if trendValid
+        int upperSpanCh = latestTrend.upperX2 - latestTrend.upperX1
+        int lowerSpanCh = latestTrend.lowerX2 - latestTrend.lowerX1
+        float upperSlopeCh = upperSpanCh != 0 ? (latestTrend.upperY2 - latestTrend.upperY1) / upperSpanCh : 0.0
+        float lowerSlopeCh = lowerSpanCh != 0 ? (latestTrend.lowerY2 - latestTrend.lowerY1) / lowerSpanCh : 0.0
+        upperChPrice := latestTrend.upperY2 + (upperSlopeCh * projLenCh)
+        lowerChPrice := latestTrend.lowerY2 + (lowerSlopeCh * projLenCh)
+
+    // Keep existing downstream variable names (now representing channel bounds)
+    float resistPrice = upperChPrice
+    float supportPrice = lowerChPrice
+
+    float resistDiff = not na(resistPrice) ? resistPrice - currentPrice : na
+    float supportDiff = not na(supportPrice) ? currentPrice - supportPrice : na
+    float resistPct = not na(resistDiff) and currentPrice != 0 ? (resistDiff / currentPrice) * 100 : na
+    float supportPct = not na(supportDiff) and currentPrice != 0 ? (supportDiff / currentPrice) * 100 : na
+    float channelWidth = not na(resistPrice) and not na(supportPrice) ? resistPrice - supportPrice : na
+    float rrRatio = not na(resistDiff) and not na(supportDiff) and supportDiff != 0 ? resistDiff / supportDiff : na
+    float channelPos = not na(channelWidth) and channelWidth != 0 ? ((currentPrice - supportPrice) / channelWidth) * 100 : na
+    string posStatus = not na(channelPos) ? (channelPos > 70 ? "OVERBOUGHT" : channelPos < 30 ? "OVERSOLD" : "NEUTRAL") : "-"
+    
+    // Quality score calculation — Continuous graduation (no dead zones)
+    // Each component scores on a smooth 0→max scale instead of binary on/off.
+    // Total possible: 15 + 10 + 10 + 10 + 8 + 5 = 58 on top of base 50 = 108, capped at 100.
+    float quality = 50.0
+    int contradictions = 0
+    
+    if trendValid
+        // ── Angle strength (0→15, continuous) ──
+        // Linear interpolation from rangeThreshold (0 pts) to 45° (full 15 pts).
+        // Eliminates the dead zone between rangeThreshold and old 35° cutoff.
+        float absAngle = math.abs(latestTrend.angleDeg)
+        float angleRange = 45.0 - i_rangeAngleThreshold
+        float angleScore = angleRange > 0.0 ? 15.0 * math.max(0.0, math.min(1.0, (absAngle - i_rangeAngleThreshold) / angleRange)) : 0.0
+        quality += angleScore
+        
+        // ── Delta consistency (0→10, proportional) ──
+        // Scores based on the fraction of adjacent block pairs with consistent delta sign.
+        int totalPairs = 0
+        int consistentPairs = 0
+        for i = (latestTrend.startBlock - 1) to (latestTrend.endBlock - 1)
+            if i < array.size(analyticsData) and i + 1 < array.size(analyticsData)
+                float d1 = array.get(analyticsData, i).delta
+                float d2 = array.get(analyticsData, i + 1).delta
+                if not na(d1) and not na(d2)
+                    totalPairs += 1
+                    if math.sign(d1) == math.sign(d2)
+                        consistentPairs += 1
+        bool deltaConsistent = totalPairs > 0 and consistentPairs == totalPairs
+        float deltaRatio = totalPairs > 0 ? float(consistentPairs) / float(totalPairs) : 0.0
+        quality += 10.0 * deltaRatio
+        
+        // ── Volume momentum (0→10, continuous) ──
+        // Scales linearly: 0 pts at no growth, full 10 pts at ≥50% growth.
+        if not na(firstBlockVol) and not na(lastBlockVol) and firstBlockVol > 0.0
+            float volGrowth = (lastBlockVol - firstBlockVol) / firstBlockVol
+            float volScore = 10.0 * math.max(0.0, math.min(1.0, volGrowth / 0.5))
+            quality += volScore
+        
+        // ── Body expansion (0→10, continuous) ──
+        // Scales linearly: 0 pts at no growth, full 10 pts at ≥50% growth.
+        if not na(firstBlockBody) and not na(lastBlockBody) and firstBlockBody > 0.0
+            float bodyGrowth = (lastBlockBody - firstBlockBody) / firstBlockBody
+            float bodyScore = 10.0 * math.max(0.0, math.min(1.0, bodyGrowth / 0.5))
+            quality += bodyScore
+        
+        // ── Pin alignment (0→8, continuous) ──
+        // Scores based on the dominance ratio of the correct pin direction.
+        // Uptrend: lower pins should dominate (buyers reject lows).
+        // Downtrend: upper pins should dominate (sellers reject highs).
+        float pinTotal = nz(avgUpperPin, 0.0) + nz(avgLowerPin, 0.0)
+        float pinScore = 0.0
+        if pinTotal > 0.0
+            if latestTrend.channelType == DIR_UP
+                pinScore := 8.0 * math.max(0.0, math.min(1.0, (nz(avgLowerPin, 0.0) / pinTotal - 0.5) / 0.3))
+            else if latestTrend.channelType == DIR_DOWN
+                pinScore := 8.0 * math.max(0.0, math.min(1.0, (nz(avgUpperPin, 0.0) / pinTotal - 0.5) / 0.3))
+        bool pinAligned = pinScore > 4.0
+        quality += pinScore
+        
+        // ── Contradictions penalty (−5 each) ──
+        if (latestTrend.channelType == DIR_UP and trendDelta < 0) or (latestTrend.channelType == DIR_DOWN and trendDelta > 0)
+            contradictions += 1
+        if (latestTrend.channelType == DIR_UP and not na(firstBlockVol) and not na(lastBlockVol) and lastBlockVol < firstBlockVol)
+            contradictions += 1
+        quality -= (contradictions * 5.0)
+        
+        // ── Perfect alignment bonus (+5) ──
+        if deltaConsistent and pinAligned and contradictions == 0
+            quality += 5.0
+    
+    quality := math.max(0, math.min(100, quality))
+    string confidenceLevel = quality >= 80 ? "HIGH" : quality >= 60 ? "MEDIUM" : "LOW"
+    string strengthRating = trendValid ? (math.abs(latestTrend.angleDeg) > 45 ? "VERY STRONG" : math.abs(latestTrend.angleDeg) > 30 ? "STRONG" : math.abs(latestTrend.angleDeg) > 15 ? "MODERATE" : "WEAK") : "-"
+    
+    // Dynamic colors based on trend
+    color trendPrimaryCol = trendValid ? (latestTrend.channelType == DIR_UP ? color.rgb(16, 185, 129) : latestTrend.channelType == DIR_DOWN ? color.rgb(239, 68, 68) : color.rgb(100, 116, 139)) : color.rgb(100, 116, 139)
+    color trendAccentCol = trendValid ? (latestTrend.channelType == DIR_UP ? color.rgb(52, 211, 153) : latestTrend.channelType == DIR_DOWN ? color.rgb(248, 113, 113) : color.rgb(148, 163, 184)) : color.rgb(148, 163, 184)
+    color qualityCol = quality >= 80 ? color.rgb(34, 197, 94) : quality >= 60 ? color.rgb(234, 179, 8) : color.rgb(239, 68, 68)
+    
+    // Standard colors
+    color hdrBg = color.new(color.rgb(30, 41, 59), 5)
+    color rowBg1 = color.new(color.rgb(51, 65, 85), 15)
+    color rowBg2 = color.new(color.rgb(71, 85, 105), 20)
+    color txtHdr = color.rgb(248, 250, 252)
+    color txtLbl = color.rgb(148, 163, 184)
+    color txtVal = color.rgb(226, 232, 240)
+    color posCol = color.rgb(34, 197, 94)
+    color negCol = color.rgb(239, 68, 68)
+    color accentCol = color.rgb(59, 130, 246)
+
+    // Current candle data
+    float cBuy = vBuy[baseOff]
+    float cSell = vSell[baseOff]
+    float cTot = cBuy + cSell
+    float cDel = cBuy - cSell
+    color delCol = na(cDel) ? txtVal : (cDel >= 0 ? posCol : negCol)
+    
+    // RTL-aware text alignment: flips left→right for Arabic (RTL language)
+    string _alignL = i_narrativeLang == "العربية" ? text.align_right : text.align_left
+    
+    string basisTitle = baseOff == 0 ? f_L("CURRENT", "MEVCUT", "वर्तमान", "الحالية") : f_L("CLOSED", "KAPALI", "बंद", "المغلقة")
+    string engTxt = i_calcMethod == "Intrabar (Precise)" ? (f_dashIntrabar() + " " + ltf + ")") : f_dashGeometric()
+
+    // ═══ ROW 0: Header ═══
+    table.merge_cells(dashT, 0, 0, 3, 0)
+    table.cell(dashT, 0, 0, f_dashVolumeEngine(), text_color = txtHdr, bgcolor = hdrBg, text_size = GLOBAL_TEXT_SIZE, text_halign = text.align_center, tooltip = f_dashTooltipEngine())
+
+    // ═══ ROW 1: Engine Info ═══
+    table.cell(dashT, 0, 1, f_dashEngine(), text_color = txtLbl, bgcolor = rowBg1, text_size = GLOBAL_TEXT_SIZE, text_halign = text.align_right, tooltip = f_L("Volume calculation method", "Hacim hesaplama yöntemi", "वॉल्यूम गणना विधि", "طريقة حساب الحجم"))
+    table.cell(dashT, 1, 1, engTxt, text_color = accentCol, bgcolor = rowBg1, text_size = GLOBAL_TEXT_SIZE, text_halign = _alignL, tooltip = f_dashTooltipMethod())
+    table.cell(dashT, 2, 1, f_dashData(), text_color = txtLbl, bgcolor = rowBg1, text_size = GLOBAL_TEXT_SIZE, text_halign = text.align_right, tooltip = f_dashTooltipData())
+    table.cell(dashT, 3, 1, str.tostring(scannableBars) + " " + f_dashBar(), text_color = txtVal, bgcolor = rowBg1, text_size = GLOBAL_TEXT_SIZE, text_halign = _alignL, tooltip = f_dashTooltipScannable())
+
+    // ═══ ROW 2: Candle Header ═══
+    table.merge_cells(dashT, 0, 2, 3, 2)
+    string candleHeader = baseOff == 0 ? f_dashCurrentCandle() : f_dashClosedCandle()
+    string candleTooltip = f_L("Most recent ", "En son ", "सबसे हाल का ", "أحدث ") + 
+                          (baseOff == 0 ? f_L("live", "canlı", "लाइव", "مباشرة") : f_L("closed", "kapalı", "बंद", "مغلقة")) + 
+                          f_L(" candle analysis", " mum analizi", " कैंडल विश्लेषण", " تحليل الشمعة")
+    table.cell(dashT, 0, 2, candleHeader, text_color = txtHdr, bgcolor = hdrBg, text_size = GLOBAL_TEXT_SIZE, text_halign = text.align_center, tooltip = candleTooltip)
+
+    // ═══ ROW 3: Buy/Sell ═══
+    table.cell(dashT, 0, 3, f_dashBuy(), text_color = posCol, bgcolor = rowBg1, text_size = GLOBAL_TEXT_SIZE, text_halign = text.align_right, tooltip = f_dashTooltipBuy())
+    table.cell(dashT, 1, 3, f_fmtVol(cBuy), text_color = posCol, bgcolor = rowBg1, text_size = GLOBAL_TEXT_SIZE, text_halign = _alignL)
+    table.cell(dashT, 2, 3, f_dashSell(), text_color = negCol, bgcolor = rowBg1, text_size = GLOBAL_TEXT_SIZE, text_halign = text.align_right, tooltip = f_dashTooltipSell())
+    table.cell(dashT, 3, 3, f_fmtVol(cSell), text_color = negCol, bgcolor = rowBg1, text_size = GLOBAL_TEXT_SIZE, text_halign = _alignL)
+
+    // ═══ ROW 4: Total/Delta ═══
+    table.cell(dashT, 0, 4, f_dashTotal(), text_color = txtLbl, bgcolor = rowBg2, text_size = GLOBAL_TEXT_SIZE, text_halign = text.align_right, tooltip = f_dashTooltipTotal())
+    table.cell(dashT, 1, 4, f_fmtVol(cTot), text_color = txtVal, bgcolor = rowBg2, text_size = GLOBAL_TEXT_SIZE, text_halign = _alignL)
+    string deltaIcon = na(cDel) ? "●" : (cDel >= 0 ? "▲" : "▼")
+    string deltaSign = na(cDel) ? "" : (cDel > 0 ? "+" : "")
+    table.cell(dashT, 2, 4, deltaIcon + " " + f_dashDelta(), text_color = delCol, bgcolor = rowBg2, text_size = GLOBAL_TEXT_SIZE, text_halign = text.align_right, tooltip = f_dashTooltipDelta())
+    table.cell(dashT, 3, 4, deltaSign + f_fmtVol(cDel), text_color = delCol, bgcolor = rowBg2, text_size = GLOBAL_TEXT_SIZE, text_halign = _alignL)
+
+    // ═══ ROW 5: Trend Volumetrics Header ═══
+    table.merge_cells(dashT, 0, 5, 3, 5)
+    string trendTitle = trendValid ? f_dashTrendVolumetrics() + " • " + f_L("Blk", "Blk", "ब्लॉक", "كتلة") + " " + str.tostring(latestTrend.startBlock) + "-" + str.tostring(latestTrend.endBlock) : f_dashTrendVolumetrics() + " • N/A"
+    table.cell(dashT, 0, 5, trendTitle, text_color = txtHdr, bgcolor = hdrBg, text_size = GLOBAL_TEXT_SIZE, text_halign = text.align_center, tooltip = f_dashTooltipTrendVolume())
+
+    // ═══ ROW 6: Trend Buy/Sell/Delta/Type ═══
+    table.cell(dashT, 0, 6, f_dashBuy(), text_color = posCol, bgcolor = rowBg1, text_size = GLOBAL_TEXT_SIZE, text_halign = text.align_center, tooltip = f_dashTooltipTrendBuy())
+    table.cell(dashT, 1, 6, f_dashSell(), text_color = negCol, bgcolor = rowBg1, text_size = GLOBAL_TEXT_SIZE, text_halign = text.align_center, tooltip = f_dashTooltipTrendSell())
+    table.cell(dashT, 2, 6, "◆ " + f_dashDelta(), text_color = trendDelta >= 0 ? posCol : negCol, bgcolor = rowBg1, text_size = GLOBAL_TEXT_SIZE, text_halign = text.align_center, tooltip = f_dashTooltipTrendDelta())
+    table.cell(dashT, 3, 6, f_dashType(), text_color = txtLbl, bgcolor = rowBg1, text_size = GLOBAL_TEXT_SIZE, text_halign = text.align_center, tooltip = f_dashTooltipType())
+    
+    table.cell(dashT, 0, 7, f_fmtVol(trendBuy), text_color = posCol, bgcolor = rowBg2, text_size = GLOBAL_TEXT_SIZE, text_halign = text.align_center)
+    table.cell(dashT, 1, 7, f_fmtVol(trendSell), text_color = negCol, bgcolor = rowBg2, text_size = GLOBAL_TEXT_SIZE, text_halign = text.align_center)
+    string trendDeltaStr = (trendDelta > 0 ? "+" : "") + f_fmtVol(trendDelta) + " (" + str.tostring(trendDeltaPct, "#.##") + "%)"
+    table.cell(dashT, 2, 7, trendDeltaStr, text_color = trendDelta >= 0 ? posCol : negCol, bgcolor = rowBg2, text_size = GLOBAL_TEXT_SIZE, text_halign = text.align_center)
+    string trendTypeName = trendValid ? (latestTrend.channelType == DIR_UP ? f_dashUptrend() : latestTrend.channelType == DIR_DOWN ? f_dashDowntrend() : f_dashRange()) : "-"
+    table.cell(dashT, 3, 7, trendTypeName, text_color = trendPrimaryCol, bgcolor = rowBg2, text_size = GLOBAL_TEXT_SIZE, text_halign = text.align_center)
+
+    // ═══ ROW 8: Pressure & Momentum Header ═══
+    table.merge_cells(dashT, 0, 8, 3, 8)
+    table.cell(dashT, 0, 8, f_dashPressureMomentum(), text_color = txtHdr, bgcolor = hdrBg, text_size = GLOBAL_TEXT_SIZE, text_halign = text.align_center, tooltip = f_dashTooltipPressure())
+
+    // ═══ ROW 9: Sellers/Buyers/Body/Expansion ═══
+    string upperPinChgStr = str.tostring(upperPinChg, "#.##") + "%"
+    string lowerPinChgStr = str.tostring(lowerPinChg, "#.##") + "%"
+    table.cell(dashT, 0, 9, f_dashSellers(), text_color = negCol, bgcolor = rowBg1, text_size = GLOBAL_TEXT_SIZE, text_halign = text.align_center, tooltip = f_dashTooltipSellersPin())
+    table.cell(dashT, 1, 9, f_dashBuyers(), text_color = posCol, bgcolor = rowBg1, text_size = GLOBAL_TEXT_SIZE, text_halign = text.align_center, tooltip = f_dashTooltipBuyersPin())
+    table.cell(dashT, 2, 9, f_dashBodyAVG(), text_color = txtLbl, bgcolor = rowBg1, text_size = GLOBAL_TEXT_SIZE, text_halign = text.align_center, tooltip = f_dashTooltipBodyAVG())
+    table.cell(dashT, 3, 9, f_dashTrend(), text_color = txtLbl, bgcolor = rowBg1, text_size = GLOBAL_TEXT_SIZE, text_halign = text.align_center, tooltip = f_dashTooltipBodyTrend())
+    
+    table.cell(dashT, 0, 10, f_fmtPrice(avgUpperPin) + " (" + upperPinChgStr + ")", text_color = negCol, bgcolor = rowBg2, text_size = GLOBAL_TEXT_SIZE, text_halign = text.align_center)
+    table.cell(dashT, 1, 10, f_fmtPrice(avgLowerPin) + " (" + lowerPinChgStr + ")", text_color = posCol, bgcolor = rowBg2, text_size = GLOBAL_TEXT_SIZE, text_halign = text.align_center)
+    table.cell(dashT, 2, 10, f_fmtPrice(avgBody), text_color = txtVal, bgcolor = rowBg2, text_size = GLOBAL_TEXT_SIZE, text_halign = text.align_center)
+    string bodyStatusLoc = bodyStatus == "EXPANDING" ? f_dashExpanding() : bodyStatus == "CONTRACTING" ? f_dashContracting() : f_dashStable()
+    color bodyStatusCol = bodyStatus == "EXPANDING" ? posCol : bodyStatus == "CONTRACTING" ? negCol : txtLbl
+    table.cell(dashT, 3, 10, bodyStatusLoc, text_color = bodyStatusCol, bgcolor = rowBg2, text_size = GLOBAL_TEXT_SIZE, text_halign = text.align_center)
+
+    // ═══ ROW 11: Trend Channel Boundaries Header ═══
+    table.merge_cells(dashT, 0, 11, 3, 11)
+    table.cell(dashT, 0, 11, f_dashTrendChannelBoundaries(), text_color = txtHdr, bgcolor = hdrBg, text_size = GLOBAL_TEXT_SIZE, text_halign = text.align_center, tooltip = f_dashTooltipChannelBounds())
+
+    // ═══ ROW 12: Trend Channel Boundaries (Upper/Lower) ═══
+    string upDiffSign  = not na(resistDiff) and resistDiff > 0 ? "+" : ""
+    string upPctSign   = not na(resistPct) and resistPct > 0 ? "+" : ""
+    string upperStr = trendValid ? f_dashUpperChannel() + " " + f_fmtPrice(resistPrice) + " (Δ " + upDiffSign + str.tostring(resistDiff, "#.##") + " | " + upPctSign + str.tostring(resistPct, "#.##") + "%)" : "-"
+
+    // supportDiff/supportPct are positive distances to the LOWER line; we show them as negative deltas by design.
+    string lowerStr = trendValid ? f_dashLowerChannel() + " " + f_fmtPrice(supportPrice) + " (Δ -" + str.tostring(supportDiff, "#.##") + " | -" + str.tostring(supportPct, "#.##") + "%)" : "-"
+
+    table.merge_cells(dashT, 0, 12, 1, 12)
+    table.cell(dashT, 0, 12, upperStr, text_color = txtVal, bgcolor = rowBg1, text_size = GLOBAL_TEXT_SIZE, text_halign = text.align_center, tooltip = f_dashTooltipUpper())
+    table.merge_cells(dashT, 2, 12, 3, 12)
+    table.cell(dashT, 2, 12, lowerStr, text_color = txtVal, bgcolor = rowBg1, text_size = GLOBAL_TEXT_SIZE, text_halign = text.align_center, tooltip = f_dashTooltipLower())
+
+    // ═══ ROW 13: Width/Position/R:R/Status (All in one row) ═══
+    string widthStr = trendValid ? f_fmtPrice(channelWidth) : "-"
+    string posStr = not na(channelPos) ? str.tostring(channelPos, "#.##") + "%" : "-"
+    string rrStr = not na(rrRatio) ? "1:" + str.tostring(rrRatio, "#.##") : "-"
+    string posStatusLoc = posStatus == "OVERBOUGHT" ? f_dashOverbought() : posStatus == "OVERSOLD" ? f_dashOversold() : f_dashNeutral()
+    color statusCol = posStatus == "OVERBOUGHT" ? negCol : posStatus == "OVERSOLD" ? posCol : txtLbl
+    table.cell(dashT, 0, 13, widthStr, text_color = accentCol, bgcolor = rowBg2, text_size = GLOBAL_TEXT_SIZE, text_halign = text.align_center, tooltip = f_dashTooltipWidth())
+    table.cell(dashT, 1, 13, posStr, text_color = txtVal, bgcolor = rowBg2, text_size = GLOBAL_TEXT_SIZE, text_halign = text.align_center, tooltip = f_dashTooltipPosition())
+    table.cell(dashT, 2, 13, rrStr, text_color = txtVal, bgcolor = rowBg2, text_size = GLOBAL_TEXT_SIZE, text_halign = text.align_center, tooltip = f_dashTooltipRR())
+    table.cell(dashT, 3, 13, posStatusLoc, text_color = statusCol, bgcolor = rowBg2, text_size = GLOBAL_TEXT_SIZE, text_halign = text.align_center, tooltip = f_dashTooltipStatus())
+
+    // ═══ ROW 14: Trend Intelligence Header ═══
+    table.merge_cells(dashT, 0, 14, 3, 14)
+    table.cell(dashT, 0, 14, f_dashTrendIntelligence(), text_color = txtHdr, bgcolor = hdrBg, text_size = GLOBAL_TEXT_SIZE, text_halign = text.align_center, tooltip = f_dashTooltipQuality(quality, contradictions))
+
+    // ═══ ROW 15: Quality/Confidence/Strength/Momentum (All in one row) ═══
+    string qualityStr = str.tostring(quality, "#") + "/100"
+    string confidenceLoc = confidenceLevel == "HIGH" ? f_dashHigh() : confidenceLevel == "MEDIUM" ? f_dashMedium() : f_dashLow()
+    string strengthLoc = strengthRating == "VERY STRONG" ? f_dashVeryStrong() : strengthRating == "STRONG" ? f_dashStrong() : strengthRating == "MODERATE" ? f_dashModerate() : strengthRating == "WEAK" ? f_dashWeak() : "-"
+    string volMomLoc = str.pos(volMom, "INCREASING") >= 0 ? f_dashIncreasing() : f_dashDecreasing()
+    table.cell(dashT, 0, 15, qualityStr, text_color = qualityCol, bgcolor = rowBg1, text_size = GLOBAL_TEXT_SIZE, text_halign = text.align_center, tooltip = f_dashTooltipQuality(quality, contradictions))
+    table.cell(dashT, 1, 15, confidenceLoc, text_color = qualityCol, bgcolor = rowBg1, text_size = GLOBAL_TEXT_SIZE, text_halign = text.align_center, tooltip = f_dashTooltipConfidence())
+    table.cell(dashT, 2, 15, strengthLoc, text_color = trendAccentCol, bgcolor = rowBg1, text_size = GLOBAL_TEXT_SIZE, text_halign = text.align_center, tooltip = f_dashTooltipStrength())
+    table.cell(dashT, 3, 15, volMomLoc, text_color = str.pos(volMom, "INCREASING") >= 0 ? posCol : negCol, bgcolor = rowBg1, text_size = GLOBAL_TEXT_SIZE, text_halign = text.align_center, tooltip = f_dashTooltipVolMomentum())
+
+    // ═══════════════════════════════════════════════════════════════════════
+    // MARKET NARRATIVE SECTION
+    // ═══════════════════════════════════════════════════════════════════════
+    
+    if i_narrativeEnable and trendValid
+        // Analyze current bar
+        g_currentBar := f_analyzeCurrentBar(baseOff, globalAvgRange, cBuy, cSell)
+        
+        // Analyze composite (Block 1 vs Block 2)
+        BlockAnalytics blk1 = array.size(analyticsData) > 0 ? array.get(analyticsData, 0) : f_analyticsEmpty()
+        BlockAnalytics blk2 = array.size(analyticsData) > 1 ? array.get(analyticsData, 1) : f_analyticsEmpty()
+        g_composite := f_analyzeComposite(blk1, blk2)
+        
+        // Analyze trend context
+        g_trendContext := f_analyzeTrendContext(trendChannels, quality)
+        
+        // Check divergence
+        bool hasDivergence = (latestTrend.channelType == DIR_UP and trendDelta < 0) or (latestTrend.channelType == DIR_DOWN and trendDelta > 0)
+        
+        // Build complete professional narrative (multilingual) - returns array of parts
+        array<string> narrativeParts = f_buildProfessionalNarrativeParts(
+             g_currentBar, g_composite, g_trendContext, latestTrend,
+             trendBuy, trendSell, trendDelta, trendDeltaPct,
+             bodyStatus, upperPinChg, lowerPinChg, volMom,
+             channelPos, posStatus, resistPrice, supportPrice,
+             g_levels, contradictions, hasDivergence)
+        
+        // Narrative colors
+        color narrHdrBg = color.new(color.rgb(15, 23, 42), 5)
+        color narrRowBg = color.new(color.rgb(30, 41, 59), 10)
+        color narrTxtHdr = color.rgb(234, 179, 8)
+        color narrTxtMain = color.rgb(248, 250, 252)
+        color narrTxtSub = color.rgb(148, 163, 184)
+        
+        // Narrative header (multilingual)
+        string narrHeader = f_L("Market Analysis", "Piyasa Analizi", "बाजार विश्लेषण", "تحليل السوق")
+        string textAlign = _alignL
+        
+        // ═══ ROW 16: Narrative Header ═══
+        table.merge_cells(dashT, 0, 16, 3, 16)
+        table.cell(dashT, 0, 16, narrHeader, text_color = narrTxtHdr, bgcolor = narrHdrBg, text_size = GLOBAL_TEXT_SIZE, text_halign = text.align_center)
+        
+        // ═══ NARRATIVE OUTPUT: Auto-wrapped into multiple rows ═══
+        int wordsPerLine = 18
+        int maxCharsPerLine = 90
+
+        int firstNarrRow = 17
+        
+        array<string> narrLines = array.new<string>()
+
+        int partsCount = math.min(5, array.size(narrativeParts))
+        if partsCount > 0
+            for pi = 0 to partsCount - 1
+                array<string> wrapped = f_wrapNarrative(array.get(narrativeParts, pi), wordsPerLine, maxCharsPerLine)
+                int wn = array.size(wrapped)
+                if wn > 0
+                    for wi = 0 to wn - 1
+                        array.push(narrLines, array.get(wrapped, wi))
+
+        int totalLines = array.size(narrLines)
+        
+        // Dynamic row calculation: only create rows for actual content
+        int narrativeRowsNeeded = math.min(totalLines, DASH_ROWS - firstNarrRow - (i_narrativeShowDisclaimer ? 3 : 0))
+        
+        // Render narrative rows (only those with content)
+        if narrativeRowsNeeded > 0
+            for r = 0 to narrativeRowsNeeded - 1
+                int row = firstNarrRow + r
+                table.merge_cells(dashT, 0, row, 3, row)
+
+                string txt = array.get(narrLines, r)
+                if r == narrativeRowsNeeded - 1 and totalLines > narrativeRowsNeeded
+                    txt += " …"
+
+                table.cell(dashT, 0, row, txt, text_color = narrTxtMain, bgcolor = narrRowBg, text_size = GLOBAL_TEXT_SIZE, text_halign = textAlign)
+
+        // ═══ Disclaimer: Split across 3 rows for better readability ═══
+        if i_narrativeShowDisclaimer
+            int disclaimerStartRow = firstNarrRow + narrativeRowsNeeded
+            
+            // Split disclaimer into 3 parts (multilingual)
+            string disclaimerLine1 = f_L(
+                "⚠️ IMPORTANT: This analysis is for educational purposes only",
+                "⚠️ ÖNEMLİ: Bu analiz sadece eğitim amaçlıdır",
+                "⚠️ महत्वपूर्ण: यह विश्लेषण केवल शैक्षिक उद्देश्यों के लिए है",
+                "⚠️ هام: هذا التحليل لأغراض تعليمية فقط")
+            
+            string disclaimerLine2 = f_L(
+                "and does not constitute investment advice. Always conduct your own research",
+                "ve yatırım tavsiyesi teşkil etmez. Her zaman kendi araştırmanızı yapın",
+                "और निवेश सलाह नहीं है। हमेशा अपना शोध करें",
+                "ولا يُشكّل نصيحة استثمارية. قم دائماً بإجراء بحثك الخاص")
+            
+            string disclaimerLine3 = f_L(
+                "and consult with a qualified financial advisor before making investment decisions.",
+                "ve yatırım kararları vermeden önce kalifiye bir finansal danışmana danışın.",
+                "और निवेश निर्णय लेने से पहले योग्य वित्तीय सलाहकार से परामर्श करें।",
+                "واستشر مستشاراً مالياً مؤهلاً قبل اتخاذ قرارات الاستثمار.")
+            
+            // Render 3 disclaimer rows
+            for disclaimerLineNum = 0 to 2
+                int row = disclaimerStartRow + disclaimerLineNum
+                table.merge_cells(dashT, 0, row, 3, row)
+                
+                string lineText = disclaimerLineNum == 0 ? disclaimerLine1 : 
+                                  disclaimerLineNum == 1 ? disclaimerLine2 : disclaimerLine3
+                
+                table.cell(dashT, 0, row, lineText, 
+                          text_color = narrTxtSub, 
+                          bgcolor = color.new(color.rgb(30, 30, 30), 10), 
+                          text_size = GLOBAL_TEXT_SIZE, 
+                          text_halign = text.align_center)

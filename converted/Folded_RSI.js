@@ -905,8 +905,8 @@ const pinescript = {
     const info = { ticker: 'AAPL', tickerid: 'NASDAQ:AAPL', prefix: 'NASDAQ', root: 'AAPL', suffix: '' };
     return info[type] || '';
   },
-  time: 1771040739952,
-  timenow: 1771040739952,
+  time: 1771178051305,
+  timenow: 1771178051305,
   barstate: "LAST",
   dividends: {},
   splits: {},
@@ -1229,27 +1229,23 @@ function main() {
     if (state.sumx2 === undefined) state.sumx2 = 0;
     if (state.sumy2 === undefined) state.sumy2 = 0;
     if (state.sumxy === undefined) state.sumxy = 0;
-    {
-      state.sumx = 0;
-      state.sumy = 0;
-      state.sumx2 = 0;
-      state.sumy2 = 0;
-      state.sumxy = 0;
-    }
+    state.sumx = 0;
+    state.sumy = 0;
+    state.sumx2 = 0;
+    state.sumy2 = 0;
+    state.sumxy = 0;
     let _win = pinescript.max(win, 2);
     let _per = pinescript.max(period, 2);
     for (let i = 0; i <= (_win - 1); i++) {
-      {
-        let x = pinescript.offset(_src, i);
-        let t = (bar_index - i);
-        let ang = (((2 * pinescript.math.pi) * (t % _per)) / _per);
-        let y = (cosBasis ? math.cos(ang) : math.sin(ang));
-        state.sumx = x;
-        state.sumy = y;
-        state.sumx2 = (x * x);
-        state.sumy2 = (y * y);
-        state.sumxy = (x * y);
-      }
+      let x = pinescript.offset(_src, i);
+      let t = (bar_index - i);
+      let ang = (((2 * pinescript.math.pi) * (t % _per)) / _per);
+      let y = (cosBasis ? math.cos(ang) : math.sin(ang));
+      state.sumx = x;
+      state.sumy = y;
+      state.sumx2 = (x * x);
+      state.sumy2 = (y * y);
+      state.sumxy = (x * y);
     }
     let n = _win;
     let num = ((n * state.sumxy) - (state.sumx * state.sumy));
@@ -1304,12 +1300,10 @@ function main() {
   pinescript.plot(rsi_raw, "Raw (no smooth)", ({ color: pinescript.color.new(pinescript.color.gray, 70) }));
   if (state.t === undefined) state.t = pinescript.table.new(({ position: pinescript.position.top_right, columns: 1, rows: 4, border_width: 1 }));
   if (barstate.islast) {
-    {
-      pinescript.table.cell(state.t, 0, 0, ("Folded RSI: " + pinescript.strToString(rsi_sm, "#.00")));
-      pinescript.table.cell(state.t, 0, 1, (("Corr Mag:   " + pinescript.strToString((mag * 100), "#.0")) + "%"));
-      pinescript.table.cell(state.t, 0, 2, ("Len Now:    " + pinescript.strToString(len_now_f, "#.00")));
-      pinescript.table.cell(state.t, 0, 3, ("Best Period: " + pinescript.strToString(((use_harmonic2 && (mag2 > mag1)) ? (target_period * 2) : target_period))));
-    }
+    pinescript.table.cell(state.t, 0, 0, ("Folded RSI: " + pinescript.strToString(rsi_sm, "#.00")));
+    pinescript.table.cell(state.t, 0, 1, (("Corr Mag:   " + pinescript.strToString((mag * 100), "#.0")) + "%"));
+    pinescript.table.cell(state.t, 0, 2, ("Len Now:    " + pinescript.strToString(len_now_f, "#.00")));
+    pinescript.table.cell(state.t, 0, 3, ("Best Period: " + pinescript.strToString(((use_harmonic2 && (mag2 > mag1)) ? (target_period * 2) : target_period))));
   }
   let ob_level = 70;
   let os_level = 30;

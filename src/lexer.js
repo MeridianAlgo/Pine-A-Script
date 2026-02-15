@@ -113,7 +113,9 @@ class Token {
 
 class Lexer {
   constructor(source) {
-    this.source = source;
+    // Normalize Windows and old-Mac line endings to LF so indentation/newline logic
+    // doesn't mis-handle '\r' as whitespace at start of line.
+    this.source = source.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
     this.pos = 0;
     this.line = 1;
     this.column = 0;
@@ -526,7 +528,9 @@ class Lexer {
             continue;
           }
 
-          tokens.push(new Token(TokenType.NEWLINE, '\n', this.line, this.column));
+          if (this.groupDepth === 0) {
+            tokens.push(new Token(TokenType.NEWLINE, '\n', this.line, this.column));
+          }
           this.advance();
 
           if (this.currentChar === null) {

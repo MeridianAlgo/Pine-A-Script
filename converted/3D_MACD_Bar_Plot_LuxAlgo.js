@@ -905,8 +905,8 @@ const pinescript = {
     const info = { ticker: 'AAPL', tickerid: 'NASDAQ:AAPL', prefix: 'NASDAQ', root: 'AAPL', suffix: '' };
     return info[type] || '';
   },
-  time: 1771040739616,
-  timenow: 1771040739616,
+  time: 1771178050801,
+  timenow: 1771178050801,
   barstate: "LAST",
   dividends: {},
   splits: {},
@@ -1226,112 +1226,62 @@ function main() {
   if (state.emaStates === undefined) state.emaStates = pinescript.mapNew();
   if (state.uniqueLengths === undefined) state.uniqueLengths = pinescript.arrayNew();
   if ((bar_index === 0)) {
-    {
-      for (let f = fastMinInput; f <= fastMaxInput; f++) {
-        {
-          if (!uniqueLengths.includes(f)) {
-            {
-              uniqueLengths.push(f);
-            }
-          }
-        }
+    for (let f = fastMinInput; f <= fastMaxInput; f++) {
+      if (!uniqueLengths.includes(f)) {
+        uniqueLengths.push(f);
       }
-      for (let s = slowMinInput; s <= slowMaxInput; s++) {
-        {
-          if (!uniqueLengths.includes(s)) {
-            {
-              uniqueLengths.push(s);
-            }
-          }
-        }
+    }
+    for (let s = slowMinInput; s <= slowMaxInput; s++) {
+      if (!uniqueLengths.includes(s)) {
+        uniqueLengths.push(s);
       }
     }
   }
   for (const length of state.uniqueLengths) {
-    {
-      let alpha = (2 / (length + 1));
-      let prevEma = emaStates.get(length);
-      if (pinescript.na(prevEma)) {
-        {
-          emaStates.put(length, close);
-        }
-      } else {
-        {
-          emaStates.put(length, ((close * alpha) + (prevEma * (1 - alpha))));
-        }
-      }
+    let alpha = (2 / (length + 1));
+    let prevEma = emaStates.get(length);
+    if (pinescript.na(prevEma)) {
+      emaStates.put(length, close);
+    } else {
+      emaStates.put(length, ((close * alpha) + (prevEma * (1 - alpha))));
     }
   }
   function generateGridPath(pts, rows, cols) {
     let path = pinescript.arrayNew();
     for (let r = 0; r <= (rows - 1); r++) {
-      {
-        if (((r % 2) === 0)) {
-          {
-            for (let c = 0; c <= (cols - 1); c++) {
-              {
-                path.push(pts.get(r, c));
-              }
-            }
-          }
-        } else {
-          {
-            for (let c = (cols - 1); c <= 0; c++) {
-              {
-                path.push(pts.get(r, c));
-              }
-            }
-          }
+      if (((r % 2) === 0)) {
+        for (let c = 0; c <= (cols - 1); c++) {
+          path.push(pts.get(r, c));
+        }
+      } else {
+        for (let c = (cols - 1); c <= 0; c++) {
+          path.push(pts.get(r, c));
         }
       }
     }
     let currC = ((((rows - 1) % 2) === 0) ? (cols - 1) : 0);
     if ((currC === (cols - 1))) {
-      {
-        for (let c = (cols - 1); c <= 0; c++) {
-          {
-            let colIdx = ((cols - 1) - c);
-            if (((colIdx % 2) === 0)) {
-              {
-                for (let r = (rows - 1); r <= 0; r++) {
-                  {
-                    path.push(pts.get(r, c));
-                  }
-                }
-              }
-            } else {
-              {
-                for (let r = 0; r <= (rows - 1); r++) {
-                  {
-                    path.push(pts.get(r, c));
-                  }
-                }
-              }
-            }
+      for (let c = (cols - 1); c <= 0; c++) {
+        let colIdx = ((cols - 1) - c);
+        if (((colIdx % 2) === 0)) {
+          for (let r = (rows - 1); r <= 0; r++) {
+            path.push(pts.get(r, c));
+          }
+        } else {
+          for (let r = 0; r <= (rows - 1); r++) {
+            path.push(pts.get(r, c));
           }
         }
       }
     } else {
-      {
-        for (let c = 0; c <= (cols - 1); c++) {
-          {
-            if (((c % 2) === 0)) {
-              {
-                for (let r = (rows - 1); r <= 0; r++) {
-                  {
-                    path.push(pts.get(r, c));
-                  }
-                }
-              }
-            } else {
-              {
-                for (let r = 0; r <= (rows - 1); r++) {
-                  {
-                    path.push(pts.get(r, c));
-                  }
-                }
-              }
-            }
+      for (let c = 0; c <= (cols - 1); c++) {
+        if (((c % 2) === 0)) {
+          for (let r = (rows - 1); r <= 0; r++) {
+            path.push(pts.get(r, c));
+          }
+        } else {
+          for (let r = 0; r <= (rows - 1); r++) {
+            path.push(pts.get(r, c));
           }
         }
       }
@@ -1342,105 +1292,77 @@ function main() {
   if (state.labelsArray === undefined) state.labelsArray = pinescript.arrayNew();
   if (state.polylinesArray === undefined) state.polylinesArray = pinescript.arrayNew();
   if (barstate.islast) {
-    {
-      while ((pinescript.arraySize(state.linesArray) > 0)) {
-        {
-          pinescript.lineDelete(pinescript.arrayPop(state.linesArray));
-        }
-      }
-      while ((pinescript.arraySize(state.labelsArray) > 0)) {
-        {
-          pinescript.labelDelete(pinescript.arrayPop(state.labelsArray));
-        }
-      }
-      while ((pinescript.arraySize(state.polylinesArray) > 0)) {
-        {
-          polyline.delete(pinescript.arrayPop(state.polylinesArray));
-        }
-      }
-      let basePrice = yOffsetInput;
-      let baseBar = bar_index;
-      let yStep = 1;
-      let macdMax = 0;
-      for (let f = fastMinInput; f <= fastMaxInput; f++) {
-        {
-          for (let s = slowMinInput; s <= slowMaxInput; s++) {
-            {
-              let val = pinescript.abs((emaStates.get(f) - emaStates.get(s)));
-              if ((val > macdMax)) {
-                {
-                  macdMax = val;
-                }
-              }
-            }
-          }
-        }
-      }
-      let zMultiplier = ((macdMax !== 0) ? ((scaleZInput * yStep) / macdMax) : 1);
-      let fCount = 0;
-      for (let f = fastMinInput; f <= fastMaxInput; f++) {
-        {
-          fCount += 1;
-        }
-      }
-      let sCount = 0;
-      for (let s = slowMinInput; s <= slowMaxInput; s++) {
-        {
-          sCount += 1;
-        }
-      }
-      let maxDepth = pinescript.max(1, ((fCount - 1) + (sCount - 1)));
-      let topPoints = pinescript.matrixNew(fCount, sCount);
-      let basePoints = pinescript.matrixNew(fCount, sCount);
-      let i = 0;
-      for (let f = fastMinInput; f <= fastMaxInput; f++) {
-        {
-          let j = 0;
-          for (let s = slowMinInput; s <= slowMaxInput; s++) {
-            {
-              let fEma = emaStates.get(f);
-              let sEma = emaStates.get(s);
-              let macd = (fEma - sEma);
-              let depthFactor = ((i + j) / maxDepth);
-              let barTransp = (10 + (depthFactor * 70));
-              let barWidth = int((6 - (5 * depthFactor)));
-              let screenX = (baseBar + int(((i - j) * scaleXInput)));
-              let screenYB = (basePrice + ((i + j) * yStep));
-              let screenYT = (screenYB + (macd * zMultiplier));
-              chart.point;
-              let pBase = pinescript.chartPointFromIndex(screenX, screenYB);
-              chart.point;
-              let pTop = pinescript.chartPointFromIndex(screenX, screenYT);
-              topPoints.set(i, j, pTop);
-              basePoints.set(i, j, pBase);
-              let barCol = ((macd >= 0) ? bullColorInput : bearColorInput);
-              linesArray.push(pinescript.lineNew(pBase, pTop, ({ color: pinescript.color.new(barCol, barTransp), width: barWidth })));
-              if (((i === 0) && (j === 0))) {
-                {
-                  labelsArray.push(pinescript.labelNew(pBase, (((("Origin (F" + pinescript.strToString(f)) + ", S") + pinescript.strToString(s)) + ")"), ({ style: label.style_label_up, textcolor: chart.fg_color, color: pinescript.color.hex("#00000000"), size: pinescript.size.small })));
-                }
-              }
-              if (((j === 0) && (i === (fCount - 1)))) {
-                {
-                  labelsArray.push(pinescript.labelNew(pBase, (("Fast Axis (F" + pinescript.strToString(f)) + ")"), ({ style: label.style_label_left, textcolor: chart.fg_color, color: pinescript.color.hex("#00000000"), size: pinescript.size.small })));
-                }
-              }
-              if (((i === 0) && (j === (sCount - 1)))) {
-                {
-                  labelsArray.push(pinescript.labelNew(pBase, (("Slow Axis (S" + pinescript.strToString(s)) + ")"), ({ style: label.style_label_right, textcolor: chart.fg_color, color: pinescript.color.hex("#00000000"), size: pinescript.size.small })));
-                }
-              }
-              j += 1;
-            }
-          }
-          i += 1;
-        }
-      }
-      let surfacePath = generateGridPath(topPoints, fCount, sCount);
-      let gridPath = generateGridPath(basePoints, fCount, sCount);
-      polylinesArray.push(polyline.new(surfacePath, ({ line_color: pinescript.color.new(gridColorInput, 40) })));
-      polylinesArray.push(polyline.new(gridPath, ({ line_color: pinescript.color.new(gridColorInput, 70) })));
+    while ((pinescript.arraySize(state.linesArray) > 0)) {
+      pinescript.lineDelete(pinescript.arrayPop(state.linesArray));
     }
+    while ((pinescript.arraySize(state.labelsArray) > 0)) {
+      pinescript.labelDelete(pinescript.arrayPop(state.labelsArray));
+    }
+    while ((pinescript.arraySize(state.polylinesArray) > 0)) {
+      polyline.delete(pinescript.arrayPop(state.polylinesArray));
+    }
+    let basePrice = yOffsetInput;
+    let baseBar = bar_index;
+    let yStep = 1;
+    let macdMax = 0;
+    for (let f = fastMinInput; f <= fastMaxInput; f++) {
+      for (let s = slowMinInput; s <= slowMaxInput; s++) {
+        let val = pinescript.abs((emaStates.get(f) - emaStates.get(s)));
+        if ((val > macdMax)) {
+          macdMax = val;
+        }
+      }
+    }
+    let zMultiplier = ((macdMax !== 0) ? ((scaleZInput * yStep) / macdMax) : 1);
+    let fCount = 0;
+    for (let f = fastMinInput; f <= fastMaxInput; f++) {
+      fCount += 1;
+    }
+    let sCount = 0;
+    for (let s = slowMinInput; s <= slowMaxInput; s++) {
+      sCount += 1;
+    }
+    let maxDepth = pinescript.max(1, ((fCount - 1) + (sCount - 1)));
+    let topPoints = pinescript.matrixNew(fCount, sCount);
+    let basePoints = pinescript.matrixNew(fCount, sCount);
+    let i = 0;
+    for (let f = fastMinInput; f <= fastMaxInput; f++) {
+      let j = 0;
+      for (let s = slowMinInput; s <= slowMaxInput; s++) {
+        let fEma = emaStates.get(f);
+        let sEma = emaStates.get(s);
+        let macd = (fEma - sEma);
+        let depthFactor = ((i + j) / maxDepth);
+        let barTransp = (10 + (depthFactor * 70));
+        let barWidth = int((6 - (5 * depthFactor)));
+        let screenX = (baseBar + int(((i - j) * scaleXInput)));
+        let screenYB = (basePrice + ((i + j) * yStep));
+        let screenYT = (screenYB + (macd * zMultiplier));
+        chart.point;
+        let pBase = pinescript.chartPointFromIndex(screenX, screenYB);
+        chart.point;
+        let pTop = pinescript.chartPointFromIndex(screenX, screenYT);
+        topPoints.set(i, j, pTop);
+        basePoints.set(i, j, pBase);
+        let barCol = ((macd >= 0) ? bullColorInput : bearColorInput);
+        linesArray.push(pinescript.lineNew(pBase, pTop, ({ color: pinescript.color.new(barCol, barTransp), width: barWidth })));
+        if (((i === 0) && (j === 0))) {
+          labelsArray.push(pinescript.labelNew(pBase, (((("Origin (F" + pinescript.strToString(f)) + ", S") + pinescript.strToString(s)) + ")"), ({ style: label.style_label_up, textcolor: chart.fg_color, color: pinescript.color.hex("#00000000"), size: pinescript.size.small })));
+        }
+        if (((j === 0) && (i === (fCount - 1)))) {
+          labelsArray.push(pinescript.labelNew(pBase, (("Fast Axis (F" + pinescript.strToString(f)) + ")"), ({ style: label.style_label_left, textcolor: chart.fg_color, color: pinescript.color.hex("#00000000"), size: pinescript.size.small })));
+        }
+        if (((i === 0) && (j === (sCount - 1)))) {
+          labelsArray.push(pinescript.labelNew(pBase, (("Slow Axis (S" + pinescript.strToString(s)) + ")"), ({ style: label.style_label_right, textcolor: chart.fg_color, color: pinescript.color.hex("#00000000"), size: pinescript.size.small })));
+        }
+        j += 1;
+      }
+      i += 1;
+    }
+    let surfacePath = generateGridPath(topPoints, fCount, sCount);
+    let gridPath = generateGridPath(basePoints, fCount, sCount);
+    polylinesArray.push(polyline.new(surfacePath, ({ line_color: pinescript.color.new(gridColorInput, 40) })));
+    polylinesArray.push(polyline.new(gridPath, ({ line_color: pinescript.color.new(gridColorInput, 70) })));
   }
 }
 

@@ -905,8 +905,8 @@ const pinescript = {
     const info = { ticker: 'AAPL', tickerid: 'NASDAQ:AAPL', prefix: 'NASDAQ', root: 'AAPL', suffix: '' };
     return info[type] || '';
   },
-  time: 1771040741189,
-  timenow: 1771040741189,
+  time: 1771178053104,
+  timenow: 1771178053104,
   barstate: "LAST",
   dividends: {},
   splits: {},
@@ -1354,24 +1354,14 @@ function main() {
   let currentAlerts = alerts.new();
   if (state.initialTime === undefined) state.initialTime = time;
   if (barstate.isfirst) {
-    {
-      if (showSwingOrderBlocksInput) {
-        {
-          for (let index = 1; index <= swingOrderBlocksSizeInput; index++) {
-            {
-              swingOrderBlocksBoxes.push(box.new(null, null, null, null, ({ xloc: xloc.bar_time, extend: extend.right })));
-            }
-          }
-        }
+    if (showSwingOrderBlocksInput) {
+      for (let index = 1; index <= swingOrderBlocksSizeInput; index++) {
+        swingOrderBlocksBoxes.push(box.new(null, null, null, null, ({ xloc: xloc.bar_time, extend: extend.right })));
       }
-      if (showInternalOrderBlocksInput) {
-        {
-          for (let index = 1; index <= internalOrderBlocksSizeInput; index++) {
-            {
-              internalOrderBlocksBoxes.push(box.new(null, null, null, null, ({ xloc: xloc.bar_time, extend: extend.right })));
-            }
-          }
-        }
+    }
+    if (showInternalOrderBlocksInput) {
+      for (let index = 1; index <= internalOrderBlocksSizeInput; index++) {
+        internalOrderBlocksBoxes.push(box.new(null, null, null, null, ({ xloc: xloc.bar_time, extend: extend.right })));
       }
     }
   }
@@ -1392,14 +1382,10 @@ function main() {
     let newLegHigh = (pinescript.offset(high, pinescript.size) > pinescript.highest(pinescript.size));
     let newLegLow = (pinescript.offset(low, pinescript.size) < pinescript.lowest(pinescript.size));
     if (newLegHigh) {
-      {
-        state.leg = BEARISH_LEG;
-      }
+      state.leg = BEARISH_LEG;
     } else {
       if (newLegLow) {
-        {
-          state.leg = BULLISH_LEG;
-        }
+        state.leg = BULLISH_LEG;
       }
     }
     return state.leg;
@@ -1416,9 +1402,7 @@ function main() {
   function drawLabel(labelTime, labelPrice, tag, labelColor, labelStyle) {
     if (state.l_abel === undefined) state.l_abel = null;
     if ((modeInput === PRESENT)) {
-      {
-        l_abel.delete();
-      }
+      l_abel.delete();
     }
     state.l_abel = pinescript.labelNew(pinescript.chartPointNew(labelTime, null, labelPrice), tag, xloc.bar_time, ({ color: color(null), textcolor: labelColor, style: labelStyle, size: pinescript.size.small }));
   }
@@ -1428,17 +1412,13 @@ function main() {
     let equalColor = state.swingBullishColor;
     let labelStyle = label.style_label_up;
     if (state.equalHigh) {
-      {
-        tag = "EQH";
-        equalColor = state.swingBearishColor;
-        labelStyle = label.style_label_down;
-      }
+      tag = "EQH";
+      equalColor = state.swingBearishColor;
+      labelStyle = label.style_label_down;
     }
     if ((modeInput === PRESENT)) {
-      {
-        pinescript.lineDelete(e_qualDisplay.l_ine);
-        pinescript.labelDelete(e_qualDisplay.l_abel);
-      }
+      pinescript.lineDelete(e_qualDisplay.l_ine);
+      pinescript.labelDelete(e_qualDisplay.l_abel);
     }
     e_qualDisplay.l_ine = pinescript.lineNew(pinescript.chartPointNew(p_ivot.barTime, null, p_ivot.currentLevel), pinescript.chartPointNew(pinescript.offset(time, pinescript.size), null, level), ({ xloc: xloc.bar_time, color: equalColor, style: line.style_dotted }));
     let labelPosition = pinescript.round((0.5 * ((p_ivot.barIndex + bar_index) - pinescript.size)));
@@ -1450,61 +1430,43 @@ function main() {
     let pivotLow = startOfBullishLeg(currentLeg);
     let pivotHigh = startOfBearishLeg(currentLeg);
     if (newPivot) {
-      {
-        if (pivotLow) {
-          {
-            let p_ivot = (equalHighLow ? state.equalLow : (internal ? state.internalLow : state.swingLow));
-            if ((equalHighLow && (pinescript.abs((p_ivot.currentLevel - pinescript.offset(low, pinescript.size))) < (equalHighsLowsThresholdInput * atrMeasure)))) {
-              {
-                drawEqualHighLow(p_ivot, pinescript.offset(low, pinescript.size), pinescript.size, false);
-              }
-            }
-            p_ivot.lastLevel = p_ivot.currentLevel;
-            p_ivot.currentLevel = pinescript.offset(low, pinescript.size);
-            p_ivot.crossed = false;
-            p_ivot.barTime = pinescript.offset(time, pinescript.size);
-            p_ivot.barIndex = pinescript.offset(bar_index, pinescript.size);
-            if ((!equalHighLow && !internal)) {
-              {
-                state.trailing.bottom = p_ivot.currentLevel;
-                state.trailing.barTime = p_ivot.barTime;
-                state.trailing.barIndex = p_ivot.barIndex;
-                state.trailing.lastBottomTime = p_ivot.barTime;
-              }
-            }
-            if (((showSwingsInput && !internal) && !equalHighLow)) {
-              {
-                drawLabel(pinescript.offset(time, pinescript.size), p_ivot.currentLevel, ((p_ivot.currentLevel < p_ivot.lastLevel) ? "LL" : "HL"), state.swingBullishColor, label.style_label_up);
-              }
-            }
-          }
-        } else {
-          {
-            let p_ivot = (equalHighLow ? state.equalHigh : (internal ? state.internalHigh : state.swingHigh));
-            if ((equalHighLow && (pinescript.abs((p_ivot.currentLevel - pinescript.offset(high, pinescript.size))) < (equalHighsLowsThresholdInput * atrMeasure)))) {
-              {
-                drawEqualHighLow(p_ivot, pinescript.offset(high, pinescript.size), pinescript.size, true);
-              }
-            }
-            p_ivot.lastLevel = p_ivot.currentLevel;
-            p_ivot.currentLevel = pinescript.offset(high, pinescript.size);
-            p_ivot.crossed = false;
-            p_ivot.barTime = pinescript.offset(time, pinescript.size);
-            p_ivot.barIndex = pinescript.offset(bar_index, pinescript.size);
-            if ((!equalHighLow && !internal)) {
-              {
-                state.trailing.top = p_ivot.currentLevel;
-                state.trailing.barTime = p_ivot.barTime;
-                state.trailing.barIndex = p_ivot.barIndex;
-                state.trailing.lastTopTime = p_ivot.barTime;
-              }
-            }
-            if (((showSwingsInput && !internal) && !equalHighLow)) {
-              {
-                drawLabel(pinescript.offset(time, pinescript.size), p_ivot.currentLevel, ((p_ivot.currentLevel > p_ivot.lastLevel) ? "HH" : "LH"), state.swingBearishColor, label.style_label_down);
-              }
-            }
-          }
+      if (pivotLow) {
+        let p_ivot = (equalHighLow ? state.equalLow : (internal ? state.internalLow : state.swingLow));
+        if ((equalHighLow && (pinescript.abs((p_ivot.currentLevel - pinescript.offset(low, pinescript.size))) < (equalHighsLowsThresholdInput * atrMeasure)))) {
+          drawEqualHighLow(p_ivot, pinescript.offset(low, pinescript.size), pinescript.size, false);
+        }
+        p_ivot.lastLevel = p_ivot.currentLevel;
+        p_ivot.currentLevel = pinescript.offset(low, pinescript.size);
+        p_ivot.crossed = false;
+        p_ivot.barTime = pinescript.offset(time, pinescript.size);
+        p_ivot.barIndex = pinescript.offset(bar_index, pinescript.size);
+        if ((!equalHighLow && !internal)) {
+          state.trailing.bottom = p_ivot.currentLevel;
+          state.trailing.barTime = p_ivot.barTime;
+          state.trailing.barIndex = p_ivot.barIndex;
+          state.trailing.lastBottomTime = p_ivot.barTime;
+        }
+        if (((showSwingsInput && !internal) && !equalHighLow)) {
+          drawLabel(pinescript.offset(time, pinescript.size), p_ivot.currentLevel, ((p_ivot.currentLevel < p_ivot.lastLevel) ? "LL" : "HL"), state.swingBullishColor, label.style_label_up);
+        }
+      } else {
+        let p_ivot = (equalHighLow ? state.equalHigh : (internal ? state.internalHigh : state.swingHigh));
+        if ((equalHighLow && (pinescript.abs((p_ivot.currentLevel - pinescript.offset(high, pinescript.size))) < (equalHighsLowsThresholdInput * atrMeasure)))) {
+          drawEqualHighLow(p_ivot, pinescript.offset(high, pinescript.size), pinescript.size, true);
+        }
+        p_ivot.lastLevel = p_ivot.currentLevel;
+        p_ivot.currentLevel = pinescript.offset(high, pinescript.size);
+        p_ivot.crossed = false;
+        p_ivot.barTime = pinescript.offset(time, pinescript.size);
+        p_ivot.barIndex = pinescript.offset(bar_index, pinescript.size);
+        if ((!equalHighLow && !internal)) {
+          state.trailing.top = p_ivot.currentLevel;
+          state.trailing.barTime = p_ivot.barTime;
+          state.trailing.barIndex = p_ivot.barIndex;
+          state.trailing.lastTopTime = p_ivot.barTime;
+        }
+        if (((showSwingsInput && !internal) && !equalHighLow)) {
+          drawLabel(pinescript.offset(time, pinescript.size), p_ivot.currentLevel, ((p_ivot.currentLevel > p_ivot.lastLevel) ? "HH" : "LH"), state.swingBearishColor, label.style_label_down);
         }
       }
     }
@@ -1513,10 +1475,8 @@ function main() {
     if (state.l_ine === undefined) state.l_ine = pinescript.lineNew(null, null, null, null, ({ xloc: xloc.bar_time }));
     if (state.l_abel === undefined) state.l_abel = pinescript.labelNew(null, null);
     if ((modeInput === PRESENT)) {
-      {
-        l_ine.delete();
-        l_abel.delete();
-      }
+      l_ine.delete();
+      l_abel.delete();
     }
     state.l_ine = pinescript.lineNew(pinescript.chartPointNew(p_ivot.barTime, null, p_ivot.currentLevel), pinescript.chartPointNew(time, null, p_ivot.currentLevel), xloc.bar_time, ({ color: structureColor, style: lineStyle }));
     state.l_abel = pinescript.labelNew(pinescript.chartPointNew(null, pinescript.round((0.5 * (p_ivot.barIndex + bar_index))), p_ivot.currentLevel), tag, xloc.bar_index, ({ color: color(null), textcolor: structureColor, style: labelStyle, size: labelSize }));
@@ -1524,90 +1484,62 @@ function main() {
   function deleteOrderBlocks(internal = false) {
     let orderBlocks = (internal ? state.internalOrderBlocks : state.swingOrderBlocks);
     for (const [index, eachOrderBlock] of orderBlocks) {
-      {
-        let crossedOderBlock = false;
-        if (((bearishOrderBlockMitigationSource > eachOrderBlock.barHigh) && (eachOrderBlock.bias === BEARISH))) {
-          {
-            crossedOderBlock = true;
-            if (internal) {
-              {
-                currentAlerts.internalBearishOrderBlock = true;
-              }
-            } else {
-              {
-                currentAlerts.swingBearishOrderBlock = true;
-              }
-            }
-          }
+      let crossedOderBlock = false;
+      if (((bearishOrderBlockMitigationSource > eachOrderBlock.barHigh) && (eachOrderBlock.bias === BEARISH))) {
+        crossedOderBlock = true;
+        if (internal) {
+          currentAlerts.internalBearishOrderBlock = true;
         } else {
-          if (((bullishOrderBlockMitigationSource < eachOrderBlock.barLow) && (eachOrderBlock.bias === BULLISH))) {
-            {
-              crossedOderBlock = true;
-              if (internal) {
-                {
-                  currentAlerts.internalBullishOrderBlock = true;
-                }
-              } else {
-                {
-                  currentAlerts.swingBullishOrderBlock = true;
-                }
-              }
-            }
+          currentAlerts.swingBearishOrderBlock = true;
+        }
+      } else {
+        if (((bullishOrderBlockMitigationSource < eachOrderBlock.barLow) && (eachOrderBlock.bias === BULLISH))) {
+          crossedOderBlock = true;
+          if (internal) {
+            currentAlerts.internalBullishOrderBlock = true;
+          } else {
+            currentAlerts.swingBullishOrderBlock = true;
           }
         }
-        if (crossedOderBlock) {
-          {
-            orderBlocks.remove(index);
-          }
-        }
+      }
+      if (crossedOderBlock) {
+        orderBlocks.remove(index);
       }
     }
   }
   function storeOrdeBlock(p_ivot, internal = false, bias) {
     if (((!internal && showSwingOrderBlocksInput) || (internal && showInternalOrderBlocksInput))) {
-      {
-        let a_rray = null;
-        let parsedIndex = null;
-        if ((bias === BEARISH)) {
-          {
-            a_rray = parsedHighs.slice(p_ivot.barIndex, bar_index);
-            parsedIndex = (p_ivot.barIndex + a_rray.indexof(a_rray.max()));
-          }
-        } else {
-          {
-            a_rray = parsedLows.slice(p_ivot.barIndex, bar_index);
-            parsedIndex = (p_ivot.barIndex + a_rray.indexof(a_rray.min()));
-          }
-        }
-        let o_rderBlock = orderBlock.new(parsedHighs.get(parsedIndex), parsedLows.get(parsedIndex), times.get(parsedIndex), bias);
-        let orderBlocks = (internal ? state.internalOrderBlocks : state.swingOrderBlocks);
-        if ((orderBlocks.size() >= 100)) {
-          {
-            orderBlocks.pop();
-          }
-        }
-        orderBlocks.unshift(o_rderBlock);
+      let a_rray = null;
+      let parsedIndex = null;
+      if ((bias === BEARISH)) {
+        a_rray = parsedHighs.slice(p_ivot.barIndex, bar_index);
+        parsedIndex = (p_ivot.barIndex + a_rray.indexof(a_rray.max()));
+      } else {
+        a_rray = parsedLows.slice(p_ivot.barIndex, bar_index);
+        parsedIndex = (p_ivot.barIndex + a_rray.indexof(a_rray.min()));
       }
+      let o_rderBlock = orderBlock.new(parsedHighs.get(parsedIndex), parsedLows.get(parsedIndex), times.get(parsedIndex), bias);
+      let orderBlocks = (internal ? state.internalOrderBlocks : state.swingOrderBlocks);
+      if ((orderBlocks.size() >= 100)) {
+        orderBlocks.pop();
+      }
+      orderBlocks.unshift(o_rderBlock);
     }
   }
   function drawOrderBlocks(internal = false) {
     let orderBlocks = (internal ? state.internalOrderBlocks : state.swingOrderBlocks);
     let orderBlocksSize = orderBlocks.size();
     if ((orderBlocksSize > 0)) {
-      {
-        let maxOrderBlocks = (internal ? internalOrderBlocksSizeInput : swingOrderBlocksSizeInput);
-        let parsedOrdeBlocks = orderBlocks.slice(0, pinescript.min(maxOrderBlocks, orderBlocksSize));
-        let b_oxes = (internal ? state.internalOrderBlocksBoxes : state.swingOrderBlocksBoxes);
-        for (const [index, eachOrderBlock] of parsedOrdeBlocks) {
-          {
-            let orderBlockColor = ((styleInput === MONOCHROME) ? ((eachOrderBlock.bias === BEARISH) ? pinescript.color.new(MONO_BEARISH, 80) : pinescript.color.new(MONO_BULLISH, 80)) : (internal ? ((eachOrderBlock.bias === BEARISH) ? internalBearishOrderBlockColor : internalBullishOrderBlockColor) : ((eachOrderBlock.bias === BEARISH) ? swingBearishOrderBlockColor : swingBullishOrderBlockColor)));
-            let b_ox = b_oxes.get(index);
-            b_ox.set_top_left_point(pinescript.chartPointNew(eachOrderBlock.barTime, null, eachOrderBlock.barHigh));
-            b_ox.set_bottom_right_point(pinescript.chartPointNew(last_bar_time, null, eachOrderBlock.barLow));
-            b_ox.set_border_color((internal ? null : orderBlockColor));
-            b_ox.set_bgcolor(orderBlockColor);
-          }
-        }
+      let maxOrderBlocks = (internal ? internalOrderBlocksSizeInput : swingOrderBlocksSizeInput);
+      let parsedOrdeBlocks = orderBlocks.slice(0, pinescript.min(maxOrderBlocks, orderBlocksSize));
+      let b_oxes = (internal ? state.internalOrderBlocksBoxes : state.swingOrderBlocksBoxes);
+      for (const [index, eachOrderBlock] of parsedOrdeBlocks) {
+        let orderBlockColor = ((styleInput === MONOCHROME) ? ((eachOrderBlock.bias === BEARISH) ? pinescript.color.new(MONO_BEARISH, 80) : pinescript.color.new(MONO_BULLISH, 80)) : (internal ? ((eachOrderBlock.bias === BEARISH) ? internalBearishOrderBlockColor : internalBullishOrderBlockColor) : ((eachOrderBlock.bias === BEARISH) ? swingBearishOrderBlockColor : swingBullishOrderBlockColor)));
+        let b_ox = b_oxes.get(index);
+        b_ox.set_top_left_point(pinescript.chartPointNew(eachOrderBlock.barTime, null, eachOrderBlock.barHigh));
+        b_ox.set_bottom_right_point(pinescript.chartPointNew(last_bar_time, null, eachOrderBlock.barLow));
+        b_ox.set_border_color((internal ? null : orderBlockColor));
+        b_ox.set_bgcolor(orderBlockColor);
       }
     }
   }
@@ -1615,10 +1547,8 @@ function main() {
     if (state.bullishBar === undefined) state.bullishBar = true;
     if (state.bearishBar === undefined) state.bearishBar = true;
     if (internalFilterConfluenceInput) {
-      {
-        state.bullishBar = ((high - pinescript.max(close, open)) > pinescript.min(close, (open - low)));
-        state.bearishBar = ((high - pinescript.max(close, open)) < pinescript.min(close, (open - low)));
-      }
+      state.bullishBar = ((high - pinescript.max(close, open)) > pinescript.min(close, (open - low)));
+      state.bearishBar = ((high - pinescript.max(close, open)) < pinescript.min(close, (open - low)));
     }
     let p_ivot = (internal ? state.internalHigh : state.swingHigh);
     let t_rend = (internal ? state.internalTrend : state.swingTrend);
@@ -1627,64 +1557,44 @@ function main() {
     let extraCondition = (internal ? ((state.internalHigh.currentLevel !== state.swingHigh.currentLevel) && state.bullishBar) : true);
     let bullishColor = ((styleInput === MONOCHROME) ? MONO_BULLISH : (internal ? internalBullColorInput : swingBullColorInput));
     if (((pinescript.cross(close, p_ivot.currentLevel) && !p_ivot.crossed) && extraCondition)) {
-      {
-        let tag = ((t_rend.bias === BEARISH) ? CHOCH : BOS);
-        if (internal) {
-          {
-            currentAlerts.internalBullishCHoCH = (tag === CHOCH);
-            currentAlerts.internalBullishBOS = (tag === BOS);
-          }
-        } else {
-          {
-            currentAlerts.swingBullishCHoCH = (tag === CHOCH);
-            currentAlerts.swingBullishBOS = (tag === BOS);
-          }
-        }
-        p_ivot.crossed = true;
-        t_rend.bias = BULLISH;
-        let displayCondition = (internal ? (showInternalsInput && (((showInternalBullInput === ALL) || ((showInternalBullInput === BOS) && (tag !== CHOCH))) || ((showInternalBullInput === CHOCH) && (tag === CHOCH)))) : (showStructureInput && (((showSwingBullInput === ALL) || ((showSwingBullInput === BOS) && (tag !== CHOCH))) || ((showSwingBullInput === CHOCH) && (tag === CHOCH)))));
-        if (displayCondition) {
-          {
-            drawStructure(p_ivot, tag, bullishColor, lineStyle, label.style_label_down, labelSize);
-          }
-        }
-        if (((internal && showInternalOrderBlocksInput) || (!internal && showSwingOrderBlocksInput))) {
-          {
-            storeOrdeBlock(p_ivot, internal, BULLISH);
-          }
-        }
+      let tag = ((t_rend.bias === BEARISH) ? CHOCH : BOS);
+      if (internal) {
+        currentAlerts.internalBullishCHoCH = (tag === CHOCH);
+        currentAlerts.internalBullishBOS = (tag === BOS);
+      } else {
+        currentAlerts.swingBullishCHoCH = (tag === CHOCH);
+        currentAlerts.swingBullishBOS = (tag === BOS);
+      }
+      p_ivot.crossed = true;
+      t_rend.bias = BULLISH;
+      let displayCondition = (internal ? (showInternalsInput && (((showInternalBullInput === ALL) || ((showInternalBullInput === BOS) && (tag !== CHOCH))) || ((showInternalBullInput === CHOCH) && (tag === CHOCH)))) : (showStructureInput && (((showSwingBullInput === ALL) || ((showSwingBullInput === BOS) && (tag !== CHOCH))) || ((showSwingBullInput === CHOCH) && (tag === CHOCH)))));
+      if (displayCondition) {
+        drawStructure(p_ivot, tag, bullishColor, lineStyle, label.style_label_down, labelSize);
+      }
+      if (((internal && showInternalOrderBlocksInput) || (!internal && showSwingOrderBlocksInput))) {
+        storeOrdeBlock(p_ivot, internal, BULLISH);
       }
     }
     p_ivot = (internal ? state.internalLow : state.swingLow);
     extraCondition = (internal ? ((state.internalLow.currentLevel !== state.swingLow.currentLevel) && state.bearishBar) : true);
     let bearishColor = ((styleInput === MONOCHROME) ? MONO_BEARISH : (internal ? internalBearColorInput : swingBearColorInput));
     if (((pinescript.cross(close, p_ivot.currentLevel) && !p_ivot.crossed) && extraCondition)) {
-      {
-        let tag = ((t_rend.bias === BULLISH) ? CHOCH : BOS);
-        if (internal) {
-          {
-            currentAlerts.internalBearishCHoCH = (tag === CHOCH);
-            currentAlerts.internalBearishBOS = (tag === BOS);
-          }
-        } else {
-          {
-            currentAlerts.swingBearishCHoCH = (tag === CHOCH);
-            currentAlerts.swingBearishBOS = (tag === BOS);
-          }
-        }
-        p_ivot.crossed = true;
-        t_rend.bias = BEARISH;
-        displayCondition = (internal ? (showInternalsInput && (((showInternalBearInput === ALL) || ((showInternalBearInput === BOS) && (tag !== CHOCH))) || ((showInternalBearInput === CHOCH) && (tag === CHOCH)))) : (showStructureInput && (((showSwingBearInput === ALL) || ((showSwingBearInput === BOS) && (tag !== CHOCH))) || ((showSwingBearInput === CHOCH) && (tag === CHOCH)))));
-        if (displayCondition) {
-          {
-            drawStructure(p_ivot, tag, bearishColor, lineStyle, label.style_label_up, labelSize);
-          }
-        }
-        if (((internal && showInternalOrderBlocksInput) || (!internal && showSwingOrderBlocksInput))) {
-          {
-            storeOrdeBlock(p_ivot, internal, BEARISH);
-          }
-        }
+      let tag = ((t_rend.bias === BULLISH) ? CHOCH : BOS);
+      if (internal) {
+        currentAlerts.internalBearishCHoCH = (tag === CHOCH);
+        currentAlerts.internalBearishBOS = (tag === BOS);
+      } else {
+        currentAlerts.swingBearishCHoCH = (tag === CHOCH);
+        currentAlerts.swingBearishBOS = (tag === BOS);
+      }
+      p_ivot.crossed = true;
+      t_rend.bias = BEARISH;
+      displayCondition = (internal ? (showInternalsInput && (((showInternalBearInput === ALL) || ((showInternalBearInput === BOS) && (tag !== CHOCH))) || ((showInternalBearInput === CHOCH) && (tag === CHOCH)))) : (showStructureInput && (((showSwingBearInput === ALL) || ((showSwingBearInput === BOS) && (tag !== CHOCH))) || ((showSwingBearInput === CHOCH) && (tag === CHOCH)))));
+      if (displayCondition) {
+        drawStructure(p_ivot, tag, bearishColor, lineStyle, label.style_label_up, labelSize);
+      }
+      if (((internal && showInternalOrderBlocksInput) || (!internal && showSwingOrderBlocksInput))) {
+        storeOrdeBlock(p_ivot, internal, BEARISH);
       }
     }
   }
@@ -1693,14 +1603,10 @@ function main() {
   }
   function deleteFairValueGaps() {
     for (const [index, eachFairValueGap] of state.fairValueGaps) {
-      {
-        if ((((low < eachFairValueGap.bottom) && (eachFairValueGap.bias === BULLISH)) || ((high > eachFairValueGap.top) && (eachFairValueGap.bias === BEARISH)))) {
-          {
-            eachFairValueGap.topBox.delete();
-            eachFairValueGap.bottomBox.delete();
-            fairValueGaps.remove(index);
-          }
-        }
+      if ((((low < eachFairValueGap.bottom) && (eachFairValueGap.bias === BULLISH)) || ((high > eachFairValueGap.top) && (eachFairValueGap.bias === BEARISH)))) {
+        eachFairValueGap.topBox.delete();
+        eachFairValueGap.bottomBox.delete();
+        fairValueGaps.remove(index);
       }
     }
   }
@@ -1712,23 +1618,32 @@ function main() {
     let bullishFairValueGap = ((((currentLow > last2High) && (lastClose > last2High)) && (barDeltaPercent > threshold)) && newTimeframe);
     let bearishFairValueGap = ((((currentHigh < last2Low) && (lastClose < last2Low)) && (-barDeltaPercent > threshold)) && newTimeframe);
     if (bullishFairValueGap) {
-      {
-        currentAlerts.bullishFairValueGap = true;
-        fairValueGaps.unshift(fairValueGap.new(currentLow, last2High, BULLISH, fairValueGapBox(lastTime, currentTime, currentLow, math.avg(currentLow, last2High), state.fairValueGapBullishColor), fairValueGapBox(lastTime, currentTime, math.avg(currentLow, last2High), last2High, state.fairValueGapBullishColor)));
-      }
+      currentAlerts.bullishFairValueGap = true;
+      fairValueGaps.unshift(fairValueGap.new(currentLow, last2High, BULLISH, fairValueGapBox(lastTime, currentTime, currentLow, math.avg(currentLow, last2High), state.fairValueGapBullishColor), fairValueGapBox(lastTime, currentTime, math.avg(currentLow, last2High), last2High, state.fairValueGapBullishColor)));
     }
     if (bearishFairValueGap) {
-      {
-        currentAlerts.bearishFairValueGap = true;
-        fairValueGaps.unshift(fairValueGap.new(currentHigh, last2Low, BEARISH, fairValueGapBox(lastTime, currentTime, currentHigh, math.avg(currentHigh, last2Low), state.fairValueGapBearishColor), fairValueGapBox(lastTime, currentTime, math.avg(currentHigh, last2Low), last2Low, state.fairValueGapBearishColor)));
-      }
+      currentAlerts.bearishFairValueGap = true;
+      fairValueGaps.unshift(fairValueGap.new(currentHigh, last2Low, BEARISH, fairValueGapBox(lastTime, currentTime, currentHigh, math.avg(currentHigh, last2Low), state.fairValueGapBearishColor), fairValueGapBox(lastTime, currentTime, math.avg(currentHigh, last2Low), last2Low, state.fairValueGapBearishColor)));
     }
   }
   function getStyle(style) {
-    line.style_dotted;
-    line.style_dashed;
-    line.style_solid;
-    return ((style === SOLID) ? undefined : ((style === DASHED) ? undefined : ((style === DOTTED) ? undefined : null)));
+    switch (style) {
+      case SOLID:
+      {
+        line.style_solid;
+        break;
+      }
+      case DASHED:
+      {
+        line.style_dashed;
+        break;
+      }
+      case DOTTED:
+      {
+        line.style_dotted;
+        break;
+      }
+    }
   }
   function drawLevels(timeframe, sameTimeframe, style, levelColor) {
     let [topLevel, bottomLevel, leftTime, rightTime] = pinescript.requestSecurity(syminfo.tickerid, timeframe, [pinescript.offset(high, 1), pinescript.offset(low, 1), pinescript.offset(time, 1), time], ({ lookahead: barmerge.lookahead_on }));
@@ -1739,15 +1654,13 @@ function main() {
     let parsedTopTime = time;
     let parsedBottomTime = time;
     if (!sameTimeframe) {
-      {
-        let leftIndex = times.binary_search_rightmost(parsedLeftTime);
-        let rightIndex = times.binary_search_rightmost(parsedRightTime);
-        let timeArray = times.slice(leftIndex, rightIndex);
-        let topArray = highs.slice(leftIndex, rightIndex);
-        let bottomArray = lows.slice(leftIndex, rightIndex);
-        parsedTopTime = ((timeArray.size() > 0) ? timeArray.get(topArray.indexof(topArray.max())) : state.initialTime);
-        parsedBottomTime = ((timeArray.size() > 0) ? timeArray.get(bottomArray.indexof(bottomArray.min())) : state.initialTime);
-      }
+      let leftIndex = times.binary_search_rightmost(parsedLeftTime);
+      let rightIndex = times.binary_search_rightmost(parsedRightTime);
+      let timeArray = times.slice(leftIndex, rightIndex);
+      let topArray = highs.slice(leftIndex, rightIndex);
+      let bottomArray = lows.slice(leftIndex, rightIndex);
+      parsedTopTime = ((timeArray.size() > 0) ? timeArray.get(topArray.indexof(topArray.max())) : state.initialTime);
+      parsedBottomTime = ((timeArray.size() > 0) ? timeArray.get(bottomArray.indexof(bottomArray.min())) : state.initialTime);
     }
     if (state.topLine === undefined) state.topLine = pinescript.lineNew(null, null, null, null, ({ xloc: xloc.bar_time, color: levelColor, style: getStyle(style) }));
     if (state.bottomLine === undefined) state.bottomLine = pinescript.lineNew(null, null, null, null, ({ xloc: xloc.bar_time, color: levelColor, style: getStyle(style) }));
@@ -1801,91 +1714,57 @@ function main() {
   let candleColor = ((state.internalTrend.bias === BULLISH) ? state.swingBullishColor : state.swingBearishColor);
   pinescript.plotcandle(parsedOpen, high, low, close, ({ color: candleColor, wickcolor: candleColor, bordercolor: candleColor }));
   if ((showHighLowSwingsInput || showPremiumDiscountZonesInput)) {
-    {
-      updateTrailingExtremes();
-      if (showHighLowSwingsInput) {
-        {
-          drawHighLowSwings();
-        }
-      }
-      if (showPremiumDiscountZonesInput) {
-        {
-          drawPremiumDiscountZones();
-        }
-      }
+    updateTrailingExtremes();
+    if (showHighLowSwingsInput) {
+      drawHighLowSwings();
+    }
+    if (showPremiumDiscountZonesInput) {
+      drawPremiumDiscountZones();
     }
   }
   if (showFairValueGapsInput) {
-    {
-      deleteFairValueGaps();
-    }
+    deleteFairValueGaps();
   }
   getCurrentStructure(swingsLengthInput, false);
   getCurrentStructure(5, false, true);
   if (showEqualHighsLowsInput) {
-    {
-      getCurrentStructure(equalHighsLowsLengthInput, true);
-    }
+    getCurrentStructure(equalHighsLowsLengthInput, true);
   }
   if (((showInternalsInput || showInternalOrderBlocksInput) || showTrendInput)) {
-    {
-      displayStructure(true);
-    }
+    displayStructure(true);
   }
   if (((showStructureInput || showSwingOrderBlocksInput) || showHighLowSwingsInput)) {
-    {
-      displayStructure();
-    }
+    displayStructure();
   }
   if (showInternalOrderBlocksInput) {
-    {
-      deleteOrderBlocks(true);
-    }
+    deleteOrderBlocks(true);
   }
   if (showSwingOrderBlocksInput) {
-    {
-      deleteOrderBlocks();
-    }
+    deleteOrderBlocks();
   }
   if (showFairValueGapsInput) {
-    {
-      drawFairValueGaps();
-    }
+    drawFairValueGaps();
   }
   if ((barstate.islastconfirmedhistory || barstate.islast)) {
-    {
-      if (showInternalOrderBlocksInput) {
-        {
-          drawOrderBlocks(true);
-        }
-      }
-      if (showSwingOrderBlocksInput) {
-        {
-          drawOrderBlocks();
-        }
-      }
+    if (showInternalOrderBlocksInput) {
+      drawOrderBlocks(true);
+    }
+    if (showSwingOrderBlocksInput) {
+      drawOrderBlocks();
     }
   }
   state.lastBarIndex = state.currentBarIndex;
   state.currentBarIndex = bar_index;
   let newBar = (state.currentBarIndex !== state.lastBarIndex);
   if ((barstate.islastconfirmedhistory || (barstate.isrealtime && newBar))) {
-    {
-      if ((showDailyLevelsInput && !higherTimeframe("D"))) {
-        {
-          drawLevels("D", timeframe.isdaily, dailyLevelsStyleInput, dailyLevelsColorInput);
-        }
-      }
-      if ((showWeeklyLevelsInput && !higherTimeframe("W"))) {
-        {
-          drawLevels("W", timeframe.isweekly, weeklyLevelsStyleInput, weeklyLevelsColorInput);
-        }
-      }
-      if ((showMonthlyLevelsInput && !higherTimeframe("M"))) {
-        {
-          drawLevels("M", timeframe.ismonthly, monthlyLevelsStyleInput, monthlyLevelsColorInput);
-        }
-      }
+    if ((showDailyLevelsInput && !higherTimeframe("D"))) {
+      drawLevels("D", timeframe.isdaily, dailyLevelsStyleInput, dailyLevelsColorInput);
+    }
+    if ((showWeeklyLevelsInput && !higherTimeframe("W"))) {
+      drawLevels("W", timeframe.isweekly, weeklyLevelsStyleInput, weeklyLevelsColorInput);
+    }
+    if ((showMonthlyLevelsInput && !higherTimeframe("M"))) {
+      drawLevels("M", timeframe.ismonthly, monthlyLevelsStyleInput, monthlyLevelsColorInput);
     }
   }
   alertcondition(currentAlerts.internalBullishBOS, "Internal Bullish BOS", "Internal Bullish BOS formed");

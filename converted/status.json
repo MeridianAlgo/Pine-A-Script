@@ -1,8 +1,8 @@
 {
-  "timestamp": "2026-02-14T03:45:41.569Z",
-  "total": 23,
-  "passed": 14,
-  "failed": 9,
+  "timestamp": "2026-02-15T17:54:13.554Z",
+  "total": 29,
+  "passed": 28,
+  "failed": 1,
   "files": [
     {
       "name": "3D_MACD_Bar_Plot_LuxAlgo.pine",
@@ -11,10 +11,22 @@
       "errorExists": false
     },
     {
-      "name": "Automatic_Trendline_Metrify.pine",
-      "status": "failed",
+      "name": "Arbitrage_Matrix_LuxAlgo.pine",
+      "status": "converted",
       "jsExists": true,
-      "errorExists": true
+      "errorExists": false
+    },
+    {
+      "name": "Asset_Drift_Model.pine",
+      "status": "converted",
+      "jsExists": true,
+      "errorExists": false
+    },
+    {
+      "name": "Automatic_Trendline_Metrify.pine",
+      "status": "converted",
+      "jsExists": true,
+      "errorExists": false
     },
     {
       "name": "CE_1M_3M_Buy_Sell_Hold.pine",
@@ -36,9 +48,15 @@
     },
     {
       "name": "Golden_Pocket_Zones.pine",
-      "status": "failed",
+      "status": "converted",
       "jsExists": true,
-      "errorExists": true
+      "errorExists": false
+    },
+    {
+      "name": "Hyperfork_Matrix.pine",
+      "status": "converted",
+      "jsExists": true,
+      "errorExists": false
     },
     {
       "name": "Impulse_Trend_Arrows.pine",
@@ -60,9 +78,9 @@
     },
     {
       "name": "Manias_Panics_and_Crashes.pine",
-      "status": "failed",
+      "status": "converted",
       "jsExists": true,
-      "errorExists": true
+      "errorExists": false
     },
     {
       "name": "Net_Buy_Volume_theUltimator5.pine",
@@ -72,9 +90,15 @@
     },
     {
       "name": "NY_5m_15m_Orb_-_Statistics_LTF_Candle_structure.pine",
-      "status": "failed",
+      "status": "converted",
       "jsExists": true,
-      "errorExists": true
+      "errorExists": false
+    },
+    {
+      "name": "Peak_Trading_Activity_Graphs_LuxAlgo.pine",
+      "status": "converted",
+      "jsExists": true,
+      "errorExists": false
     },
     {
       "name": "Proximal_Range_Filter_LuxAlgo.pine",
@@ -84,9 +108,9 @@
     },
     {
       "name": "Pro_Pattern_Long-Short_High_Winrate.pine",
-      "status": "failed",
+      "status": "converted",
       "jsExists": true,
-      "errorExists": true
+      "errorExists": false
     },
     {
       "name": "Quantum_Structure_jjart.pine",
@@ -102,12 +126,18 @@
     },
     {
       "name": "Scalping_Strategy_3_minutes.pine",
-      "status": "failed",
+      "status": "converted",
       "jsExists": true,
-      "errorExists": true
+      "errorExists": false
     },
     {
       "name": "Singular_Spectrum_Decomposition_LuxAlgo.pine",
+      "status": "converted",
+      "jsExists": true,
+      "errorExists": false
+    },
+    {
+      "name": "Smart_Trader_Episode_03_by_Ata_Sabanci_Candles_and_Tradelines.pine",
       "status": "converted",
       "jsExists": true,
       "errorExists": false
@@ -120,12 +150,18 @@
     },
     {
       "name": "TehThomas_-_Aligned_Timeframe_Fair_Value_Gaps.pine",
-      "status": "failed",
+      "status": "converted",
       "jsExists": true,
-      "errorExists": true
+      "errorExists": false
     },
     {
       "name": "Volatility_Contraction_Score.pine",
+      "status": "converted",
+      "jsExists": true,
+      "errorExists": false
+    },
+    {
+      "name": "Volume_Surprise_LuxAlgo.pine",
       "status": "converted",
       "jsExists": true,
       "errorExists": false
@@ -138,9 +174,9 @@
     },
     {
       "name": "VSA_Pro_Trend_and_Rejection.pine",
-      "status": "failed",
+      "status": "converted",
       "jsExists": true,
-      "errorExists": true
+      "errorExists": false
     }
   ]
 }

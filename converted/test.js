@@ -905,8 +905,8 @@ const pinescript = {
     const info = { ticker: 'AAPL', tickerid: 'NASDAQ:AAPL', prefix: 'NASDAQ', root: 'AAPL', suffix: '' };
     return info[type] || '';
   },
-  time: 1771040617138,
-  timenow: 1771040617138,
+  time: 1771126094754,
+  timenow: 1771126094754,
   barstate: "LAST",
   dividends: {},
   splits: {},
@@ -1192,7 +1192,6 @@ pinescript.table = {
 
 // Input parameters
 
-const LTFCandles = { new: function(bodies, wicks_high, wicks_low, opens, highs, lows, closes) { return { bodies: bodies, wicks_high: wicks_high, wicks_low: wicks_low, opens: opens, highs: highs, lows: lows, closes: closes }; } };
 
 // Main script logic
 
@@ -1206,1197 +1205,274 @@ function main() {
   close = pinescript.asSeries(globalThis.close);
   volume = pinescript.asSeries(globalThis.volume);
   time = pinescript.asSeries(globalThis.time);
+  Metrify;
   null;
-  // Study: 
-  // Options: {"title":"NY Opening Range (Enhanced with LTF)","shorttitle":"NY ORB","overlay":true,"max_lines_count":500,"max_labels_count":500,"max_boxes_count":500,"max_bars_back":5000}
-  if (state.g_5MIN === undefined) state.g_5MIN = "━━━━━━━━━ 5-MINUTE ORB ━━━━━━━━━";
-  let show_5min = input.bool(true, "Show 5-Minute ORB", ({ group: state.g_5MIN }));
-  let bullish_color_5m = input.color(pinescript.color.rgb(0, 255, 149), "Bullish Color", ({ inline: "5mc", group: state.g_5MIN }));
-  let bearish_color_5m = input.color(pinescript.color.rgb(195, 0, 255), "Bearish Color", ({ inline: "5mc", group: state.g_5MIN }));
-  let bullish_fill_5m = input.color(pinescript.color.rgb(0, 255, 149, 85), "Bullish Fill", ({ inline: "5mf", group: state.g_5MIN }));
-  let bearish_fill_5m = input.color(pinescript.color.rgb(195, 0, 255, 85), "Bearish Fill", ({ inline: "5mf", group: state.g_5MIN }));
-  let boxStyle_5m = input.string("Solid", "Range Style", ({ options: ["Solid", "Dashed", "Dotted"], inline: "5box", group: state.g_5MIN }));
-  let borderWidth_5m = input.int(1, "Width", 1, 10, ({ inline: "5box", group: state.g_5MIN }));
-  let show_midLine_5m = input.bool(true, "Show Midline", ({ inline: "5mid", group: state.g_5MIN }));
-  let lineStyle_5m = input.string("Dashed", "Style", ({ options: ["Solid", "Dashed", "Dotted"], inline: "5mid", group: state.g_5MIN }));
-  let lineWidth_5m = input.int(1, "Width", 1, 10, ({ inline: "5mid", group: state.g_5MIN }));
-  let show_extensions_5m = input.bool(true, "Show Median Extensions", ({ inline: "5ext", group: state.g_5MIN }));
-  let ext_line_style_5m = input.string("Dotted", "Style", ({ options: ["Solid", "Dashed", "Dotted"], inline: "5ext", group: state.g_5MIN }));
-  let ext_line_width_5m = input.int(1, "Width", ({ minval: 1, maxval: 5, inline: "5ext", group: state.g_5MIN }));
-  let show_ext_labels_5m = input.bool(true, "Show Extension Labels", ({ group: state.g_5MIN }));
-  let show_ltf_5m = input.bool(true, "Show LTF Candles", ({ group: state.g_5MIN }));
-  let ltf_5m_count = input.int(5, "  └─ Number of Candles", ({ minval: 1, maxval: 20, group: state.g_5MIN }));
-  let ltf_offset_5m = input.int(5, "  └─ Offset (bars from right)", ({ minval: 1, maxval: 100, group: state.g_5MIN }));
-  let ltf_spacing_5m = input.int(3, "  └─ Candle Spacing", ({ minval: 1, maxval: 5, group: state.g_5MIN }));
-  let ltf_width_5m = input.int(2, "  └─ Candle Width", ({ minval: 1, maxval: 5, group: state.g_5MIN }));
-  let ltf_bull_color_5m = input.color(pinescript.color.rgb(0, 255, 149, 60), "  └─ LTF Bullish Color", ({ group: state.g_5MIN }));
-  let ltf_bear_color_5m = input.color(pinescript.color.rgb(195, 0, 255, 60), "  └─ LTF Bearish Color", ({ group: state.g_5MIN }));
-  let show_ltf_range_5m = input.bool(true, "  └─ Show LTF High/Low Lines", ({ group: state.g_5MIN }));
-  let ltf_range_style_5m = input.string("Dotted", "  └─ LTF Range Style", ({ options: ["Solid", "Dashed", "Dotted"], group: state.g_5MIN }));
-  let ltf_range_width_5m = input.int(1, "  └─ LTF Range Width", ({ minval: 1, maxval: 5, group: state.g_5MIN }));
-  let ltf_range_color_5m = input.color(pinescript.color.rgb(0, 255, 149, 50), "  └─ LTF Range Color", ({ group: state.g_5MIN }));
-  if (state.g_15MIN === undefined) state.g_15MIN = "━━━━━━━━━ 15-MINUTE ORB ━━━━━━━━━";
-  let show_15min = input.bool(true, "Show 15-Minute ORB", ({ group: state.g_15MIN }));
-  let bullish_color_15m = input.color(pinescript.color.rgb(33, 150, 243), "Bullish Color", ({ inline: "15mc", group: state.g_15MIN }));
-  let bearish_color_15m = input.color(pinescript.color.rgb(255, 152, 0), "Bearish Color", ({ inline: "15mc", group: state.g_15MIN }));
-  let bullish_fill_15m = input.color(pinescript.color.rgb(33, 150, 243, 85), "Bullish Fill", ({ inline: "15mf", group: state.g_15MIN }));
-  let bearish_fill_15m = input.color(pinescript.color.rgb(255, 152, 0, 85), "Bearish Fill", ({ inline: "15mf", group: state.g_15MIN }));
-  let boxStyle_15m = input.string("Solid", "Range Style", ({ options: ["Solid", "Dashed", "Dotted"], inline: "15box", group: state.g_15MIN }));
-  let borderWidth_15m = input.int(1, "Width", 1, 10, ({ inline: "15box", group: state.g_15MIN }));
-  let show_midLine_15m = input.bool(true, "Show Midline", ({ inline: "15mid", group: state.g_15MIN }));
-  let lineStyle_15m = input.string("Dashed", "Style", ({ options: ["Solid", "Dashed", "Dotted"], inline: "15mid", group: state.g_15MIN }));
-  let lineWidth_15m = input.int(1, "Width", 1, 10, ({ inline: "15mid", group: state.g_15MIN }));
-  let show_extensions_15m = input.bool(true, "Show Median Extensions", ({ inline: "15ext", group: state.g_15MIN }));
-  let ext_line_style_15m = input.string("Dotted", "Style", ({ options: ["Solid", "Dashed", "Dotted"], inline: "15ext", group: state.g_15MIN }));
-  let ext_line_width_15m = input.int(1, "Width", ({ minval: 1, maxval: 5, inline: "15ext", group: state.g_15MIN }));
-  let show_ext_labels_15m = input.bool(true, "Show Extension Labels", ({ group: state.g_15MIN }));
-  let show_ltf_15m = input.bool(true, "Show LTF Candles", ({ group: state.g_15MIN }));
-  let ltf_15m_count = input.int(15, "  └─ Number of Candles", ({ minval: 1, maxval: 20, group: state.g_15MIN }));
-  let ltf_offset_15m = input.int(35, "  └─ Offset (bars from right)", ({ minval: 1, maxval: 100, group: state.g_15MIN }));
-  let ltf_spacing_15m = input.int(3, "  └─ Candle Spacing", ({ minval: 1, maxval: 5, group: state.g_15MIN }));
-  let ltf_width_15m = input.int(2, "  └─ Candle Width", ({ minval: 1, maxval: 5, group: state.g_15MIN }));
-  let ltf_bull_color_15m = input.color(pinescript.color.rgb(0, 255, 149, 60), "  └─ LTF Bullish Color", ({ group: state.g_15MIN }));
-  let ltf_bear_color_15m = input.color(pinescript.color.rgb(195, 0, 255, 60), "  └─ LTF Bearish Color", ({ group: state.g_15MIN }));
-  let show_ltf_range_15m = input.bool(true, "  └─ Show LTF High/Low Lines", ({ group: state.g_15MIN }));
-  let ltf_range_style_15m = input.string("Dotted", "  └─ LTF Range Style", ({ options: ["Solid", "Dashed", "Dotted"], group: state.g_15MIN }));
-  let ltf_range_width_15m = input.int(1, "  └─ LTF Range Width", ({ minval: 1, maxval: 5, group: state.g_15MIN }));
-  let ltf_range_color_15m = input.color(pinescript.color.rgb(33, 150, 243, 50), "  └─ LTF Range Color", ({ group: state.g_15MIN }));
-  if (state.g_LABELS === undefined) state.g_LABELS = "Labels & Display";
-  let showL = input.bool(true, "Show High/Low/Mid Labels", ({ inline: "Labels", group: state.g_LABELS }));
-  let showP = input.bool(false, "Show Prices", ({ inline: "Labels", group: state.g_LABELS }));
-  let pos = input.string("Left", "Position", ({ options: ["Left", "Right"], group: state.g_LABELS }));
-  if (state.g_TABLE === undefined) state.g_TABLE = "Statistics Table";
-  let show_stats_table = input.bool(true, "Show Statistics Table", ({ group: state.g_TABLE }));
-  let stats_table_pos = input.string("Top Right", "Table Position", ({ options: ["Bottom Center", "Bottom Left", "Bottom Right", "Middle Center", "Middle Left", "Middle Right", "Top Center", "Top Left", "Top Right"], group: state.g_TABLE }));
-  let stats_table_size = input.string("Small", "Table Size", ({ options: ["Auto", "Tiny", "Small", "Normal", "Large", "Huge"], group: state.g_TABLE }));
-  function get_style(style) {
-    line.style_dotted;
-    line.style_dashed;
-    line.style_solid;
-    return ((style === "Solid") ? undefined : ((style === "Dashed") ? undefined : ((style === "Dotted") ? undefined : null)));
+  // Study: Automatic Trendline [Metrify]
+  // Options: {"overlay":true,"max_bars_back":5000,"max_lines_count":20}
+  let GROUP_ENGINE = "Engine";
+  let GROUP_FILTER = "Quality Filters";
+  let GROUP_VISUAL = "Visual";
+  let atrLenTooltip = "Controls how ATR is calculated.nnATR measures average recent candle movement (volatility).nHigher value = smoother, slower adaptation.nLower value = faster, more reactive adaptation.";
+  let breakTolTooltip = "How far price must move through a trendline before the script treats it as a real break.nHigher value reduces false breaks from small wicks/noise.";
+  let maxRelevanceTooltip = "Keeps selected trendlines close enough to current price.nnIf a candidate line is too far from current price (in ATR units), it is ignored.nLower value = more actionable nearby lines.nHigher value = allows farther/older lines.";
+  let pivotLen = input.int(10, "Pivot Length", ({ minval: 2, maxval: 120, group: GROUP_ENGINE }));
+  let lookbackBars = input.int(1000, "Lookback Bars", ({ minval: 150, maxval: 4000, group: GROUP_ENGINE }));
+  let atrLen = input.int(100, "ATR Length", ({ minval: 10, maxval: 500, group: GROUP_ENGINE, tooltip: atrLenTooltip }));
+  let maxViolations = input.int(2, "Max Violations", ({ minval: 0, maxval: 6, group: GROUP_FILTER }));
+  let touchTolATR = input.float(0.3, "Touch Tolerance (ATR)", ({ step: 0.05, minval: 0.05, maxval: 2, group: GROUP_FILTER }));
+  let maxSlopeDeg = input.float(6, "Max Slope Angle", ({ step: 1, minval: 1, maxval: 30, group: GROUP_FILTER }));
+  let maxRelevanceATR = input.float(8, "Max Relevance Distance (ATR)", ({ step: 0.5, minval: 1, maxval: 30, group: GROUP_FILTER, tooltip: maxRelevanceTooltip }));
+  let extendBars = input.int(60, "Line Extend (Bars)", ({ minval: 10, maxval: 300, group: GROUP_VISUAL }));
+  let lineWidth = input.int(2, "Line Width", ({ minval: 1, maxval: 4, group: GROUP_VISUAL }));
+  let showFill = input.bool(true, "Show Fill Between Lines", ({ group: GROUP_VISUAL }));
+  let supportColor = input.color(pinescript.color.new(pinescript.color.hex("#20A56C"), 0), "Support Color", ({ group: GROUP_VISUAL }));
+  let resistColor = input.color(pinescript.color.new(pinescript.color.hex("#C24545"), 0), "Resistance Color", ({ group: GROUP_VISUAL }));
+  let neutralColor = input.color(pinescript.color.new(pinescript.color.hex("#607D8B"), 0), "Fill Base Color", ({ group: GROUP_VISUAL }));
+  let FAST_LOAD_BUFFER_BARS = 100;
+  let BAR_SCAN_WINDOW = 250;
+  let BAR_SCAN_STEP = 5;
+  let minAnchorBars = 10;
+  let pivotMemory = 200;
+  let maxBarViolRatio = 1;
+  let minTouches = 2;
+  let breakTolATR = 0.6;
+  function f_line_y(x1, y1, x2, y2, x) {
+    let dx = (x2 - x1);
+    return ((dx === 0) ? y2 : (y1 + (((y2 - y1) * (x - x1)) / dx)));
   }
-  function get_label_size(size) {
-    pinescript.size.huge;
-    pinescript.size.large;
-    pinescript.size.normal;
-    pinescript.size.small;
-    pinescript.size.tiny;
-    return ((pinescript.size === "Tiny") ? undefined : ((pinescript.size === "Small") ? undefined : ((pinescript.size === "Normal") ? undefined : ((pinescript.size === "Large") ? undefined : ((pinescript.size === "Huge") ? undefined : null)))));
-  }
-  function get_table_position(pos) {
-    pinescript.position.top_right;
-    pinescript.position.top_left;
-    pinescript.position.top_center;
-    pinescript.position.middle_right;
-    pinescript.position.middle_left;
-    pinescript.position.middle_center;
-    pinescript.position.bottom_right;
-    pinescript.position.bottom_left;
-    pinescript.position.bottom_center;
-    return ((pos === "Bottom Center") ? undefined : ((pos === "Bottom Left") ? undefined : ((pos === "Bottom Right") ? undefined : ((pos === "Middle Center") ? undefined : ((pos === "Middle Left") ? undefined : ((pos === "Middle Right") ? undefined : ((pos === "Top Center") ? undefined : ((pos === "Top Left") ? undefined : ((pos === "Top Right") ? undefined : null)))))))));
-  }
-  function get_table_text_size(size) {
-    pinescript.size.huge;
-    pinescript.size.large;
-    pinescript.size.normal;
-    pinescript.size.small;
-    pinescript.size.tiny;
-    pinescript.size.auto;
-    return ((pinescript.size === "Auto") ? undefined : ((pinescript.size === "Tiny") ? undefined : ((pinescript.size === "Small") ? undefined : ((pinescript.size === "Normal") ? undefined : ((pinescript.size === "Large") ? undefined : ((pinescript.size === "Huge") ? undefined : null))))));
-  }
-  let MEDIAN_EXT_5M_HIGH = 0.411;
-  let MEDIAN_EXT_5M_LOW = 0.45;
-  let MEDIAN_EXT_15M_HIGH = 0.38;
-  let MEDIAN_EXT_15M_LOW = 0.415;
-  let tz = "America/New_York";
-  if (state.or5_high === undefined) state.or5_high = null;
-  if (state.or5_low === undefined) state.or5_low = null;
-  if (state.or5_mid === undefined) state.or5_mid = null;
-  if (state.or5_open === undefined) state.or5_open = null;
-  if (state.or5_close === undefined) state.or5_close = null;
-  if (state.or5_start_bar === undefined) state.or5_start_bar = null;
-  if (state.or5_end_bar === undefined) state.or5_end_bar = null;
-  if (state.or5_captured === undefined) state.or5_captured = false;
-  if (state.or5_extreme_first === undefined) state.or5_extreme_first = "none";
-  if (state.or5_top_line === undefined) state.or5_top_line = null;
-  if (state.or5_bot_line === undefined) state.or5_bot_line = null;
-  if (state.or5_mid_line === undefined) state.or5_mid_line = null;
-  if (state.or5_fill === undefined) state.or5_fill = null;
-  if (state.or5_high_label === undefined) state.or5_high_label = null;
-  if (state.or5_low_label === undefined) state.or5_low_label = null;
-  if (state.or5_mid_label === undefined) state.or5_mid_label = null;
-  if (state.or5_ext_high === undefined) state.or5_ext_high = null;
-  if (state.or5_ext_low === undefined) state.or5_ext_low = null;
-  if (state.or5_ext_high_label === undefined) state.or5_ext_high_label = null;
-  if (state.or5_ext_low_label === undefined) state.or5_ext_low_label = null;
-  if (state.or5_ltf_opens_frozen === undefined) state.or5_ltf_opens_frozen = pinescript.arrayNew();
-  if (state.or5_ltf_highs_frozen === undefined) state.or5_ltf_highs_frozen = pinescript.arrayNew();
-  if (state.or5_ltf_lows_frozen === undefined) state.or5_ltf_lows_frozen = pinescript.arrayNew();
-  if (state.or5_ltf_closes_frozen === undefined) state.or5_ltf_closes_frozen = pinescript.arrayNew();
-  if (state.or5_ltf_frozen === undefined) state.or5_ltf_frozen = false;
-  if (state.ltf5 === undefined) state.ltf5 = LTFCandles.new(pinescript.arrayNew(), pinescript.arrayNew(), pinescript.arrayNew(), pinescript.arrayNew(), pinescript.arrayNew(), pinescript.arrayNew(), pinescript.arrayNew());
-  if (state.or5_ltf_high_line === undefined) state.or5_ltf_high_line = null;
-  if (state.or5_ltf_low_line === undefined) state.or5_ltf_low_line = null;
-  if (state.or15_high === undefined) state.or15_high = null;
-  if (state.or15_low === undefined) state.or15_low = null;
-  if (state.or15_mid === undefined) state.or15_mid = null;
-  if (state.or15_open === undefined) state.or15_open = null;
-  if (state.or15_close === undefined) state.or15_close = null;
-  if (state.or15_start_bar === undefined) state.or15_start_bar = null;
-  if (state.or15_end_bar === undefined) state.or15_end_bar = null;
-  if (state.or15_captured === undefined) state.or15_captured = false;
-  if (state.or15_extreme_first === undefined) state.or15_extreme_first = "none";
-  if (state.or15_top_line === undefined) state.or15_top_line = null;
-  if (state.or15_bot_line === undefined) state.or15_bot_line = null;
-  if (state.or15_mid_line === undefined) state.or15_mid_line = null;
-  if (state.or15_fill === undefined) state.or15_fill = null;
-  if (state.or15_high_label === undefined) state.or15_high_label = null;
-  if (state.or15_low_label === undefined) state.or15_low_label = null;
-  if (state.or15_mid_label === undefined) state.or15_mid_label = null;
-  if (state.or15_ext_high === undefined) state.or15_ext_high = null;
-  if (state.or15_ext_low === undefined) state.or15_ext_low = null;
-  if (state.or15_ext_high_label === undefined) state.or15_ext_high_label = null;
-  if (state.or15_ext_low_label === undefined) state.or15_ext_low_label = null;
-  if (state.or15_ltf_opens_frozen === undefined) state.or15_ltf_opens_frozen = pinescript.arrayNew();
-  if (state.or15_ltf_highs_frozen === undefined) state.or15_ltf_highs_frozen = pinescript.arrayNew();
-  if (state.or15_ltf_lows_frozen === undefined) state.or15_ltf_lows_frozen = pinescript.arrayNew();
-  if (state.or15_ltf_closes_frozen === undefined) state.or15_ltf_closes_frozen = pinescript.arrayNew();
-  if (state.or15_ltf_frozen === undefined) state.or15_ltf_frozen = false;
-  if (state.ltf15 === undefined) state.ltf15 = LTFCandles.new(pinescript.arrayNew(), pinescript.arrayNew(), pinescript.arrayNew(), pinescript.arrayNew(), pinescript.arrayNew(), pinescript.arrayNew(), pinescript.arrayNew());
-  if (state.or15_ltf_high_line === undefined) state.or15_ltf_high_line = null;
-  if (state.or15_ltf_low_line === undefined) state.or15_ltf_low_line = null;
-  if (state.or5_high_broken === undefined) state.or5_high_broken = false;
-  if (state.or5_low_broken === undefined) state.or5_low_broken = false;
-  if (state.or15_high_broken === undefined) state.or15_high_broken = false;
-  if (state.or15_low_broken === undefined) state.or15_low_broken = false;
-  if (state.or5_mid_retested === undefined) state.or5_mid_retested = false;
-  if (state.or15_mid_retested === undefined) state.or15_mid_retested = false;
-  if (state.or5_ext_high_reached === undefined) state.or5_ext_high_reached = false;
-  if (state.or5_ext_low_reached === undefined) state.or5_ext_low_reached = false;
-  if (state.or15_ext_high_reached === undefined) state.or15_ext_high_reached = false;
-  if (state.or15_ext_low_reached === undefined) state.or15_ext_low_reached = false;
-  if (state.ib_high === undefined) state.ib_high = null;
-  if (state.ib_low === undefined) state.ib_low = null;
-  if (state.ib_open === undefined) state.ib_open = null;
-  if (state.ib_close === undefined) state.ib_close = null;
-  if (state.ib_captured === undefined) state.ib_captured = false;
-  if (state.ib_is_bullish === undefined) state.ib_is_bullish = false;
-  let is_5m_session = !pinescript.na(pinescript.time(timeframe.period, "0930-0935", tz));
-  let is_5m_start = (is_5m_session && !pinescript.offset(is_5m_session, 1));
-  let is_5m_end = (pinescript.offset(is_5m_session, 1) && !is_5m_session);
-  let is_15m_session = !pinescript.na(pinescript.time(timeframe.period, "0930-0945", tz));
-  let is_15m_start = (is_15m_session && !pinescript.offset(is_15m_session, 1));
-  let is_15m_end = (pinescript.offset(is_15m_session, 1) && !is_15m_session);
-  let is_ib_session = !pinescript.na(pinescript.time(timeframe.period, "0930-1030", tz));
-  let is_ib_start = (is_ib_session && !pinescript.offset(is_ib_session, 1));
-  let is_ib_end = (pinescript.offset(is_ib_session, 1) && !is_ib_session);
-  let is_ny_session = !pinescript.na(pinescript.time(timeframe.period, "0930-1600", tz));
-  let is_ny_session_end = (pinescript.offset(is_ny_session, 1) && !is_ny_session);
-  let [H5, L5, M5, O5, C5] = pinescript.requestSecurity(ticker.standard(syminfo.tickerid), "5", [high, low, hl2, open, close], ({ lookahead: barmerge.lookahead_on }));
-  let [H15, L15, M15, O15, C15] = pinescript.requestSecurity(ticker.standard(syminfo.tickerid), "15", [high, low, hl2, open, close], ({ lookahead: barmerge.lookahead_on }));
-  let [H60, L60, O60, C60] = pinescript.requestSecurity(ticker.standard(syminfo.tickerid), "60", [high, low, open, close], ({ lookahead: barmerge.lookahead_on }));
-  let [high_1m, low_1m, open_1m, close_1m] = request.security_lower_tf(ticker.standard(syminfo.tickerid), "1", [high, low, open, close]);
-  let _style = ((pos === "Left") ? label.style_label_right : label.style_label_left);
-  if (((is_ib_start && !pinescript.na(H60)) && !pinescript.na(L60))) {
-    {
-      state.ib_high = H60;
-      state.ib_low = L60;
-      state.ib_open = O60;
-      state.ib_close = C60;
-      state.ib_captured = false;
-    }
-  }
-  if (((is_ib_end && !pinescript.na(state.ib_high)) && !pinescript.na(state.ib_low))) {
-    {
-      state.ib_is_bullish = (state.ib_close >= state.ib_open);
-      state.ib_captured = true;
-    }
-  }
-  function draw_ltf_candles(ltf, o_array, h_array, l_array, c_array, bull_color, bear_color, offset_from_right, max_candles, spacing, width) {
-    if ((pinescript.arraySize(o_array) > 0)) {
-      {
-        while ((pinescript.arraySize(ltf.bodies) > 0)) {
-          {
-            box.delete(ltf.bodies.shift());
+  function f_store_pivot(idxArr, priceArr, idx, price, isLow, mergeBars, maxCount) {
+    let sz = pinescript.arraySize(idxArr);
+    if ((sz === 0)) {
+      pinescript.arrayUnshift(idxArr, idx);
+      pinescript.arrayUnshift(priceArr, price);
+    } else {
+      let latestIdx = pinescript.arrayGet(idxArr, 0);
+      let latestPrice = pinescript.arrayGet(priceArr, 0);
+      if ((idx > latestIdx)) {
+        if (((idx - latestIdx) <= mergeBars)) {
+          let replace = (isLow ? (price < latestPrice) : (price > latestPrice));
+          if (replace) {
+            pinescript.arraySet(idxArr, 0, idx);
+            pinescript.arraySet(priceArr, 0, price);
           }
-        }
-        while ((pinescript.arraySize(ltf.wicks_high) > 0)) {
-          {
-            pinescript.lineDelete(ltf.wicks_high.shift());
-          }
-        }
-        while ((pinescript.arraySize(ltf.wicks_low) > 0)) {
-          {
-            pinescript.lineDelete(ltf.wicks_low.shift());
-          }
-        }
-        ltf.highs.clear();
-        ltf.lows.clear();
-        let start_index = pinescript.max(0, (pinescript.arraySize(o_array) - max_candles));
-        let num_candles = (pinescript.arraySize(o_array) - start_index);
-        for (let i = start_index; i <= (pinescript.arraySize(o_array) - 1); i++) {
-          {
-            let o = pinescript.arrayGet(o_array, i);
-            let h = pinescript.arrayGet(h_array, i);
-            let l = pinescript.arrayGet(l_array, i);
-            let c = pinescript.arrayGet(c_array, i);
-            let is_bull = (c >= o);
-            let candle_color = (is_bull ? bull_color : bear_color);
-            let candle_index = (i - start_index);
-            let x_start = ((bar_index + offset_from_right) + (candle_index * spacing));
-            let x_end = (x_start + width);
-            let x_mid = pinescript.round((x_start + (width / 2)));
-            let body_top = pinescript.max(o, c);
-            let body_bottom = pinescript.min(o, c);
-            ltf.bodies.push(box.new(x_start, body_top, x_end, body_bottom, ({ border_color: candle_color, bgcolor: candle_color, border_width: 1 })));
-            ltf.wicks_high.push(pinescript.lineNew(x_mid, body_top, x_mid, h, ({ color: candle_color, width: 1 })));
-            ltf.wicks_low.push(pinescript.lineNew(x_mid, body_bottom, x_mid, l, ({ color: candle_color, width: 1 })));
-            ltf.highs.push(h);
-            ltf.lows.push(l);
-          }
-        }
-        let ltf_start_x = (bar_index + offset_from_right);
-        let ltf_end_x = (((bar_index + offset_from_right) + (num_candles * spacing)) + width);
-        [ltf_start_x, ltf_end_x];
-      }
-    }
-  }
-  if (show_5min) {
-    {
-      if (is_5m_start) {
-        {
-          pinescript.lineDelete(state.or5_top_line);
-          pinescript.lineDelete(state.or5_bot_line);
-          pinescript.lineDelete(state.or5_mid_line);
-          linefill.delete(state.or5_fill);
-          pinescript.labelDelete(state.or5_high_label);
-          pinescript.labelDelete(state.or5_low_label);
-          pinescript.labelDelete(state.or5_mid_label);
-          pinescript.lineDelete(state.or5_ext_high);
-          pinescript.lineDelete(state.or5_ext_low);
-          pinescript.labelDelete(state.or5_ext_high_label);
-          pinescript.labelDelete(state.or5_ext_low_label);
-          pinescript.lineDelete(state.or5_ltf_high_line);
-          pinescript.lineDelete(state.or5_ltf_low_line);
-          state.or5_start_bar = bar_index;
-          state.or5_captured = false;
-          state.or5_high_broken = false;
-          state.or5_low_broken = false;
-          state.or5_extreme_first = "none";
-          state.or5_mid_retested = false;
-          state.or5_ltf_frozen = false;
-          state.or5_ext_high_reached = false;
-          state.or5_ext_low_reached = false;
-          or5_ltf_opens_frozen.clear();
-          or5_ltf_highs_frozen.clear();
-          or5_ltf_lows_frozen.clear();
-          or5_ltf_closes_frozen.clear();
-          state.or5_top_line = null;
-          state.or5_bot_line = null;
-          state.or5_mid_line = null;
-          state.or5_fill = null;
-          state.or5_high_label = null;
-          state.or5_low_label = null;
-          state.or5_mid_label = null;
-          state.or5_ext_high = null;
-          state.or5_ext_low = null;
-          state.or5_ext_high_label = null;
-          state.or5_ext_low_label = null;
-        }
-      }
-      if (((is_5m_session && !pinescript.na(H5)) && !pinescript.na(L5))) {
-        {
-          state.or5_high = H5;
-          state.or5_low = L5;
-          state.or5_mid = M5;
-          state.or5_open = O5;
-          state.or5_close = C5;
-        }
-      }
-      if (is_5m_end) {
-        {
-          state.or5_end_bar = bar_index;
-          state.or5_captured = true;
-        }
-      }
-      if ((((is_5m_session && !state.or5_ltf_frozen) && !pinescript.na(open_1m)) && (pinescript.arraySize(open_1m) > 0))) {
-        {
-          for (let i = 0; i <= (pinescript.arraySize(open_1m) - 1); i++) {
-            {
-              or5_ltf_opens_frozen.push(pinescript.arrayGet(open_1m, i));
-              or5_ltf_highs_frozen.push(pinescript.arrayGet(high_1m, i));
-              or5_ltf_lows_frozen.push(pinescript.arrayGet(low_1m, i));
-              or5_ltf_closes_frozen.push(pinescript.arrayGet(close_1m, i));
-            }
-          }
-        }
-      }
-      if ((is_5m_end && !state.or5_ltf_frozen)) {
-        {
-          state.or5_ltf_frozen = true;
-          if (((state.or5_extreme_first === "none") && (pinescript.arraySize(state.or5_ltf_highs_frozen) > 0))) {
-            {
-              for (let i = 0; i <= (pinescript.arraySize(state.or5_ltf_highs_frozen) - 1); i++) {
-                {
-                  let h_1m = pinescript.arrayGet(state.or5_ltf_highs_frozen, i);
-                  let l_1m = pinescript.arrayGet(state.or5_ltf_lows_frozen, i);
-                  if ((h_1m >= state.or5_high)) {
-                    {
-                      state.or5_extreme_first = "high";
-                      break;
-                    }
-                  } else {
-                    if ((l_1m <= state.or5_low)) {
-                      {
-                        state.or5_extreme_first = "low";
-                        break;
-                      }
-                    }
-                  }
-                }
-              }
-            }
-          }
-        }
-      }
-      if ((state.or5_captured && !state.or5_mid_retested)) {
-        {
-          if (((((high >= state.or5_mid) && (low <= state.or5_mid)) || ((pinescript.offset(close, 1) < state.or5_mid) && (close >= state.or5_mid))) || ((pinescript.offset(close, 1) > state.or5_mid) && (close <= state.or5_mid)))) {
-            {
-              state.or5_mid_retested = true;
-            }
-          }
-        }
-      }
-      if ((((state.or5_captured && !pinescript.na(state.or5_high)) && !pinescript.na(state.or5_low)) && pinescript.na(state.or5_top_line))) {
-        {
-          let is_bullish = (state.or5_close >= state.or5_open);
-          let _color = (is_bullish ? bullish_color_5m : bearish_color_5m);
-          let _fillcolor = (is_bullish ? bullish_fill_5m : bearish_fill_5m);
-          state.or5_top_line = pinescript.lineNew(state.or5_start_bar, state.or5_high, bar_index, state.or5_high, ({ color: _color, style: get_style(boxStyle_5m), width: borderWidth_5m }));
-          state.or5_bot_line = pinescript.lineNew(state.or5_start_bar, state.or5_low, bar_index, state.or5_low, ({ color: _color, style: get_style(boxStyle_5m), width: borderWidth_5m }));
-          state.or5_fill = linefill.new(state.or5_top_line, state.or5_bot_line, _fillcolor);
-          if (show_midLine_5m) {
-            {
-              state.or5_mid_line = pinescript.lineNew(state.or5_start_bar, state.or5_mid, bar_index, state.or5_mid, ({ color: _color, style: get_style(lineStyle_5m), width: lineWidth_5m }));
-            }
-          }
-          if (show_extensions_5m) {
-            {
-              let ext_high_price = (state.or5_high * (1 + (MEDIAN_EXT_5M_HIGH / 100)));
-              let ext_low_price = (state.or5_low * (1 - (MEDIAN_EXT_5M_LOW / 100)));
-              state.or5_ext_high = pinescript.lineNew(state.or5_start_bar, ext_high_price, bar_index, ext_high_price, ({ color: _color, style: get_style(ext_line_style_5m), width: ext_line_width_5m }));
-              state.or5_ext_low = pinescript.lineNew(state.or5_start_bar, ext_low_price, bar_index, ext_low_price, ({ color: _color, style: get_style(ext_line_style_5m), width: ext_line_width_5m }));
-            }
-          }
-          let x = ((pos === "Left") ? state.or5_start_bar : bar_index);
-          if (showL) {
-            {
-              state.or5_high_label = pinescript.labelNew(x, state.or5_high, ("5m High" + (showP ? ((" (" + pinescript.strToString(state.or5_high, format.mintick)) + ")") : "")), ({ style: _style, color: pinescript.color.new(_color, 100), textcolor: _color, size: get_label_size("Normal") }));
-              state.or5_low_label = pinescript.labelNew(x, state.or5_low, ("5m Low" + (showP ? ((" (" + pinescript.strToString(state.or5_low, format.mintick)) + ")") : "")), ({ style: _style, color: pinescript.color.new(_color, 100), textcolor: _color, size: get_label_size("Normal") }));
-              if (show_midLine_5m) {
-                {
-                  state.or5_mid_label = pinescript.labelNew(x, state.or5_mid, ("5m Mid" + (showP ? ((" (" + pinescript.strToString(state.or5_mid, format.mintick)) + ")") : "")), ({ style: _style, color: pinescript.color.new(_color, 100), textcolor: _color, size: get_label_size("Normal") }));
-                }
-              }
-            }
-          }
-          if ((show_extensions_5m && show_ext_labels_5m)) {
-            {
-              ext_high_price = (state.or5_high * (1 + (MEDIAN_EXT_5M_HIGH / 100)));
-              ext_low_price = (state.or5_low * (1 - (MEDIAN_EXT_5M_LOW / 100)));
-              state.or5_ext_high_label = pinescript.labelNew(x, ext_high_price, "Med Ext +0.41%", ({ style: _style, color: pinescript.color.new(_color, 100), textcolor: _color, size: get_label_size("Small") }));
-              state.or5_ext_low_label = pinescript.labelNew(x, ext_low_price, "Med Ext -0.45%", ({ style: _style, color: pinescript.color.new(_color, 100), textcolor: _color, size: get_label_size("Small") }));
-            }
-          }
-        }
-      }
-      if (((((state.or5_captured && show_ltf_5m) && state.or5_ltf_frozen) && (pinescript.arraySize(state.or5_ltf_opens_frozen) > 0)) && is_ny_session)) {
-        {
-          [ltf_start_x, ltf_end_x] = draw_ltf_candles(state.ltf5, state.or5_ltf_opens_frozen, state.or5_ltf_highs_frozen, state.or5_ltf_lows_frozen, state.or5_ltf_closes_frozen, ltf_bull_color_5m, ltf_bear_color_5m, ltf_offset_5m, ltf_5m_count, ltf_spacing_5m, ltf_width_5m);
-          if ((show_ltf_range_5m && (pinescript.arraySize(state.ltf5.highs) > 0))) {
-            {
-              pinescript.lineDelete(state.or5_ltf_high_line);
-              pinescript.lineDelete(state.or5_ltf_low_line);
-              let ltf_high = pinescript.arrayMax(state.ltf5.highs);
-              let ltf_low = pinescript.arrayMin(state.ltf5.lows);
-              state.or5_ltf_high_line = pinescript.lineNew(ltf_start_x, ltf_high, ltf_end_x, ltf_high, ({ color: ltf_range_color_5m, style: get_style(ltf_range_style_5m), width: ltf_range_width_5m }));
-              state.or5_ltf_low_line = pinescript.lineNew(ltf_start_x, ltf_low, ltf_end_x, ltf_low, ({ color: ltf_range_color_5m, style: get_style(ltf_range_style_5m), width: ltf_range_width_5m }));
-            }
-          }
-        }
-      }
-      if (((state.or5_captured && !pinescript.na(state.or5_top_line)) && is_ny_session)) {
-        {
-          state.or5_end_bar = bar_index;
-          if (!pinescript.na(state.or5_top_line)) {
-            {
-              line.set_x2(state.or5_top_line, bar_index);
-            }
-          }
-          if (!pinescript.na(state.or5_bot_line)) {
-            {
-              line.set_x2(state.or5_bot_line, bar_index);
-            }
-          }
-          if ((!pinescript.na(state.or5_mid_line) && show_midLine_5m)) {
-            {
-              line.set_x2(state.or5_mid_line, bar_index);
-            }
-          }
-          if ((!pinescript.na(state.or5_ext_high) && show_extensions_5m)) {
-            {
-              line.set_x2(state.or5_ext_high, bar_index);
-            }
-          }
-          if ((!pinescript.na(state.or5_ext_low) && show_extensions_5m)) {
-            {
-              line.set_x2(state.or5_ext_low, bar_index);
-            }
-          }
-          if ((showL && (pos === "Right"))) {
-            {
-              if (!pinescript.na(state.or5_high_label)) {
-                {
-                  label.set_x(state.or5_high_label, bar_index);
-                }
-              }
-              if (!pinescript.na(state.or5_low_label)) {
-                {
-                  label.set_x(state.or5_low_label, bar_index);
-                }
-              }
-              if ((!pinescript.na(state.or5_mid_label) && show_midLine_5m)) {
-                {
-                  label.set_x(state.or5_mid_label, bar_index);
-                }
-              }
-            }
-          }
-          if (((show_extensions_5m && show_ext_labels_5m) && (pos === "Right"))) {
-            {
-              if (!pinescript.na(state.or5_ext_high_label)) {
-                {
-                  label.set_x(state.or5_ext_high_label, bar_index);
-                }
-              }
-              if (!pinescript.na(state.or5_ext_low_label)) {
-                {
-                  label.set_x(state.or5_ext_low_label, bar_index);
-                }
-              }
-            }
-          }
-          if (!is_5m_session) {
-            {
-              if ((!state.or5_high_broken && (high > state.or5_high))) {
-                {
-                  state.or5_high_broken = true;
-                }
-              }
-              if ((!state.or5_low_broken && (low < state.or5_low))) {
-                {
-                  state.or5_low_broken = true;
-                }
-              }
-              if (show_extensions_5m) {
-                {
-                  ext_high_price = (state.or5_high * (1 + (MEDIAN_EXT_5M_HIGH / 100)));
-                  ext_low_price = (state.or5_low * (1 - (MEDIAN_EXT_5M_LOW / 100)));
-                  if ((!state.or5_ext_high_reached && (high > ext_high_price))) {
-                    {
-                      state.or5_ext_high_reached = true;
-                    }
-                  }
-                  if ((!state.or5_ext_low_reached && (low < ext_low_price))) {
-                    {
-                      state.or5_ext_low_reached = true;
-                    }
-                  }
-                }
-              }
-            }
-          }
+        } else {
+          pinescript.arrayUnshift(idxArr, idx);
+          pinescript.arrayUnshift(priceArr, price);
         }
       }
     }
   }
-  if (show_15min) {
-    {
-      if (is_15m_start) {
-        {
-          pinescript.lineDelete(state.or15_top_line);
-          pinescript.lineDelete(state.or15_bot_line);
-          pinescript.lineDelete(state.or15_mid_line);
-          linefill.delete(state.or15_fill);
-          pinescript.labelDelete(state.or15_high_label);
-          pinescript.labelDelete(state.or15_low_label);
-          pinescript.labelDelete(state.or15_mid_label);
-          pinescript.lineDelete(state.or15_ext_high);
-          pinescript.lineDelete(state.or15_ext_low);
-          pinescript.labelDelete(state.or15_ext_high_label);
-          pinescript.labelDelete(state.or15_ext_low_label);
-          pinescript.lineDelete(state.or15_ltf_high_line);
-          pinescript.lineDelete(state.or15_ltf_low_line);
-          state.or15_start_bar = bar_index;
-          state.or15_captured = false;
-          state.or15_high_broken = false;
-          state.or15_low_broken = false;
-          state.or15_extreme_first = "none";
-          state.or15_mid_retested = false;
-          state.or15_ltf_frozen = false;
-          state.or15_ext_high_reached = false;
-          state.or15_ext_low_reached = false;
-          or15_ltf_opens_frozen.clear();
-          or15_ltf_highs_frozen.clear();
-          or15_ltf_lows_frozen.clear();
-          or15_ltf_closes_frozen.clear();
-          state.or15_top_line = null;
-          state.or15_bot_line = null;
-          state.or15_mid_line = null;
-          state.or15_fill = null;
-          state.or15_high_label = null;
-          state.or15_low_label = null;
-          state.or15_mid_label = null;
-          state.or15_ext_high = null;
-          state.or15_ext_low = null;
-          state.or15_ext_high_label = null;
-          state.or15_ext_low_label = null;
-        }
+  while ((pinescript.arraySize(idxArr) > maxCount)) {
+    pinescript.arrayPop(idxArr);
+    pinescript.arrayPop(priceArr);
+  }
+  function f_trim_lookback(idxArr, priceArr, lbBars) {
+    while ((pinescript.arraySize(idxArr) > 0)) {
+      let oldestIdx = pinescript.arrayGet(idxArr, (pinescript.arraySize(idxArr) - 1));
+      if (((bar_index - oldestIdx) > lbBars)) {
+        pinescript.arrayPop(idxArr);
+        pinescript.arrayPop(priceArr);
+      } else {
+        break;
       }
-      if (((is_15m_session && !pinescript.na(H15)) && !pinescript.na(L15))) {
-        {
-          state.or15_high = H15;
-          state.or15_low = L15;
-          state.or15_mid = M15;
-          state.or15_open = O15;
-          state.or15_close = C15;
-        }
-      }
-      if (is_15m_end) {
-        {
-          state.or15_end_bar = bar_index;
-          state.or15_captured = true;
-        }
-      }
-      if ((((is_15m_session && !state.or15_ltf_frozen) && !pinescript.na(open_1m)) && (pinescript.arraySize(open_1m) > 0))) {
-        {
-          for (let i = 0; i <= (pinescript.arraySize(open_1m) - 1); i++) {
-            {
-              or15_ltf_opens_frozen.push(pinescript.arrayGet(open_1m, i));
-              or15_ltf_highs_frozen.push(pinescript.arrayGet(high_1m, i));
-              or15_ltf_lows_frozen.push(pinescript.arrayGet(low_1m, i));
-              or15_ltf_closes_frozen.push(pinescript.arrayGet(close_1m, i));
-            }
-          }
-        }
-      }
-      if ((is_15m_end && !state.or15_ltf_frozen)) {
-        {
-          state.or15_ltf_frozen = true;
-          if (((state.or15_extreme_first === "none") && (pinescript.arraySize(state.or15_ltf_highs_frozen) > 0))) {
-            {
-              for (let i = 0; i <= (pinescript.arraySize(state.or15_ltf_highs_frozen) - 1); i++) {
-                {
-                  h_1m = pinescript.arrayGet(state.or15_ltf_highs_frozen, i);
-                  l_1m = pinescript.arrayGet(state.or15_ltf_lows_frozen, i);
-                  if ((h_1m >= state.or15_high)) {
-                    {
-                      state.or15_extreme_first = "high";
-                      break;
-                    }
-                  } else {
-                    if ((l_1m <= state.or15_low)) {
-                      {
-                        state.or15_extreme_first = "low";
-                        break;
-                      }
-                    }
-                  }
-                }
-              }
-            }
-          }
-        }
-      }
-      if ((state.or15_captured && !state.or15_mid_retested)) {
-        {
-          if (((((high >= state.or15_mid) && (low <= state.or15_mid)) || ((pinescript.offset(close, 1) < state.or15_mid) && (close >= state.or15_mid))) || ((pinescript.offset(close, 1) > state.or15_mid) && (close <= state.or15_mid)))) {
-            {
-              state.or15_mid_retested = true;
-            }
-          }
-        }
-      }
-      if ((((state.or15_captured && !pinescript.na(state.or15_high)) && !pinescript.na(state.or15_low)) && pinescript.na(state.or15_top_line))) {
-        {
-          is_bullish = (state.or15_close >= state.or15_open);
-          _color = (is_bullish ? bullish_color_15m : bearish_color_15m);
-          _fillcolor = (is_bullish ? bullish_fill_15m : bearish_fill_15m);
-          state.or15_top_line = pinescript.lineNew(state.or15_start_bar, state.or15_high, bar_index, state.or15_high, ({ color: _color, style: get_style(boxStyle_15m), width: borderWidth_15m }));
-          state.or15_bot_line = pinescript.lineNew(state.or15_start_bar, state.or15_low, bar_index, state.or15_low, ({ color: _color, style: get_style(boxStyle_15m), width: borderWidth_15m }));
-          state.or15_fill = linefill.new(state.or15_top_line, state.or15_bot_line, _fillcolor);
-          if (show_midLine_15m) {
-            {
-              state.or15_mid_line = pinescript.lineNew(state.or15_start_bar, state.or15_mid, bar_index, state.or15_mid, ({ color: _color, style: get_style(lineStyle_15m), width: lineWidth_15m }));
-            }
-          }
-          if (show_extensions_15m) {
-            {
-              ext_high_price = (state.or15_high * (1 + (MEDIAN_EXT_15M_HIGH / 100)));
-              ext_low_price = (state.or15_low * (1 - (MEDIAN_EXT_15M_LOW / 100)));
-              state.or15_ext_high = pinescript.lineNew(state.or15_start_bar, ext_high_price, bar_index, ext_high_price, ({ color: _color, style: get_style(ext_line_style_15m), width: ext_line_width_15m }));
-              state.or15_ext_low = pinescript.lineNew(state.or15_start_bar, ext_low_price, bar_index, ext_low_price, ({ color: _color, style: get_style(ext_line_style_15m), width: ext_line_width_15m }));
-            }
-          }
-          x = ((pos === "Left") ? state.or15_start_bar : bar_index);
-          if (showL) {
-            {
-              state.or15_high_label = pinescript.labelNew(x, state.or15_high, ("15m High" + (showP ? ((" (" + pinescript.strToString(state.or15_high, format.mintick)) + ")") : "")), ({ style: _style, color: pinescript.color.new(_color, 100), textcolor: _color, size: get_label_size("Normal") }));
-              state.or15_low_label = pinescript.labelNew(x, state.or15_low, ("15m Low" + (showP ? ((" (" + pinescript.strToString(state.or15_low, format.mintick)) + ")") : "")), ({ style: _style, color: pinescript.color.new(_color, 100), textcolor: _color, size: get_label_size("Normal") }));
-              if (show_midLine_15m) {
-                {
-                  state.or15_mid_label = pinescript.labelNew(x, state.or15_mid, ("15m Mid" + (showP ? ((" (" + pinescript.strToString(state.or15_mid, format.mintick)) + ")") : "")), ({ style: _style, color: pinescript.color.new(_color, 100), textcolor: _color, size: get_label_size("Normal") }));
-                }
-              }
-            }
-          }
-          if ((show_extensions_15m && show_ext_labels_15m)) {
-            {
-              ext_high_price = (state.or15_high * (1 + (MEDIAN_EXT_15M_HIGH / 100)));
-              ext_low_price = (state.or15_low * (1 - (MEDIAN_EXT_15M_LOW / 100)));
-              state.or15_ext_high_label = pinescript.labelNew(x, ext_high_price, "Med Ext +0.38%", ({ style: _style, color: pinescript.color.new(_color, 100), textcolor: _color, size: get_label_size("Small") }));
-              state.or15_ext_low_label = pinescript.labelNew(x, ext_low_price, "Med Ext -0.42%", ({ style: _style, color: pinescript.color.new(_color, 100), textcolor: _color, size: get_label_size("Small") }));
-            }
-          }
-        }
-      }
-      if (((((state.or15_captured && show_ltf_15m) && state.or15_ltf_frozen) && (pinescript.arraySize(state.or15_ltf_opens_frozen) > 0)) && is_ny_session)) {
-        {
-          [ltf_start_x, ltf_end_x] = draw_ltf_candles(state.ltf15, state.or15_ltf_opens_frozen, state.or15_ltf_highs_frozen, state.or15_ltf_lows_frozen, state.or15_ltf_closes_frozen, ltf_bull_color_15m, ltf_bear_color_15m, ltf_offset_15m, ltf_15m_count, ltf_spacing_15m, ltf_width_15m);
-          if ((show_ltf_range_15m && (pinescript.arraySize(state.ltf15.highs) > 0))) {
-            {
-              pinescript.lineDelete(state.or15_ltf_high_line);
-              pinescript.lineDelete(state.or15_ltf_low_line);
-              ltf_high = pinescript.arrayMax(state.ltf15.highs);
-              ltf_low = pinescript.arrayMin(state.ltf15.lows);
-              state.or15_ltf_high_line = pinescript.lineNew(ltf_start_x, ltf_high, ltf_end_x, ltf_high, ({ color: ltf_range_color_15m, style: get_style(ltf_range_style_15m), width: ltf_range_width_15m }));
-              state.or15_ltf_low_line = pinescript.lineNew(ltf_start_x, ltf_low, ltf_end_x, ltf_low, ({ color: ltf_range_color_15m, style: get_style(ltf_range_style_15m), width: ltf_range_width_15m }));
-            }
-          }
-        }
-      }
-      if (((state.or15_captured && !pinescript.na(state.or15_top_line)) && is_ny_session)) {
-        {
-          state.or15_end_bar = bar_index;
-          if (!pinescript.na(state.or15_top_line)) {
-            {
-              line.set_x2(state.or15_top_line, bar_index);
-            }
-          }
-          if (!pinescript.na(state.or15_bot_line)) {
-            {
-              line.set_x2(state.or15_bot_line, bar_index);
-            }
-          }
-          if ((!pinescript.na(state.or15_mid_line) && show_midLine_15m)) {
-            {
-              line.set_x2(state.or15_mid_line, bar_index);
-            }
-          }
-          if ((!pinescript.na(state.or15_ext_high) && show_extensions_15m)) {
-            {
-              line.set_x2(state.or15_ext_high, bar_index);
-            }
-          }
-          if ((!pinescript.na(state.or15_ext_low) && show_extensions_15m)) {
-            {
-              line.set_x2(state.or15_ext_low, bar_index);
-            }
-          }
-          if ((showL && (pos === "Right"))) {
-            {
-              if (!pinescript.na(state.or15_high_label)) {
-                {
-                  label.set_x(state.or15_high_label, bar_index);
-                }
-              }
-              if (!pinescript.na(state.or15_low_label)) {
-                {
-                  label.set_x(state.or15_low_label, bar_index);
-                }
-              }
-              if ((!pinescript.na(state.or15_mid_label) && show_midLine_15m)) {
-                {
-                  label.set_x(state.or15_mid_label, bar_index);
-                }
-              }
-            }
-          }
-          if (((show_extensions_15m && show_ext_labels_15m) && (pos === "Right"))) {
-            {
-              if (!pinescript.na(state.or15_ext_high_label)) {
-                {
-                  label.set_x(state.or15_ext_high_label, bar_index);
-                }
-              }
-              if (!pinescript.na(state.or15_ext_low_label)) {
-                {
-                  label.set_x(state.or15_ext_low_label, bar_index);
-                }
-              }
-            }
-          }
-          if (!is_15m_session) {
-            {
-              if ((!state.or15_high_broken && (high > state.or15_high))) {
-                {
-                  state.or15_high_broken = true;
-                }
-              }
-              if ((!state.or15_low_broken && (low < state.or15_low))) {
-                {
-                  state.or15_low_broken = true;
-                }
-              }
-              if (show_extensions_15m) {
-                {
-                  ext_high_price = (state.or15_high * (1 + (MEDIAN_EXT_15M_HIGH / 100)));
-                  ext_low_price = (state.or15_low * (1 - (MEDIAN_EXT_15M_LOW / 100)));
-                  if ((!state.or15_ext_high_reached && (high > ext_high_price))) {
-                    {
-                      state.or15_ext_high_reached = true;
-                    }
-                  }
-                  if ((!state.or15_ext_low_reached && (low < ext_low_price))) {
-                    {
-                      state.or15_ext_low_reached = true;
-                    }
-                  }
-                }
-              }
-            }
-          }
-        }
+    }
+    return 0;
+  }
+  function f_find_best_line(idxArr, priceArr, support, atrValue, lbBars, minSpan, needTouches, allowViol, touchTolMult, breakTolMult, maxDeg, maxRelAtrMult, barWindow, sampleStep, maxBarBreakRatio) {
+    let bestValid = false;
+    let bestX1 = null;
+    let bestY1 = null;
+    let bestX2 = null;
+    let bestY2 = null;
+    let bestScore = null;
+  }
+  let n = pinescript.arraySize(idxArr);
+  let safeAtr = pinescript.max(atrValue, syminfo.mintick);
+  let touchTol = (safeAtr * touchTolMult);
+  let breakTol = (safeAtr * breakTolMult);
+  let maxSlopeAtrPerBar = math.tan(((maxDeg * pinescript.math.pi) / 180));
+  let maxRelDist = (safeAtr * maxRelAtrMult);
+  if ((n >= needTouches)) {
+    let localBest = -10000000000;
+    for (let newer = 0; newer <= (n - 2); newer++) {
+      let p2Idx = pinescript.arrayGet(idxArr, newer);
+      let p2Price = pinescript.arrayGet(priceArr, newer);
+      if (((bar_index - p2Idx) > lbBars)) {
+        break;
       }
     }
   }
-  if ((show_stats_table && (state.or5_captured || state.or15_captured))) {
-    {
-      if (state.stats_table === undefined) state.stats_table = null;
-      table.delete(pinescript.offset(state.stats_table, 1));
-      let table_pos = get_table_position(stats_table_pos);
-      let table_size = get_table_text_size(stats_table_size);
-      let header_bg = pinescript.color.rgb(64, 64, 64);
-      let header_text = pinescript.color.white;
-      let cell_bg = pinescript.color.white;
-      let cell_text = pinescript.color.rgb(64, 64, 64);
-      let pending_bg = pinescript.color.rgb(255, 235, 59);
-      let pending_text = pinescript.color.rgb(64, 64, 64);
-      let validated_bg = pinescript.color.rgb(0, 150, 136);
-      let validated_text = pinescript.color.white;
-      state.stats_table = pinescript.table.new(table_pos, 3, 35, ({ border_width: 1, border_color: pinescript.color.rgb(64, 64, 64), bgcolor: cell_bg }));
-      let session_ended = (is_ny_session_end || !is_ny_session);
-      let row = 0;
-      pinescript.table.cell(state.stats_table, 0, row, "━━━ ORB STATISTICS ━━━", ({ bgcolor: header_bg, text_color: header_text, text_size: table_size, text_font_family: font.family_monospace }));
-      table.merge_cells(state.stats_table, 0, row, 2, row);
-      row = (row + 1);
-      if ((show_5min && state.or5_captured)) {
-        {
-          let is_bull_5m = (state.or5_close >= state.or5_open);
-          let extreme_5m = state.or5_extreme_first;
-          pinescript.table.cell(state.stats_table, 0, row, "━━━ 5-MIN ORB ━━━", ({ bgcolor: header_bg, text_color: header_text, text_size: table_size, text_font_family: font.family_monospace }));
-          table.merge_cells(state.stats_table, 0, row, 2, row);
-          row = (row + 1);
-          pinescript.table.cell(state.stats_table, 0, row, "Direction", ({ bgcolor: cell_bg, text_color: cell_text, text_size: table_size, text_font_family: font.family_monospace }));
-          let dir_text = (is_bull_5m ? "Bullish" : "Bearish");
-          let dir_color = (is_bull_5m ? bullish_color_5m : bearish_color_5m);
-          pinescript.table.cell(state.stats_table, 1, row, dir_text, ({ bgcolor: cell_bg, text_color: dir_color, text_size: table_size, text_font_family: font.family_monospace }));
-          pinescript.table.cell(state.stats_table, 2, row, "Validated", ({ bgcolor: validated_bg, text_color: validated_text, text_size: table_size, text_font_family: font.family_monospace }));
-          row = (row + 1);
-          pinescript.table.cell(state.stats_table, 0, row, "Extreme First", ({ bgcolor: cell_bg, text_color: cell_text, text_size: table_size, text_font_family: font.family_monospace }));
-          let extreme_text = ((extreme_5m === "high") ? "High First" : ((extreme_5m === "low") ? "Low First" : "Unknown"));
-          pinescript.table.cell(state.stats_table, 1, row, extreme_text, ({ bgcolor: cell_bg, text_color: cell_text, text_size: table_size, text_font_family: font.family_monospace }));
-          let extreme_validated = (extreme_5m !== "none");
-          let status_bg = (extreme_validated ? validated_bg : pending_bg);
-          let status_text = (extreme_validated ? validated_text : pending_text);
-          let status_symbol = (extreme_validated ? "Validated" : "Pending");
-          pinescript.table.cell(state.stats_table, 2, row, status_symbol, ({ bgcolor: status_bg, text_color: status_text, text_size: table_size, text_font_family: font.family_monospace }));
-          row = (row + 1);
-          pinescript.table.cell(state.stats_table, 0, row, "Extension ↑", ({ bgcolor: cell_bg, text_color: cell_text, text_size: table_size, text_font_family: font.family_monospace }));
-          pinescript.table.cell(state.stats_table, 1, row, "84.9%", ({ bgcolor: cell_bg, text_color: cell_text, text_size: table_size, text_font_family: font.family_monospace }));
-          let ext_up_validated = state.or5_ext_high_reached;
-          status_bg = (ext_up_validated ? validated_bg : pending_bg);
-          status_text = (ext_up_validated ? validated_text : pending_text);
-          status_symbol = (ext_up_validated ? "Validated" : "Pending");
-          pinescript.table.cell(state.stats_table, 2, row, status_symbol, ({ bgcolor: status_bg, text_color: status_text, text_size: table_size, text_font_family: font.family_monospace }));
-          row = (row + 1);
-          pinescript.table.cell(state.stats_table, 0, row, "Extension ↓", ({ bgcolor: cell_bg, text_color: cell_text, text_size: table_size, text_font_family: font.family_monospace }));
-          pinescript.table.cell(state.stats_table, 1, row, "81.0%", ({ bgcolor: cell_bg, text_color: cell_text, text_size: table_size, text_font_family: font.family_monospace }));
-          let ext_down_validated = state.or5_ext_low_reached;
-          status_bg = (ext_down_validated ? validated_bg : pending_bg);
-          status_text = (ext_down_validated ? validated_text : pending_text);
-          status_symbol = (ext_down_validated ? "Validated" : "Pending");
-          pinescript.table.cell(state.stats_table, 2, row, status_symbol, ({ bgcolor: status_bg, text_color: status_text, text_size: table_size, text_font_family: font.family_monospace }));
-          row = (row + 1);
-          if ((extreme_5m !== "none")) {
-            {
-              let retest_prob = 0;
-              if ((is_bull_5m && (extreme_5m === "high"))) {
-                {
-                  retest_prob = 88.4;
-                }
-              } else {
-                if ((is_bull_5m && (extreme_5m === "low"))) {
-                  {
-                    retest_prob = 81.8;
-                  }
-                } else {
-                  if ((!is_bull_5m && (extreme_5m === "high"))) {
-                    {
-                      retest_prob = 82.7;
-                    }
-                  } else {
-                    if ((!is_bull_5m && (extreme_5m === "low"))) {
-                      {
-                        retest_prob = 85.6;
-                      }
-                    }
-                  }
-                }
-              }
-              pinescript.table.cell(state.stats_table, 0, row, "Midpoint Retest", ({ bgcolor: cell_bg, text_color: cell_text, text_size: table_size, text_font_family: font.family_monospace }));
-              pinescript.table.cell(state.stats_table, 1, row, (pinescript.strToString(retest_prob, "#.#") + "%"), ({ bgcolor: cell_bg, text_color: cell_text, text_size: table_size, text_font_family: font.family_monospace }));
-              status_bg = (state.or5_mid_retested ? validated_bg : pending_bg);
-              status_text = (state.or5_mid_retested ? validated_text : pending_text);
-              status_symbol = (state.or5_mid_retested ? "Validated" : "Pending");
-              pinescript.table.cell(state.stats_table, 2, row, status_symbol, ({ bgcolor: status_bg, text_color: status_text, text_size: table_size, text_font_family: font.family_monospace }));
-              row = (row + 1);
-            }
-          }
-          if ((extreme_5m !== "none")) {
-            {
-              let ib_prob = 0;
-              let ib_dir = "";
-              if ((is_bull_5m && (extreme_5m === "low"))) {
-                {
-                  ib_prob = 68.7;
-                  ib_dir = "Bullish";
-                }
-              } else {
-                if ((is_bull_5m && (extreme_5m === "high"))) {
-                  {
-                    ib_prob = 61.6;
-                    ib_dir = "Bullish";
-                  }
-                } else {
-                  if ((!is_bull_5m && (extreme_5m === "high"))) {
-                    {
-                      ib_prob = 64.8;
-                      ib_dir = "Bearish";
-                    }
-                  } else {
-                    if ((!is_bull_5m && (extreme_5m === "low"))) {
-                      {
-                        ib_prob = 58.6;
-                        ib_dir = "Bearish";
-                      }
-                    }
-                  }
-                }
-              }
-              pinescript.table.cell(state.stats_table, 0, row, "IB Prediction", ({ bgcolor: cell_bg, text_color: cell_text, text_size: table_size, text_font_family: font.family_monospace }));
-              pinescript.table.cell(state.stats_table, 1, row, (((ib_dir + " ") + pinescript.strToString(ib_prob, "#.#")) + "%"), ({ bgcolor: cell_bg, text_color: cell_text, text_size: table_size, text_font_family: font.family_monospace }));
-              status_bg = (state.ib_captured ? validated_bg : pending_bg);
-              status_text = (state.ib_captured ? validated_text : pending_text);
-              status_symbol = (state.ib_captured ? "Validated" : "Pending");
-              pinescript.table.cell(state.stats_table, 2, row, status_symbol, ({ bgcolor: status_bg, text_color: status_text, text_size: table_size, text_font_family: font.family_monospace }));
-              row = (row + 1);
-            }
-          }
-          if ((extreme_5m !== "none")) {
-            {
-              let break_prob = 0;
-              let break_dir = "";
-              if ((is_bull_5m && (extreme_5m === "low"))) {
-                {
-                  break_prob = 79.9;
-                  break_dir = "High";
-                }
-              } else {
-                if ((is_bull_5m && (extreme_5m === "high"))) {
-                  {
-                    break_prob = 66.3;
-                    break_dir = "High";
-                  }
-                } else {
-                  if ((!is_bull_5m && (extreme_5m === "high"))) {
-                    {
-                      break_prob = 74.6;
-                      break_dir = "Low";
-                    }
-                  } else {
-                    if ((!is_bull_5m && (extreme_5m === "low"))) {
-                      {
-                        break_prob = 67.4;
-                        break_dir = "Low";
-                      }
-                    }
-                  }
-                }
-              }
-              pinescript.table.cell(state.stats_table, 0, row, "Next Break", ({ bgcolor: cell_bg, text_color: cell_text, text_size: table_size, text_font_family: font.family_monospace }));
-              pinescript.table.cell(state.stats_table, 1, row, (((break_dir + " ") + pinescript.strToString(break_prob, "#.#")) + "%"), ({ bgcolor: cell_bg, text_color: cell_text, text_size: table_size, text_font_family: font.family_monospace }));
-              let break_validated = (state.or5_high_broken || state.or5_low_broken);
-              status_bg = (break_validated ? validated_bg : pending_bg);
-              status_text = (break_validated ? validated_text : pending_text);
-              status_symbol = (break_validated ? "Validated" : "Pending");
-              pinescript.table.cell(state.stats_table, 2, row, status_symbol, ({ bgcolor: status_bg, text_color: status_text, text_size: table_size, text_font_family: font.family_monospace }));
-              row = (row + 1);
-            }
-          }
-          if ((state.or5_high_broken || state.or5_low_broken)) {
-            {
-              let close_prob = 0;
-              let close_dir = "";
-              if ((is_bull_5m && state.or5_high_broken)) {
-                {
-                  close_prob = 67.1;
-                  close_dir = "Bullish";
-                }
-              } else {
-                if ((is_bull_5m && state.or5_low_broken)) {
-                  {
-                    close_prob = 53.2;
-                    close_dir = "Bullish";
-                  }
-                } else {
-                  if ((!is_bull_5m && state.or5_high_broken)) {
-                    {
-                      close_prob = 60.8;
-                      close_dir = "Bullish";
-                    }
-                  } else {
-                    if ((!is_bull_5m && state.or5_low_broken)) {
-                      {
-                        close_prob = 60.5;
-                        close_dir = "Bearish";
-                      }
-                    }
-                  }
-                }
-              }
-              pinescript.table.cell(state.stats_table, 0, row, "Session Close", ({ bgcolor: cell_bg, text_color: cell_text, text_size: table_size, text_font_family: font.family_monospace }));
-              pinescript.table.cell(state.stats_table, 1, row, (((close_dir + " ") + pinescript.strToString(close_prob, "#.#")) + "%"), ({ bgcolor: cell_bg, text_color: cell_text, text_size: table_size, text_font_family: font.family_monospace }));
-              status_bg = (session_ended ? validated_bg : pending_bg);
-              status_text = (session_ended ? validated_text : pending_text);
-              status_symbol = (session_ended ? "Validated" : "Pending");
-              pinescript.table.cell(state.stats_table, 2, row, status_symbol, ({ bgcolor: status_bg, text_color: status_text, text_size: table_size, text_font_family: font.family_monospace }));
-              row = (row + 1);
-            }
-          }
-          pinescript.table.cell(state.stats_table, 0, row, "", ({ bgcolor: cell_bg, text_color: cell_text, text_size: table_size }));
-          table.merge_cells(state.stats_table, 0, row, 2, row);
-          row = (row + 1);
-        }
-      }
-      if ((show_15min && state.or15_captured)) {
-        {
-          let is_bull_15m = (state.or15_close >= state.or15_open);
-          let extreme_15m = state.or15_extreme_first;
-          pinescript.table.cell(state.stats_table, 0, row, "━━━ 15-MIN ORB ━━━", ({ bgcolor: header_bg, text_color: header_text, text_size: table_size, text_font_family: font.family_monospace }));
-          table.merge_cells(state.stats_table, 0, row, 2, row);
-          row = (row + 1);
-          pinescript.table.cell(state.stats_table, 0, row, "Direction", ({ bgcolor: cell_bg, text_color: cell_text, text_size: table_size, text_font_family: font.family_monospace }));
-          dir_text = (is_bull_15m ? "Bullish" : "Bearish");
-          dir_color = (is_bull_15m ? bullish_color_15m : bearish_color_15m);
-          pinescript.table.cell(state.stats_table, 1, row, dir_text, ({ bgcolor: cell_bg, text_color: dir_color, text_size: table_size, text_font_family: font.family_monospace }));
-          pinescript.table.cell(state.stats_table, 2, row, "Validated", ({ bgcolor: validated_bg, text_color: validated_text, text_size: table_size, text_font_family: font.family_monospace }));
-          row = (row + 1);
-          pinescript.table.cell(state.stats_table, 0, row, "Extreme First", ({ bgcolor: cell_bg, text_color: cell_text, text_size: table_size, text_font_family: font.family_monospace }));
-          extreme_text = ((extreme_15m === "high") ? "High First" : ((extreme_15m === "low") ? "Low First" : "Unknown"));
-          pinescript.table.cell(state.stats_table, 1, row, extreme_text, ({ bgcolor: cell_bg, text_color: cell_text, text_size: table_size, text_font_family: font.family_monospace }));
-          extreme_validated = (extreme_15m !== "none");
-          status_bg = (extreme_validated ? validated_bg : pending_bg);
-          status_text = (extreme_validated ? validated_text : pending_text);
-          status_symbol = (extreme_validated ? "Validated" : "Pending");
-          pinescript.table.cell(state.stats_table, 2, row, status_symbol, ({ bgcolor: status_bg, text_color: status_text, text_size: table_size, text_font_family: font.family_monospace }));
-          row = (row + 1);
-          pinescript.table.cell(state.stats_table, 0, row, "Extension ↑", ({ bgcolor: cell_bg, text_color: cell_text, text_size: table_size, text_font_family: font.family_monospace }));
-          pinescript.table.cell(state.stats_table, 1, row, "77.2%", ({ bgcolor: cell_bg, text_color: cell_text, text_size: table_size, text_font_family: font.family_monospace }));
-          ext_up_validated = state.or15_ext_high_reached;
-          status_bg = (ext_up_validated ? validated_bg : pending_bg);
-          status_text = (ext_up_validated ? validated_text : pending_text);
-          status_symbol = (ext_up_validated ? "Validated" : "Pending");
-          pinescript.table.cell(state.stats_table, 2, row, status_symbol, ({ bgcolor: status_bg, text_color: status_text, text_size: table_size, text_font_family: font.family_monospace }));
-          row = (row + 1);
-          pinescript.table.cell(state.stats_table, 0, row, "Extension ↓", ({ bgcolor: cell_bg, text_color: cell_text, text_size: table_size, text_font_family: font.family_monospace }));
-          pinescript.table.cell(state.stats_table, 1, row, "73.5%", ({ bgcolor: cell_bg, text_color: cell_text, text_size: table_size, text_font_family: font.family_monospace }));
-          ext_down_validated = state.or15_ext_low_reached;
-          status_bg = (ext_down_validated ? validated_bg : pending_bg);
-          status_text = (ext_down_validated ? validated_text : pending_text);
-          status_symbol = (ext_down_validated ? "Validated" : "Pending");
-          pinescript.table.cell(state.stats_table, 2, row, status_symbol, ({ bgcolor: status_bg, text_color: status_text, text_size: table_size, text_font_family: font.family_monospace }));
-          row = (row + 1);
-          if ((extreme_15m !== "none")) {
-            {
-              retest_prob = 0;
-              if ((is_bull_15m && (extreme_15m === "high"))) {
-                {
-                  retest_prob = 80.8;
-                }
-              } else {
-                if ((is_bull_15m && (extreme_15m === "low"))) {
-                  {
-                    retest_prob = 71.4;
-                  }
-                } else {
-                  if ((!is_bull_15m && (extreme_15m === "high"))) {
-                    {
-                      retest_prob = 72.8;
-                    }
-                  } else {
-                    if ((!is_bull_15m && (extreme_15m === "low"))) {
-                      {
-                        retest_prob = 83.8;
-                      }
-                    }
-                  }
-                }
-              }
-              pinescript.table.cell(state.stats_table, 0, row, "Midpoint Retest", ({ bgcolor: cell_bg, text_color: cell_text, text_size: table_size, text_font_family: font.family_monospace }));
-              pinescript.table.cell(state.stats_table, 1, row, (pinescript.strToString(retest_prob, "#.#") + "%"), ({ bgcolor: cell_bg, text_color: cell_text, text_size: table_size, text_font_family: font.family_monospace }));
-              status_bg = (state.or15_mid_retested ? validated_bg : pending_bg);
-              status_text = (state.or15_mid_retested ? validated_text : pending_text);
-              status_symbol = (state.or15_mid_retested ? "Validated" : "Pending");
-              pinescript.table.cell(state.stats_table, 2, row, status_symbol, ({ bgcolor: status_bg, text_color: status_text, text_size: table_size, text_font_family: font.family_monospace }));
-              row = (row + 1);
-            }
-          }
-          if ((extreme_15m !== "none")) {
-            {
-              ib_prob = 0;
-              ib_dir = "";
-              if ((is_bull_15m && (extreme_15m === "low"))) {
-                {
-                  ib_prob = 74;
-                  ib_dir = "Bullish";
-                }
-              } else {
-                if ((is_bull_15m && (extreme_15m === "high"))) {
-                  {
-                    ib_prob = 59.6;
-                    ib_dir = "Bullish";
-                  }
-                } else {
-                  if ((!is_bull_15m && (extreme_15m === "high"))) {
-                    {
-                      ib_prob = 73.2;
-                      ib_dir = "Bearish";
-                    }
-                  } else {
-                    if ((!is_bull_15m && (extreme_15m === "low"))) {
-                      {
-                        ib_prob = 50.3;
-                        ib_dir = "Bearish";
-                      }
-                    }
-                  }
-                }
-              }
-              pinescript.table.cell(state.stats_table, 0, row, "IB Prediction", ({ bgcolor: cell_bg, text_color: cell_text, text_size: table_size, text_font_family: font.family_monospace }));
-              pinescript.table.cell(state.stats_table, 1, row, (((ib_dir + " ") + pinescript.strToString(ib_prob, "#.#")) + "%"), ({ bgcolor: cell_bg, text_color: cell_text, text_size: table_size, text_font_family: font.family_monospace }));
-              status_bg = (state.ib_captured ? validated_bg : pending_bg);
-              status_text = (state.ib_captured ? validated_text : pending_text);
-              status_symbol = (state.ib_captured ? "Validated" : "Pending");
-              pinescript.table.cell(state.stats_table, 2, row, status_symbol, ({ bgcolor: status_bg, text_color: status_text, text_size: table_size, text_font_family: font.family_monospace }));
-              row = (row + 1);
-            }
-          }
-          if ((extreme_15m !== "none")) {
-            {
-              break_prob = 0;
-              break_dir = "";
-              if ((is_bull_15m && (extreme_15m === "low"))) {
-                {
-                  break_prob = 75.3;
-                  break_dir = "High";
-                }
-              } else {
-                if ((is_bull_15m && (extreme_15m === "high"))) {
-                  {
-                    break_prob = 59.6;
-                    break_dir = "High";
-                  }
-                } else {
-                  if ((!is_bull_15m && (extreme_15m === "high"))) {
-                    {
-                      break_prob = 74.4;
-                      break_dir = "Low";
-                    }
-                  } else {
-                    if ((!is_bull_15m && (extreme_15m === "low"))) {
-                      {
-                        break_prob = 61.8;
-                        break_dir = "Low";
-                      }
-                    }
-                  }
-                }
-              }
-              pinescript.table.cell(state.stats_table, 0, row, "Next Break", ({ bgcolor: cell_bg, text_color: cell_text, text_size: table_size, text_font_family: font.family_monospace }));
-              pinescript.table.cell(state.stats_table, 1, row, (((break_dir + " ") + pinescript.strToString(break_prob, "#.#")) + "%"), ({ bgcolor: cell_bg, text_color: cell_text, text_size: table_size, text_font_family: font.family_monospace }));
-              break_validated = (state.or15_high_broken || state.or15_low_broken);
-              status_bg = (break_validated ? validated_bg : pending_bg);
-              status_text = (break_validated ? validated_text : pending_text);
-              status_symbol = (break_validated ? "Validated" : "Pending");
-              pinescript.table.cell(state.stats_table, 2, row, status_symbol, ({ bgcolor: status_bg, text_color: status_text, text_size: table_size, text_font_family: font.family_monospace }));
-              row = (row + 1);
-            }
-          }
-          if ((state.or15_high_broken || state.or15_low_broken)) {
-            {
-              close_prob = 0;
-              close_dir = "";
-              if ((is_bull_15m && state.or15_high_broken)) {
-                {
-                  close_prob = 74.3;
-                  close_dir = "Bullish";
-                }
-              } else {
-                if ((is_bull_15m && state.or15_low_broken)) {
-                  {
-                    close_prob = 49.7;
-                    close_dir = "Bullish";
-                  }
-                } else {
-                  if ((!is_bull_15m && state.or15_high_broken)) {
-                    {
-                      close_prob = 57;
-                      close_dir = "Bullish";
-                    }
-                  } else {
-                    if ((!is_bull_15m && state.or15_low_broken)) {
-                      {
-                        close_prob = 66;
-                        close_dir = "Bearish";
-                      }
-                    }
-                  }
-                }
-              }
-              pinescript.table.cell(state.stats_table, 0, row, "Session Close", ({ bgcolor: cell_bg, text_color: cell_text, text_size: table_size, text_font_family: font.family_monospace }));
-              pinescript.table.cell(state.stats_table, 1, row, (((close_dir + " ") + pinescript.strToString(close_prob, "#.#")) + "%"), ({ bgcolor: cell_bg, text_color: cell_text, text_size: table_size, text_font_family: font.family_monospace }));
-              status_bg = (session_ended ? validated_bg : pending_bg);
-              status_text = (session_ended ? validated_text : pending_text);
-              status_symbol = (session_ended ? "Validated" : "Pending");
-              pinescript.table.cell(state.stats_table, 2, row, status_symbol, ({ bgcolor: status_bg, text_color: status_text, text_size: table_size, text_font_family: font.family_monospace }));
-              row = (row + 1);
-            }
-          }
-        }
+  for (let older = (newer + 1); older <= (n - 1); older++) {
+    let p1Idx = pinescript.arrayGet(idxArr, older);
+    let p1Price = pinescript.arrayGet(priceArr, older);
+    if (((bar_index - p1Idx) > lbBars)) {
+      break;
+    }
+  }
+  let span = (p2Idx - p1Idx);
+  if ((span >= minSpan)) {
+    let slope = ((p2Price - p1Price) / span);
+    let slopeAtrPerBar = ((safeAtr > 0) ? (pinescript.abs(slope) / safeAtr) : 0);
+    if ((slopeAtrPerBar <= maxSlopeAtrPerBar)) {
+      let yNow = (p1Price + (slope * (bar_index - p1Idx)));
+      if ((pinescript.abs((close - yNow)) <= maxRelDist)) {
+        let touches = 0;
+        let violations = 0;
+        let errorSum = 0;
+        let touchedPoints = 0;
       }
     }
+  }
+  let eligible = (older + 1);
+  for (let k = 0; k <= (eligible - 1); k++) {
+    let pIdx = pinescript.arrayGet(idxArr, k);
+    let pPrice = pinescript.arrayGet(priceArr, k);
+    let y = (p1Price + (slope * (pIdx - p1Idx)));
+    let dev = (pPrice - y);
+  }
+  let isTouch = (pinescript.abs(dev) <= touchTol);
+  if (isTouch) {
+    touches = (touches + 1);
+    errorSum = (errorSum + pinescript.abs(dev));
+    touchedPoints = (touchedPoints + 1);
+  }
+  let isViolation = (support ? (dev < -breakTol) : (dev > breakTol));
+  if (isViolation) {
+    violations = (violations + 1);
+  }
+  let remaining = ((eligible - 1) - k);
+  if (((touches + remaining) < needTouches)) {
+    break;
+  }
+  if ((violations > allowViol)) {
+    break;
+  }
+  let brokenNow = (support ? (close < (yNow - breakTol)) : (close > (yNow + breakTol)));
+  if (brokenNow) {
+    violations = (violations + 2);
+  }
+  if (((touches >= needTouches) && (violations <= allowViol))) {
+    let avgErr = ((touchedPoints > 0) ? (errorSum / touchedPoints) : touchTol);
+    let recency = (1 - pinescript.min(((bar_index - p2Idx) / (lbBars * 1)), 1));
+    let spanScore = pinescript.min((span / (lbBars * 1)), 1);
+    let tightness = (1 - pinescript.min((avgErr / touchTol), 1));
+    let slopePenalty = ((maxSlopeAtrPerBar > 0) ? (slopeAtrPerBar / maxSlopeAtrPerBar) : 0);
+  }
+  let preScore = (touches * 2.8);
+  preScore = (preScore + (recency * 1.2));
+  preScore = (preScore + (spanScore * 1));
+  preScore = (preScore + (tightness * 1.3));
+  preScore = (preScore - (violations * 2.2));
+  preScore = (preScore - (slopePenalty * 0.5));
+  if ((preScore > localBest)) {
+    let scanLen = pinescript.min(barWindow, (bar_index - p1Idx));
+    let barSamples = 0;
+    let barBreaks = 0;
+    let maxSamples = ((scanLen / sampleStep) + 1);
+    let scanRejected = false;
+    let off = 0;
+    while ((off <= scanLen)) {
+      let yBar = (p1Price + (slope * ((bar_index - off) - p1Idx)));
+      let barBreak = (support ? (pinescript.offset(low, off) < (yBar - breakTol)) : (pinescript.offset(high, off) > (yBar + breakTol)));
+      barSamples = (barSamples + 1);
+      if (barBreak) {
+        barBreaks = (barBreaks + 1);
+      }
+    }
+  }
+  let minPossibleRatio = (barBreaks / (maxSamples * 1));
+  if ((minPossibleRatio > maxBarBreakRatio)) {
+    scanRejected = true;
+    break;
+  }
+  off = (off + sampleStep);
+  if (!scanRejected) {
+    let barBreakRatio = ((barSamples > 0) ? (barBreaks / (barSamples * 1)) : 1);
+    let finalViol = violations;
+    if ((barBreakRatio > maxBarBreakRatio)) {
+      finalViol = ((finalViol + allowViol) + 1);
+    } else {
+      finalViol = (finalViol + int(math.floor((barBreakRatio * 2))));
+    }
+  }
+  if ((finalViol <= allowViol)) {
+    let score = preScore;
+    score = (score - ((finalViol - violations) * 2.2));
+    score = (score - (barBreakRatio * 2));
+  }
+  if ((score > localBest)) {
+    localBest = score;
+    bestValid = true;
+    bestX1 = p1Idx;
+    bestY1 = p1Price;
+    bestX2 = p2Idx;
+    bestY2 = p2Price;
+    bestScore = score;
+  }
+  [bestValid, bestX1, bestY1, bestX2, bestY2, bestScore];
+  if (state.lowPivotIdxs === undefined) state.lowPivotIdxs = pinescript.arrayNew();
+  if (state.lowPivotPrices === undefined) state.lowPivotPrices = pinescript.arrayNew();
+  if (state.highPivotIdxs === undefined) state.highPivotIdxs = pinescript.arrayNew();
+  if (state.highPivotPrices === undefined) state.highPivotPrices = pinescript.arrayNew();
+  if (state.supportLine === undefined) state.supportLine = pinescript.lineNew(null, null, null, null, ({ xloc: xloc.bar_index }));
+  if (state.resistanceLine === undefined) state.resistanceLine = pinescript.lineNew(null, null, null, null, ({ xloc: xloc.bar_index }));
+  if (state.channelFill === undefined) state.channelFill = linefill.new(state.supportLine, state.resistanceLine, pinescript.color.new(neutralColor, 95));
+  let atrValue = ta.atr(atrLen);
+  let requiredHistoryBars = (((lookbackBars + BAR_SCAN_WINDOW) + (pivotLen * 3)) + FAST_LOAD_BUFFER_BARS);
+  let processStartBar = pinescript.max(0, (last_bar_index - requiredHistoryBars));
+  let processEngine = (bar_index >= processStartBar);
+  let ph = ta.pivothigh(high, pivotLen, pivotLen);
+  let pl = ta.pivotlow(low, pivotLen, pivotLen);
+  if ((processEngine && !pinescript.na(pl))) {
+    f_store_pivot(state.lowPivotIdxs, state.lowPivotPrices, (bar_index - pivotLen), pl, true, pivotLen, pivotMemory);
+  }
+  if ((processEngine && !pinescript.na(ph))) {
+    f_store_pivot(state.highPivotIdxs, state.highPivotPrices, (bar_index - pivotLen), ph, false, pivotLen, pivotMemory);
+  }
+  if (processEngine) {
+    f_trim_lookback(state.lowPivotIdxs, state.lowPivotPrices, lookbackBars);
+    f_trim_lookback(state.highPivotIdxs, state.highPivotPrices, lookbackBars);
+  }
+  let [supValid, supX1, supY1, supX2, supY2, supScore] = f_find_best_line(state.lowPivotIdxs, state.lowPivotPrices, true, atrValue, lookbackBars, minAnchorBars, minTouches, maxViolations, touchTolATR, breakTolATR, maxSlopeDeg, maxRelevanceATR, BAR_SCAN_WINDOW, BAR_SCAN_STEP, maxBarViolRatio);
+  let [resValid, resX1, resY1, resX2, resY2, resScore] = f_find_best_line(state.highPivotIdxs, state.highPivotPrices, false, atrValue, lookbackBars, minAnchorBars, minTouches, maxViolations, touchTolATR, breakTolATR, maxSlopeDeg, maxRelevanceATR, BAR_SCAN_WINDOW, BAR_SCAN_STEP, maxBarViolRatio);
+  let supRight = null;
+  if (supValid) {
+    supRight = f_line_y(supX1, supY1, supX2, supY2, (bar_index + extendBars));
+  }
+  let resRight = null;
+  if (resValid) {
+    resRight = f_line_y(resX1, resY1, resX2, resY2, (bar_index + extendBars));
+  }
+  if (supValid) {
+    line.set_xy1(state.supportLine, supX1, supY1);
+    line.set_xy2(state.supportLine, (bar_index + extendBars), supRight);
+    line.set_color(state.supportLine, supportColor);
+    line.set_width(state.supportLine, lineWidth);
+    line.set_style(state.supportLine, line.style_solid);
+  } else {
+    line.set_xy1(state.supportLine, bar_index, close);
+    line.set_xy2(state.supportLine, (bar_index + 1), close);
+    line.set_color(state.supportLine, pinescript.color.new(supportColor, 100));
+  }
+  if (resValid) {
+    line.set_xy1(state.resistanceLine, resX1, resY1);
+    line.set_xy2(state.resistanceLine, (bar_index + extendBars), resRight);
+    line.set_color(state.resistanceLine, resistColor);
+    line.set_width(state.resistanceLine, lineWidth);
+    line.set_style(state.resistanceLine, line.style_solid);
+  } else {
+    line.set_xy1(state.resistanceLine, bar_index, close);
+    line.set_xy2(state.resistanceLine, (bar_index + 1), close);
+    line.set_color(state.resistanceLine, pinescript.color.new(resistColor, 100));
+  }
+  if (((showFill && supValid) && resValid)) {
+    let supNow = f_line_y(supX1, supY1, supX2, supY2, bar_index);
+    let resNow = f_line_y(resX1, resY1, resX2, resY2, bar_index);
+    let mid = ((supNow + resNow) * 0.5);
+    let fillColor = ((close >= mid) ? pinescript.color.new(supportColor, 92) : pinescript.color.new(resistColor, 92));
+    linefill.set_color(state.channelFill, fillColor);
+  } else {
+    linefill.set_color(state.channelFill, pinescript.color.new(neutralColor, 100));
   }
 }
 

@@ -905,8 +905,8 @@ const pinescript = {
     const info = { ticker: 'AAPL', tickerid: 'NASDAQ:AAPL', prefix: 'NASDAQ', root: 'AAPL', suffix: '' };
     return info[type] || '';
   },
-  time: 1771040740296,
-  timenow: 1771040740296,
+  time: 1771178051769,
+  timenow: 1771178051769,
   barstate: "LAST",
   dividends: {},
   splits: {},
@@ -1251,16 +1251,14 @@ function main() {
   if (state.totalBearSweeps === undefined) state.totalBearSweeps = 0;
   function addResistanceZone(top, btm, x) {
     if ((pinescript.arraySize(state.rz_top) >= maxZones)) {
-      {
-        pinescript.arrayShift(state.rz_top);
-        pinescript.arrayShift(state.rz_btm);
-        pinescript.arrayShift(state.rz_x1);
-        pinescript.arrayShift(state.rz_broken);
-        pinescript.arrayShift(state.rz_swept);
-        pinescript.arrayShift(state.rz_tests);
-        box.delete(pinescript.arrayShift(state.rz_box));
-        pinescript.lineDelete(pinescript.arrayShift(state.rz_line));
-      }
+      pinescript.arrayShift(state.rz_top);
+      pinescript.arrayShift(state.rz_btm);
+      pinescript.arrayShift(state.rz_x1);
+      pinescript.arrayShift(state.rz_broken);
+      pinescript.arrayShift(state.rz_swept);
+      pinescript.arrayShift(state.rz_tests);
+      box.delete(pinescript.arrayShift(state.rz_box));
+      pinescript.lineDelete(pinescript.arrayShift(state.rz_line));
     }
     pinescript.arrayPush(state.rz_top, top);
     pinescript.arrayPush(state.rz_btm, btm);
@@ -1273,16 +1271,14 @@ function main() {
   }
   function addSupportZone(top, btm, x) {
     if ((pinescript.arraySize(state.sz_top) >= maxZones)) {
-      {
-        pinescript.arrayShift(state.sz_top);
-        pinescript.arrayShift(state.sz_btm);
-        pinescript.arrayShift(state.sz_x1);
-        pinescript.arrayShift(state.sz_broken);
-        pinescript.arrayShift(state.sz_swept);
-        pinescript.arrayShift(state.sz_tests);
-        box.delete(pinescript.arrayShift(state.sz_box));
-        pinescript.lineDelete(pinescript.arrayShift(state.sz_line));
-      }
+      pinescript.arrayShift(state.sz_top);
+      pinescript.arrayShift(state.sz_btm);
+      pinescript.arrayShift(state.sz_x1);
+      pinescript.arrayShift(state.sz_broken);
+      pinescript.arrayShift(state.sz_swept);
+      pinescript.arrayShift(state.sz_tests);
+      box.delete(pinescript.arrayShift(state.sz_box));
+      pinescript.lineDelete(pinescript.arrayShift(state.sz_line));
     }
     pinescript.arrayPush(state.sz_top, top);
     pinescript.arrayPush(state.sz_btm, btm);
@@ -1296,18 +1292,14 @@ function main() {
   let ph = ta.pivothigh(length, length);
   let pl = ta.pivotlow(length, length);
   if (ph) {
-    {
-      let _top = pinescript.offset(high, length);
-      let _btm = ((zoneRange === "Wick Rejection") ? pinescript.max(pinescript.offset(open, length), pinescript.offset(close, length)) : pinescript.offset(low, length));
-      addResistanceZone(_top, _btm, (bar_index - length));
-    }
+    let _top = pinescript.offset(high, length);
+    let _btm = ((zoneRange === "Wick Rejection") ? pinescript.max(pinescript.offset(open, length), pinescript.offset(close, length)) : pinescript.offset(low, length));
+    addResistanceZone(_top, _btm, (bar_index - length));
   }
   if (pl) {
-    {
-      _top = ((zoneRange === "Wick Rejection") ? pinescript.min(pinescript.offset(open, length), pinescript.offset(close, length)) : pinescript.offset(high, length));
-      _btm = pinescript.offset(low, length);
-      addSupportZone(_top, _btm, (bar_index - length));
-    }
+    _top = ((zoneRange === "Wick Rejection") ? pinescript.min(pinescript.offset(open, length), pinescript.offset(close, length)) : pinescript.offset(high, length));
+    _btm = pinescript.offset(low, length);
+    addSupportZone(_top, _btm, (bar_index - length));
   }
   if (state.bullSweepNow === undefined) state.bullSweepNow = false;
   if (state.bearSweepNow === undefined) state.bearSweepNow = false;
@@ -1326,137 +1318,97 @@ function main() {
   let bearFilterOk = (((!useTrendFilter || isBelowEma) && (!useVolFilter || isVolSpike)) && (!useWickFilter || isStrongWick));
   pinescript.plot((useTrendFilter ? trendEma : null), "Trend EMA", ({ color: pinescript.color.new(pinescript.color.white, 70), linewidth: 1 }));
   if ((pinescript.arraySize(state.rz_top) > 0)) {
-    {
-      for (let i = (pinescript.arraySize(state.rz_top) - 1); i <= 0; i++) {
-        {
-          _top = pinescript.arrayGet(state.rz_top, i);
-          _btm = pinescript.arrayGet(state.rz_btm, i);
-          let _broken = pinescript.arrayGet(state.rz_broken, i);
-          let _swept = pinescript.arrayGet(state.rz_swept, i);
-          let _tests = pinescript.arrayGet(state.rz_tests, i);
-          let _bx = pinescript.arrayGet(state.rz_box, i);
-          let _ln = pinescript.arrayGet(state.rz_line, i);
-          if (!_broken) {
-            {
-              box.set_right(_bx, (bar_index + 5));
-              line.set_x2(_ln, (bar_index + 5));
-              if ((((high > _btm) && (high <= _top)) && (close < _btm))) {
-                {
-                  pinescript.arraySet(state.rz_tests, i, (_tests + 1));
-                  let _newAlpha = pinescript.max(70, (88 - (_tests * 6)));
-                  box.set_bgcolor(_bx, pinescript.color.new(bearCol, _newAlpha));
-                }
-              }
-              if (((((high > _top) && (close <= _top)) && !_swept) && bearFilterOk)) {
-                {
-                  pinescript.arraySet(state.rz_swept, i, true);
-                  state.bearSweepNow = true;
-                  state.totalBearSweeps = 1;
-                  box.set_border_color(_bx, sweepCol);
-                  box.set_border_width(_bx, 2);
-                  box.set_bgcolor(_bx, pinescript.color.new(sweepCol, 80));
-                }
-              }
-              if (((close > _top) && (pinescript.offset(close, 1) > _top))) {
-                {
-                  pinescript.arraySet(state.rz_broken, i, true);
-                  if (showInvalidated) {
-                    {
-                      box.set_bgcolor(_bx, pinescript.color.new(bearCol, 95));
-                      box.set_border_style(_bx, line.style_dashed);
-                      box.set_border_color(_bx, pinescript.color.new(bearCol, 80));
-                      line.set_style(_ln, line.style_dashed);
-                      line.set_color(_ln, pinescript.color.new(bearCol, 80));
-                    }
-                  } else {
-                    {
-                      box.set_bgcolor(_bx, null);
-                      box.set_border_color(_bx, null);
-                      line.set_color(_ln, null);
-                    }
-                  }
-                }
-              }
-            }
+    for (let i = (pinescript.arraySize(state.rz_top) - 1); i <= 0; i++) {
+      _top = pinescript.arrayGet(state.rz_top, i);
+      _btm = pinescript.arrayGet(state.rz_btm, i);
+      let _broken = pinescript.arrayGet(state.rz_broken, i);
+      let _swept = pinescript.arrayGet(state.rz_swept, i);
+      let _tests = pinescript.arrayGet(state.rz_tests, i);
+      let _bx = pinescript.arrayGet(state.rz_box, i);
+      let _ln = pinescript.arrayGet(state.rz_line, i);
+      if (!_broken) {
+        box.set_right(_bx, (bar_index + 5));
+        line.set_x2(_ln, (bar_index + 5));
+        if ((((high > _btm) && (high <= _top)) && (close < _btm))) {
+          pinescript.arraySet(state.rz_tests, i, (_tests + 1));
+          let _newAlpha = pinescript.max(70, (88 - (_tests * 6)));
+          box.set_bgcolor(_bx, pinescript.color.new(bearCol, _newAlpha));
+        }
+        if (((((high > _top) && (close <= _top)) && !_swept) && bearFilterOk)) {
+          pinescript.arraySet(state.rz_swept, i, true);
+          state.bearSweepNow = true;
+          state.totalBearSweeps = 1;
+          box.set_border_color(_bx, sweepCol);
+          box.set_border_width(_bx, 2);
+          box.set_bgcolor(_bx, pinescript.color.new(sweepCol, 80));
+        }
+        if (((close > _top) && (pinescript.offset(close, 1) > _top))) {
+          pinescript.arraySet(state.rz_broken, i, true);
+          if (showInvalidated) {
+            box.set_bgcolor(_bx, pinescript.color.new(bearCol, 95));
+            box.set_border_style(_bx, line.style_dashed);
+            box.set_border_color(_bx, pinescript.color.new(bearCol, 80));
+            line.set_style(_ln, line.style_dashed);
+            line.set_color(_ln, pinescript.color.new(bearCol, 80));
           } else {
-            {
-              if (!showInvalidated) {
-                {
-                  box.set_bgcolor(_bx, null);
-                  box.set_border_color(_bx, null);
-                  line.set_color(_ln, null);
-                }
-              }
-            }
+            box.set_bgcolor(_bx, null);
+            box.set_border_color(_bx, null);
+            line.set_color(_ln, null);
           }
+        }
+      } else {
+        if (!showInvalidated) {
+          box.set_bgcolor(_bx, null);
+          box.set_border_color(_bx, null);
+          line.set_color(_ln, null);
         }
       }
     }
   }
   if ((pinescript.arraySize(state.sz_top) > 0)) {
-    {
-      for (let i = (pinescript.arraySize(state.sz_top) - 1); i <= 0; i++) {
-        {
-          _top = pinescript.arrayGet(state.sz_top, i);
-          _btm = pinescript.arrayGet(state.sz_btm, i);
-          _broken = pinescript.arrayGet(state.sz_broken, i);
-          _swept = pinescript.arrayGet(state.sz_swept, i);
-          _tests = pinescript.arrayGet(state.sz_tests, i);
-          _bx = pinescript.arrayGet(state.sz_box, i);
-          _ln = pinescript.arrayGet(state.sz_line, i);
-          if (!_broken) {
-            {
-              box.set_right(_bx, (bar_index + 5));
-              line.set_x2(_ln, (bar_index + 5));
-              if ((((low < _top) && (low >= _btm)) && (close > _top))) {
-                {
-                  pinescript.arraySet(state.sz_tests, i, (_tests + 1));
-                  _newAlpha = pinescript.max(70, (88 - (_tests * 6)));
-                  box.set_bgcolor(_bx, pinescript.color.new(bullCol, _newAlpha));
-                }
-              }
-              if (((((low < _btm) && (close >= _btm)) && !_swept) && bullFilterOk)) {
-                {
-                  pinescript.arraySet(state.sz_swept, i, true);
-                  state.bullSweepNow = true;
-                  state.totalBullSweeps = 1;
-                  box.set_border_color(_bx, sweepCol);
-                  box.set_border_width(_bx, 2);
-                  box.set_bgcolor(_bx, pinescript.color.new(sweepCol, 80));
-                }
-              }
-              if (((close < _btm) && (pinescript.offset(close, 1) < _btm))) {
-                {
-                  pinescript.arraySet(state.sz_broken, i, true);
-                  if (showInvalidated) {
-                    {
-                      box.set_bgcolor(_bx, pinescript.color.new(bullCol, 95));
-                      box.set_border_style(_bx, line.style_dashed);
-                      box.set_border_color(_bx, pinescript.color.new(bullCol, 80));
-                      line.set_style(_ln, line.style_dashed);
-                      line.set_color(_ln, pinescript.color.new(bullCol, 80));
-                    }
-                  } else {
-                    {
-                      box.set_bgcolor(_bx, null);
-                      box.set_border_color(_bx, null);
-                      line.set_color(_ln, null);
-                    }
-                  }
-                }
-              }
-            }
+    for (let i = (pinescript.arraySize(state.sz_top) - 1); i <= 0; i++) {
+      _top = pinescript.arrayGet(state.sz_top, i);
+      _btm = pinescript.arrayGet(state.sz_btm, i);
+      _broken = pinescript.arrayGet(state.sz_broken, i);
+      _swept = pinescript.arrayGet(state.sz_swept, i);
+      _tests = pinescript.arrayGet(state.sz_tests, i);
+      _bx = pinescript.arrayGet(state.sz_box, i);
+      _ln = pinescript.arrayGet(state.sz_line, i);
+      if (!_broken) {
+        box.set_right(_bx, (bar_index + 5));
+        line.set_x2(_ln, (bar_index + 5));
+        if ((((low < _top) && (low >= _btm)) && (close > _top))) {
+          pinescript.arraySet(state.sz_tests, i, (_tests + 1));
+          _newAlpha = pinescript.max(70, (88 - (_tests * 6)));
+          box.set_bgcolor(_bx, pinescript.color.new(bullCol, _newAlpha));
+        }
+        if (((((low < _btm) && (close >= _btm)) && !_swept) && bullFilterOk)) {
+          pinescript.arraySet(state.sz_swept, i, true);
+          state.bullSweepNow = true;
+          state.totalBullSweeps = 1;
+          box.set_border_color(_bx, sweepCol);
+          box.set_border_width(_bx, 2);
+          box.set_bgcolor(_bx, pinescript.color.new(sweepCol, 80));
+        }
+        if (((close < _btm) && (pinescript.offset(close, 1) < _btm))) {
+          pinescript.arraySet(state.sz_broken, i, true);
+          if (showInvalidated) {
+            box.set_bgcolor(_bx, pinescript.color.new(bullCol, 95));
+            box.set_border_style(_bx, line.style_dashed);
+            box.set_border_color(_bx, pinescript.color.new(bullCol, 80));
+            line.set_style(_ln, line.style_dashed);
+            line.set_color(_ln, pinescript.color.new(bullCol, 80));
           } else {
-            {
-              if (!showInvalidated) {
-                {
-                  box.set_bgcolor(_bx, null);
-                  box.set_border_color(_bx, null);
-                  line.set_color(_ln, null);
-                }
-              }
-            }
+            box.set_bgcolor(_bx, null);
+            box.set_border_color(_bx, null);
+            line.set_color(_ln, null);
           }
+        }
+      } else {
+        if (!showInvalidated) {
+          box.set_bgcolor(_bx, null);
+          box.set_border_color(_bx, null);
+          line.set_color(_ln, null);
         }
       }
     }
@@ -1465,89 +1417,53 @@ function main() {
   pinescript.plotshape((showSweeps && state.bearSweepNow), "Bear Sweep", pinescript.shape.triangledown, pinescript.location.abovebar, sweepCol, ({ size: pinescript.size.small }));
   pinescript.bgcolor(((showSweepBG && (state.bullSweepNow || state.bearSweepNow)) ? pinescript.color.new(sweepCol, 85) : null), ({ title: "Sweep Bar Highlight" }));
   if ((showSweeps && state.bullSweepNow)) {
-    {
-      pinescript.labelNew(bar_index, low, "SWEEP", ({ style: label.style_label_up, color: pinescript.color.new(sweepCol, 20), textcolor: pinescript.color.white, size: pinescript.size.tiny }));
-    }
+    pinescript.labelNew(bar_index, low, "SWEEP", ({ style: label.style_label_up, color: pinescript.color.new(sweepCol, 20), textcolor: pinescript.color.white, size: pinescript.size.tiny }));
   }
   if ((showSweeps && state.bearSweepNow)) {
-    {
-      pinescript.labelNew(bar_index, high, "SWEEP", ({ style: label.style_label_down, color: pinescript.color.new(sweepCol, 20), textcolor: pinescript.color.white, size: pinescript.size.tiny }));
-    }
+    pinescript.labelNew(bar_index, high, "SWEEP", ({ style: label.style_label_down, color: pinescript.color.new(sweepCol, 20), textcolor: pinescript.color.white, size: pinescript.size.tiny }));
   }
   let activeResist = 0;
   let activeSup = 0;
   let sweptResist = 0;
   let sweptSup = 0;
   if ((pinescript.arraySize(state.rz_broken) > 0)) {
-    {
-      for (let i = 0; i <= (pinescript.arraySize(state.rz_broken) - 1); i++) {
-        {
-          if (!pinescript.arrayGet(state.rz_broken, i)) {
-            {
-              activeResist += 1;
-            }
-          }
-          if (pinescript.arrayGet(state.rz_swept, i)) {
-            {
-              sweptResist += 1;
-            }
-          }
-        }
+    for (let i = 0; i <= (pinescript.arraySize(state.rz_broken) - 1); i++) {
+      if (!pinescript.arrayGet(state.rz_broken, i)) {
+        activeResist += 1;
+      }
+      if (pinescript.arrayGet(state.rz_swept, i)) {
+        sweptResist += 1;
       }
     }
   }
   if ((pinescript.arraySize(state.sz_broken) > 0)) {
-    {
-      for (let i = 0; i <= (pinescript.arraySize(state.sz_broken) - 1); i++) {
-        {
-          if (!pinescript.arrayGet(state.sz_broken, i)) {
-            {
-              activeSup += 1;
-            }
-          }
-          if (pinescript.arrayGet(state.sz_swept, i)) {
-            {
-              sweptSup += 1;
-            }
-          }
-        }
+    for (let i = 0; i <= (pinescript.arraySize(state.sz_broken) - 1); i++) {
+      if (!pinescript.arrayGet(state.sz_broken, i)) {
+        activeSup += 1;
+      }
+      if (pinescript.arrayGet(state.sz_swept, i)) {
+        sweptSup += 1;
       }
     }
   }
   let nearestResist = null;
   let nearestSupport = null;
   if ((pinescript.arraySize(state.rz_top) > 0)) {
-    {
-      for (let i = 0; i <= (pinescript.arraySize(state.rz_top) - 1); i++) {
-        {
-          if (!pinescript.arrayGet(state.rz_broken, i)) {
-            {
-              let _dist = (pinescript.arrayGet(state.rz_btm, i) - close);
-              if (((_dist > 0) && (pinescript.na(nearestResist) || (_dist < nearestResist)))) {
-                {
-                  nearestResist = _dist;
-                }
-              }
-            }
-          }
+    for (let i = 0; i <= (pinescript.arraySize(state.rz_top) - 1); i++) {
+      if (!pinescript.arrayGet(state.rz_broken, i)) {
+        let _dist = (pinescript.arrayGet(state.rz_btm, i) - close);
+        if (((_dist > 0) && (pinescript.na(nearestResist) || (_dist < nearestResist)))) {
+          nearestResist = _dist;
         }
       }
     }
   }
   if ((pinescript.arraySize(state.sz_btm) > 0)) {
-    {
-      for (let i = 0; i <= (pinescript.arraySize(state.sz_btm) - 1); i++) {
-        {
-          if (!pinescript.arrayGet(state.sz_broken, i)) {
-            {
-              _dist = (close - pinescript.arrayGet(state.sz_top, i));
-              if (((_dist > 0) && (pinescript.na(nearestSupport) || (_dist < nearestSupport)))) {
-                {
-                  nearestSupport = _dist;
-                }
-              }
-            }
-          }
+    for (let i = 0; i <= (pinescript.arraySize(state.sz_btm) - 1); i++) {
+      if (!pinescript.arrayGet(state.sz_broken, i)) {
+        _dist = (close - pinescript.arrayGet(state.sz_top, i));
+        if (((_dist > 0) && (pinescript.na(nearestSupport) || (_dist < nearestSupport)))) {
+          nearestSupport = _dist;
         }
       }
     }
@@ -1573,42 +1489,40 @@ function main() {
   let textValue = ((dashSize === 1) ? undefined : ((dashSize === 2) ? undefined : ((dashSize === 3) ? undefined : null)));
   if (state.dash === undefined) state.dash = pinescript.table.new(dashPosTV, 3, 9, ({ bgcolor: pinescript.color.new(pinescript.color.hex("#0a0e17"), 5), border_color: pinescript.color.new(pinescript.color.hex("#1e2a3a"), 0), border_width: 2, frame_color: pinescript.color.new(pinescript.color.hex("#1e2a3a"), 0), frame_width: 3 }));
   if ((showDash && barstate.islast)) {
-    {
-      pinescript.table.cell(state.dash, 0, 0, "🎯 SWEEP DETECTOR", ({ text_color: pinescript.color.white, text_size: textTitle, bgcolor: pinescript.color.new(sweepCol, 40), text_halign: pinescript.text.align_center }));
-      table.merge_cells(state.dash, 0, 0, 2, 0);
-      pinescript.table.cell(state.dash, 0, 1, "ZONES", ({ text_color: pinescript.color.new(pinescript.color.white, 40), text_size: textLabel, bgcolor: pinescript.color.new(pinescript.color.hex("#0d1117"), 0) }));
-      pinescript.table.cell(state.dash, 1, 1, (pinescript.strToString(activeResist) + " 🔴"), ({ text_color: bearCol, text_size: textValue, bgcolor: pinescript.color.new(pinescript.color.hex("#0d1117"), 0), text_halign: pinescript.text.align_center }));
-      pinescript.table.cell(state.dash, 2, 1, (pinescript.strToString(activeSup) + " 🟢"), ({ text_color: bullCol, text_size: textValue, bgcolor: pinescript.color.new(pinescript.color.hex("#0d1117"), 0), text_halign: pinescript.text.align_center }));
-      let nrText = (!pinescript.na(nearResistPct) ? (pinescript.strToString(nearResistPct, "#.##") + "% away") : "— none —");
-      let nrCol = (!pinescript.na(nearResistPct) ? ((nearResistPct < 1) ? bearCol : ((nearResistPct < 3) ? pinescript.color.new(bearCol, 40) : pinescript.color.new(pinescript.color.white, 40))) : pinescript.color.new(pinescript.color.white, 60));
-      pinescript.table.cell(state.dash, 0, 2, "RESIST", ({ text_color: pinescript.color.new(pinescript.color.white, 40), text_size: textLabel, bgcolor: pinescript.color.new(pinescript.color.hex("#0d1117"), 0) }));
-      pinescript.table.cell(state.dash, 1, 2, nrText, ({ text_color: nrCol, text_size: textValue, bgcolor: pinescript.color.new(pinescript.color.hex("#0d1117"), 0), text_halign: pinescript.text.align_center }));
-      table.merge_cells(state.dash, 1, 2, 2, 2);
-      let nsText = (!pinescript.na(nearSupPct) ? (pinescript.strToString(nearSupPct, "#.##") + "% away") : "— none —");
-      let nsCol = (!pinescript.na(nearSupPct) ? ((nearSupPct < 1) ? bullCol : ((nearSupPct < 3) ? pinescript.color.new(bullCol, 40) : pinescript.color.new(pinescript.color.white, 40))) : pinescript.color.new(pinescript.color.white, 60));
-      pinescript.table.cell(state.dash, 0, 3, "SUPPORT", ({ text_color: pinescript.color.new(pinescript.color.white, 40), text_size: textLabel, bgcolor: pinescript.color.new(pinescript.color.hex("#0d1117"), 0) }));
-      pinescript.table.cell(state.dash, 1, 3, nsText, ({ text_color: nsCol, text_size: textValue, bgcolor: pinescript.color.new(pinescript.color.hex("#0d1117"), 0), text_halign: pinescript.text.align_center }));
-      table.merge_cells(state.dash, 1, 3, 2, 3);
-      pinescript.table.cell(state.dash, 0, 4, "SWEEPS", ({ text_color: pinescript.color.new(pinescript.color.white, 40), text_size: textLabel, bgcolor: pinescript.color.new(pinescript.color.hex("#0d1117"), 0) }));
-      pinescript.table.cell(state.dash, 1, 4, ("▼ " + pinescript.strToString(state.totalBearSweeps)), ({ text_color: bearCol, text_size: textValue, bgcolor: pinescript.color.new(pinescript.color.hex("#0d1117"), 0), text_halign: pinescript.text.align_center }));
-      pinescript.table.cell(state.dash, 2, 4, ("▲ " + pinescript.strToString(state.totalBullSweeps)), ({ text_color: bullCol, text_size: textValue, bgcolor: pinescript.color.new(pinescript.color.hex("#0d1117"), 0), text_halign: pinescript.text.align_center }));
-      let biasText = ((state.totalBullSweeps > state.totalBearSweeps) ? "🟢 BULLISH BIAS" : ((state.totalBearSweeps > state.totalBullSweeps) ? "🔴 BEARISH BIAS" : "⚪ NEUTRAL"));
-      let biasBG = ((state.totalBullSweeps > state.totalBearSweeps) ? pinescript.color.new(bullCol, 80) : ((state.totalBearSweeps > state.totalBullSweeps) ? pinescript.color.new(bearCol, 80) : pinescript.color.new(pinescript.color.gray, 80)));
-      pinescript.table.cell(state.dash, 0, 5, biasText, ({ text_color: pinescript.color.white, text_size: textValue, bgcolor: biasBG, text_halign: pinescript.text.align_center }));
-      table.merge_cells(state.dash, 0, 5, 2, 5);
-      let tF = (useTrendFilter ? "✅ Trend" : "❌ Trend");
-      let vF = (useVolFilter ? "✅ Vol" : "❌ Vol");
-      let wF = (useWickFilter ? "✅ Wick" : "❌ Wick");
-      let filtersOn = (((useTrendFilter ? 1 : 0) + (useVolFilter ? 1 : 0)) + (useWickFilter ? 1 : 0));
-      let filterBG = ((filtersOn === 3) ? pinescript.color.new(pinescript.color.hex("#00e676"), 85) : ((filtersOn >= 1) ? pinescript.color.new(pinescript.color.yellow, 85) : pinescript.color.new(pinescript.color.hex("#ff1744"), 85)));
-      pinescript.table.cell(state.dash, 0, 6, "FILTERS", ({ text_color: pinescript.color.new(pinescript.color.white, 40), text_size: textLabel, bgcolor: pinescript.color.new(pinescript.color.hex("#0d1117"), 0) }));
-      pinescript.table.cell(state.dash, 1, 6, ((((tF + "  ") + vF) + "  ") + wF), ({ text_color: pinescript.color.new(pinescript.color.white, 30), text_size: textLabel, bgcolor: filterBG, text_halign: pinescript.text.align_center }));
-      table.merge_cells(state.dash, 1, 6, 2, 6);
-      pinescript.table.cell(state.dash, 0, 7, (("Based on " + pinescript.strToString((state.totalBullSweeps + state.totalBearSweeps))) + " sweeps detected"), ({ text_color: pinescript.color.new(pinescript.color.white, 65), text_size: pinescript.size.tiny, bgcolor: pinescript.color.new(pinescript.color.hex("#0d1117"), 0), text_halign: pinescript.text.align_center }));
-      table.merge_cells(state.dash, 0, 7, 2, 7);
-      pinescript.table.cell(state.dash, 0, 8, ((("⚡ DefinedEdge — Sweep Detector  •  " + syminfo.ticker) + " • ") + timeframe.period), ({ text_color: pinescript.color.new(pinescript.color.white, 60), text_size: pinescript.size.small, bgcolor: pinescript.color.new(pinescript.color.hex("#0d1117"), 0), text_halign: pinescript.text.align_center }));
-      table.merge_cells(state.dash, 0, 8, 2, 8);
-    }
+    pinescript.table.cell(state.dash, 0, 0, "🎯 SWEEP DETECTOR", ({ text_color: pinescript.color.white, text_size: textTitle, bgcolor: pinescript.color.new(sweepCol, 40), text_halign: pinescript.text.align_center }));
+    table.merge_cells(state.dash, 0, 0, 2, 0);
+    pinescript.table.cell(state.dash, 0, 1, "ZONES", ({ text_color: pinescript.color.new(pinescript.color.white, 40), text_size: textLabel, bgcolor: pinescript.color.new(pinescript.color.hex("#0d1117"), 0) }));
+    pinescript.table.cell(state.dash, 1, 1, (pinescript.strToString(activeResist) + " 🔴"), ({ text_color: bearCol, text_size: textValue, bgcolor: pinescript.color.new(pinescript.color.hex("#0d1117"), 0), text_halign: pinescript.text.align_center }));
+    pinescript.table.cell(state.dash, 2, 1, (pinescript.strToString(activeSup) + " 🟢"), ({ text_color: bullCol, text_size: textValue, bgcolor: pinescript.color.new(pinescript.color.hex("#0d1117"), 0), text_halign: pinescript.text.align_center }));
+    let nrText = (!pinescript.na(nearResistPct) ? (pinescript.strToString(nearResistPct, "#.##") + "% away") : "— none —");
+    let nrCol = (!pinescript.na(nearResistPct) ? ((nearResistPct < 1) ? bearCol : ((nearResistPct < 3) ? pinescript.color.new(bearCol, 40) : pinescript.color.new(pinescript.color.white, 40))) : pinescript.color.new(pinescript.color.white, 60));
+    pinescript.table.cell(state.dash, 0, 2, "RESIST", ({ text_color: pinescript.color.new(pinescript.color.white, 40), text_size: textLabel, bgcolor: pinescript.color.new(pinescript.color.hex("#0d1117"), 0) }));
+    pinescript.table.cell(state.dash, 1, 2, nrText, ({ text_color: nrCol, text_size: textValue, bgcolor: pinescript.color.new(pinescript.color.hex("#0d1117"), 0), text_halign: pinescript.text.align_center }));
+    table.merge_cells(state.dash, 1, 2, 2, 2);
+    let nsText = (!pinescript.na(nearSupPct) ? (pinescript.strToString(nearSupPct, "#.##") + "% away") : "— none —");
+    let nsCol = (!pinescript.na(nearSupPct) ? ((nearSupPct < 1) ? bullCol : ((nearSupPct < 3) ? pinescript.color.new(bullCol, 40) : pinescript.color.new(pinescript.color.white, 40))) : pinescript.color.new(pinescript.color.white, 60));
+    pinescript.table.cell(state.dash, 0, 3, "SUPPORT", ({ text_color: pinescript.color.new(pinescript.color.white, 40), text_size: textLabel, bgcolor: pinescript.color.new(pinescript.color.hex("#0d1117"), 0) }));
+    pinescript.table.cell(state.dash, 1, 3, nsText, ({ text_color: nsCol, text_size: textValue, bgcolor: pinescript.color.new(pinescript.color.hex("#0d1117"), 0), text_halign: pinescript.text.align_center }));
+    table.merge_cells(state.dash, 1, 3, 2, 3);
+    pinescript.table.cell(state.dash, 0, 4, "SWEEPS", ({ text_color: pinescript.color.new(pinescript.color.white, 40), text_size: textLabel, bgcolor: pinescript.color.new(pinescript.color.hex("#0d1117"), 0) }));
+    pinescript.table.cell(state.dash, 1, 4, ("▼ " + pinescript.strToString(state.totalBearSweeps)), ({ text_color: bearCol, text_size: textValue, bgcolor: pinescript.color.new(pinescript.color.hex("#0d1117"), 0), text_halign: pinescript.text.align_center }));
+    pinescript.table.cell(state.dash, 2, 4, ("▲ " + pinescript.strToString(state.totalBullSweeps)), ({ text_color: bullCol, text_size: textValue, bgcolor: pinescript.color.new(pinescript.color.hex("#0d1117"), 0), text_halign: pinescript.text.align_center }));
+    let biasText = ((state.totalBullSweeps > state.totalBearSweeps) ? "🟢 BULLISH BIAS" : ((state.totalBearSweeps > state.totalBullSweeps) ? "🔴 BEARISH BIAS" : "⚪ NEUTRAL"));
+    let biasBG = ((state.totalBullSweeps > state.totalBearSweeps) ? pinescript.color.new(bullCol, 80) : ((state.totalBearSweeps > state.totalBullSweeps) ? pinescript.color.new(bearCol, 80) : pinescript.color.new(pinescript.color.gray, 80)));
+    pinescript.table.cell(state.dash, 0, 5, biasText, ({ text_color: pinescript.color.white, text_size: textValue, bgcolor: biasBG, text_halign: pinescript.text.align_center }));
+    table.merge_cells(state.dash, 0, 5, 2, 5);
+    let tF = (useTrendFilter ? "✅ Trend" : "❌ Trend");
+    let vF = (useVolFilter ? "✅ Vol" : "❌ Vol");
+    let wF = (useWickFilter ? "✅ Wick" : "❌ Wick");
+    let filtersOn = (((useTrendFilter ? 1 : 0) + (useVolFilter ? 1 : 0)) + (useWickFilter ? 1 : 0));
+    let filterBG = ((filtersOn === 3) ? pinescript.color.new(pinescript.color.hex("#00e676"), 85) : ((filtersOn >= 1) ? pinescript.color.new(pinescript.color.yellow, 85) : pinescript.color.new(pinescript.color.hex("#ff1744"), 85)));
+    pinescript.table.cell(state.dash, 0, 6, "FILTERS", ({ text_color: pinescript.color.new(pinescript.color.white, 40), text_size: textLabel, bgcolor: pinescript.color.new(pinescript.color.hex("#0d1117"), 0) }));
+    pinescript.table.cell(state.dash, 1, 6, ((((tF + "  ") + vF) + "  ") + wF), ({ text_color: pinescript.color.new(pinescript.color.white, 30), text_size: textLabel, bgcolor: filterBG, text_halign: pinescript.text.align_center }));
+    table.merge_cells(state.dash, 1, 6, 2, 6);
+    pinescript.table.cell(state.dash, 0, 7, (("Based on " + pinescript.strToString((state.totalBullSweeps + state.totalBearSweeps))) + " sweeps detected"), ({ text_color: pinescript.color.new(pinescript.color.white, 65), text_size: pinescript.size.tiny, bgcolor: pinescript.color.new(pinescript.color.hex("#0d1117"), 0), text_halign: pinescript.text.align_center }));
+    table.merge_cells(state.dash, 0, 7, 2, 7);
+    pinescript.table.cell(state.dash, 0, 8, ((("⚡ DefinedEdge — Sweep Detector  •  " + syminfo.ticker) + " • ") + timeframe.period), ({ text_color: pinescript.color.new(pinescript.color.white, 60), text_size: pinescript.size.small, bgcolor: pinescript.color.new(pinescript.color.hex("#0d1117"), 0), text_halign: pinescript.text.align_center }));
+    table.merge_cells(state.dash, 0, 8, 2, 8);
   }
   alertcondition(state.bullSweepNow, "🟢 Bullish Sweep", "Sweep Detector: Bullish liquidity sweep detected! Smart money grabbed stops below support.");
   alertcondition(state.bearSweepNow, "🔴 Bearish Sweep", "Sweep Detector: Bearish liquidity sweep detected! Smart money grabbed stops above resistance.");

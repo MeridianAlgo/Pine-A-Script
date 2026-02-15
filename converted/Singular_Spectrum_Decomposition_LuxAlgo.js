@@ -905,8 +905,8 @@ const pinescript = {
     const info = { ticker: 'AAPL', tickerid: 'NASDAQ:AAPL', prefix: 'NASDAQ', root: 'AAPL', suffix: '' };
     return info[type] || '';
   },
-  time: 1771040741098,
-  timenow: 1771040741098,
+  time: 1771178052861,
+  timenow: 1771178052861,
   barstate: "LAST",
   dividends: {},
   splits: {},
@@ -1254,34 +1254,22 @@ function main() {
     let size_1 = values.size();
     let indices = pinescript.arrayNew(size_1);
     for (let i = 0; i <= (size_1 - 1); i++) {
-      {
-        indices.set(i, i);
-      }
+      indices.set(i, i);
     }
     for (let i = 0; i <= (size_1 - 2); i++) {
-      {
-        for (let j = 0; j <= ((size_1 - i) - 2); j++) {
-          {
-            if ((values.get(indices.get(j)) < values.get(indices.get((j + 1))))) {
-              {
-                let temp = indices.get(j);
-                indices.set(j, indices.get((j + 1)));
-                indices.set((j + 1), temp);
-              }
-            }
-          }
+      for (let j = 0; j <= ((size_1 - i) - 2); j++) {
+        if ((values.get(indices.get(j)) < values.get(indices.get((j + 1))))) {
+          let temp = indices.get(j);
+          indices.set(j, indices.get((j + 1)));
+          indices.set((j + 1), temp);
         }
       }
     }
     let sortedVectors = pinescript.matrixNew(vectors.rows(), vectors.columns());
     for (let col = 0; col <= (size_1 - 1); col++) {
-      {
-        let oldCol = indices.get(col);
-        for (let row = 0; row <= (vectors.rows() - 1); row++) {
-          {
-            sortedVectors.set(row, col, vectors.get(row, oldCol));
-          }
-        }
+      let oldCol = indices.get(col);
+      for (let row = 0; row <= (vectors.rows() - 1); row++) {
+        sortedVectors.set(row, col, vectors.get(row, oldCol));
       }
     }
     return sortedVectors;
@@ -1290,30 +1278,22 @@ function main() {
     let K = ((N - L) + 1);
     let pc = pinescript.arrayNew(K, 0);
     for (let j = 0; j <= (K - 1); j++) {
-      {
-        let val = 0;
-        for (let i = 0; i <= (L - 1); i++) {
-          {
-            val += (pinescript.matrixGet(V, i, k) * pinescript.arrayGet(y, (j + i)));
-          }
-        }
-        pinescript.arraySet(pc, j, val);
+      let val = 0;
+      for (let i = 0; i <= (L - 1); i++) {
+        val += (pinescript.matrixGet(V, i, k) * pinescript.arrayGet(y, (j + i)));
       }
+      pinescript.arraySet(pc, j, val);
     }
     let rc = pinescript.arrayNew(N, 0);
     for (let n = 0; n <= (N - 1); n++) {
-      {
-        let sum = 0;
-        let count = 0;
-        for (let i = pinescript.max(0, ((n - K) + 1)); i <= pinescript.min(n, (L - 1)); i++) {
-          {
-            let j = (n - i);
-            sum += (pinescript.matrixGet(V, i, k) * pinescript.arrayGet(pc, j));
-            count += 1;
-          }
-        }
-        pinescript.arraySet(rc, n, (sum / count));
+      let sum = 0;
+      let count = 0;
+      for (let i = pinescript.max(0, ((n - K) + 1)); i <= pinescript.min(n, (L - 1)); i++) {
+        let j = (n - i);
+        sum += (pinescript.matrixGet(V, i, k) * pinescript.arrayGet(pc, j));
+        count += 1;
       }
+      pinescript.arraySet(rc, n, (sum / count));
     }
     return rc;
   }
@@ -1321,24 +1301,16 @@ function main() {
     let a = pinescript.arrayNew((L - 1), 0);
     let verticalSum = 0;
     for (const k of indices) {
-      {
-        let pi_k = V.get((L - 1), k);
-        verticalSum += pinescript.pow(pi_k, 2);
-      }
+      let pi_k = V.get((L - 1), k);
+      verticalSum += pinescript.pow(pi_k, 2);
     }
     if ((verticalSum < 1)) {
-      {
-        for (let i = 0; i <= (L - 2); i++) {
-          {
-            let sum = 0;
-            for (const k of indices) {
-              {
-                sum += (V.get((L - 1), k) * V.get(i, k));
-              }
-            }
-            a.set(i, (sum / (1 - verticalSum)));
-          }
+      for (let i = 0; i <= (L - 2); i++) {
+        let sum = 0;
+        for (const k of indices) {
+          sum += (V.get((L - 1), k) * V.get(i, k));
         }
+        a.set(i, (sum / (1 - verticalSum)));
       }
     }
     return a;
@@ -1349,46 +1321,36 @@ function main() {
     let lastRecon = src.get((src.size() - 1));
     let f0 = 0;
     for (let j = 0; j <= (L - 2); j++) {
-      {
-        f0 += (lrr.get(j) * src.get(((src.size() - L) + j)));
-      }
+      f0 += (lrr.get(j) * src.get(((src.size() - L) + j)));
     }
     let adjusted = pinescript.arrayNew(0);
     adjusted.push(lastRecon);
     let runningVal = lastRecon;
     let prevRaw = f0;
     for (let i = 1; i <= nForecast; i++) {
-      {
-        let val = 0;
-        for (let j = 0; j <= (L - 2); j++) {
-          {
-            val += (lrr.get(j) * res.get(((res.size() - (L - 1)) + j)));
-          }
-        }
-        let diff = (val - prevRaw);
-        runningVal += diff;
-        adjusted.push(runningVal);
-        res.push(val);
-        prevRaw = val;
+      let val = 0;
+      for (let j = 0; j <= (L - 2); j++) {
+        val += (lrr.get(j) * res.get(((res.size() - (L - 1)) + j)));
       }
+      let diff = (val - prevRaw);
+      runningVal += diff;
+      adjusted.push(runningVal);
+      res.push(val);
+      prevRaw = val;
     }
     return adjusted;
   }
   function createPolyline(values, startBar, c, width = 2, style = line.style_solid) {
     let points = pinescript.arrayNew(0);
     for (let i = 0; i <= (values.size() - 1); i++) {
-      {
-        pinescript.arrayPush(points, pinescript.chartPointFromIndex((startBar + i), pinescript.arrayGet(values, i)));
-      }
+      pinescript.arrayPush(points, pinescript.chartPointFromIndex((startBar + i), pinescript.arrayGet(values, i)));
     }
     return polyline.new(points, ({ line_color: c, line_width: width, line_style: style }));
   }
   function createOverlayPolyline(values, startBar, c, width = 2, style = line.style_solid) {
     let points = pinescript.arrayNew(0);
     for (let i = 0; i <= (values.size() - 1); i++) {
-      {
-        pinescript.arrayPush(points, pinescript.chartPointFromIndex((startBar + i), pinescript.arrayGet(values, i)));
-      }
+      pinescript.arrayPush(points, pinescript.chartPointFromIndex((startBar + i), pinescript.arrayGet(values, i)));
     }
     return polyline.new(points, ({ line_color: c, line_width: width, line_style: style, force_overlay: true }));
   }
@@ -1398,23 +1360,15 @@ function main() {
     let firstIdx = -1;
     let lastIdx = -1;
     if ((n > 1)) {
-      {
-        for (let i = 1; i <= (n - 1); i++) {
-          {
-            let prev = src.get((i - 1));
-            let curr = src.get(i);
-            if ((((prev > 0) && (curr <= 0)) || ((prev < 0) && (curr >= 0)))) {
-              {
-                if ((firstIdx === -1)) {
-                  {
-                    firstIdx = i;
-                  }
-                }
-                lastIdx = i;
-                count += 1;
-              }
-            }
+      for (let i = 1; i <= (n - 1); i++) {
+        let prev = src.get((i - 1));
+        let curr = src.get(i);
+        if ((((prev > 0) && (curr <= 0)) || ((prev < 0) && (curr >= 0)))) {
+          if ((firstIdx === -1)) {
+            firstIdx = i;
           }
+          lastIdx = i;
+          count += 1;
         }
       }
     }
@@ -1435,118 +1389,84 @@ function main() {
   if (state.noiseLine === undefined) state.noiseLine = null;
   if (state.t_able === undefined) state.t_able = pinescript.table.new(state.parsedDashboardPosition, 2, 5, ({ bgcolor: BACKGROUND, border_width: 0, frame_color: BORDERS, frame_width: 1, force_overlay: true }));
   if (barstate.islast) {
-    {
-      let startIdx = (bar_index - (trainingInput - 1));
-      let foreIdx = bar_index;
-      let y = pinescript.arrayNew(0);
-      for (let i = 0; i <= (trainingInput - 1); i++) {
-        {
-          pinescript.arrayPush(y, pinescript.offset(close, ((trainingInput - 1) - i)));
+    let startIdx = (bar_index - (trainingInput - 1));
+    let foreIdx = bar_index;
+    let y = pinescript.arrayNew(0);
+    for (let i = 0; i <= (trainingInput - 1); i++) {
+      pinescript.arrayPush(y, pinescript.offset(close, ((trainingInput - 1) - i)));
+    }
+    let S = pinescript.matrixNew(lagInput, lagInput, 0);
+    let nRowsX = ((trainingInput - lagInput) + 1);
+    for (let i = 0; i <= (lagInput - 1); i++) {
+      for (let j = i; j <= (lagInput - 1); j++) {
+        let sum = 0;
+        for (let k = 0; k <= (nRowsX - 1); k++) {
+          sum += (pinescript.arrayGet(y, (k + i)) * pinescript.arrayGet(y, (k + j)));
+        }
+        pinescript.matrixSet(S, i, j, sum);
+        pinescript.matrixSet(S, j, i, sum);
+      }
+    }
+    let evals = matrix.eigenvalues(S);
+    let evecs = matrix.eigenvectors(S);
+    let sortedV = sortEigen(evecs, evals);
+    let trendValues = diagonalAveraging(sortedV, 0, y, lagInput, trainingInput);
+    let trendExtrap = extrapolate(trendValues, getLRR(sortedV, array.from(0), lagInput), forecastInput);
+    let rc1 = diagonalAveraging(sortedV, 1, y, lagInput, trainingInput);
+    let rc2 = diagonalAveraging(sortedV, 2, y, lagInput, trainingInput);
+    let p1Values = pinescript.arrayNew(trainingInput, 0);
+    for (let i = 0; i <= (trainingInput - 1); i++) {
+      pinescript.arraySet(p1Values, i, (pinescript.arrayGet(rc1, i) + pinescript.arrayGet(rc2, i)));
+    }
+    let rc3 = diagonalAveraging(sortedV, 3, y, lagInput, trainingInput);
+    let rc4 = diagonalAveraging(sortedV, 4, y, lagInput, trainingInput);
+    let p2Values = pinescript.arrayNew(trainingInput, 0);
+    for (let i = 0; i <= (trainingInput - 1); i++) {
+      pinescript.arraySet(p2Values, i, (pinescript.arrayGet(rc3, i) + pinescript.arrayGet(rc4, i)));
+    }
+    let noiseValues = pinescript.arrayNew(trainingInput, 0);
+    if ((lagInput > 5)) {
+      for (let k = 5; k <= (lagInput - 1); k++) {
+        let rck = diagonalAveraging(sortedV, k, y, lagInput, trainingInput);
+        for (let i = 0; i <= (trainingInput - 1); i++) {
+          pinescript.arraySet(noiseValues, i, (pinescript.arrayGet(noiseValues, i) + pinescript.arrayGet(rck, i)));
         }
       }
-      let S = pinescript.matrixNew(lagInput, lagInput, 0);
-      let nRowsX = ((trainingInput - lagInput) + 1);
-      for (let i = 0; i <= (lagInput - 1); i++) {
-        {
-          for (let j = i; j <= (lagInput - 1); j++) {
-            {
-              let sum = 0;
-              for (let k = 0; k <= (nRowsX - 1); k++) {
-                {
-                  sum += (pinescript.arrayGet(y, (k + i)) * pinescript.arrayGet(y, (k + j)));
-                }
-              }
-              pinescript.matrixSet(S, i, j, sum);
-              pinescript.matrixSet(S, j, i, sum);
-            }
-          }
-        }
+    }
+    polyline.delete(state.trendLine);
+    polyline.delete(state.trendFore);
+    polyline.delete(state.p1Line);
+    polyline.delete(state.p2Line);
+    polyline.delete(state.noiseLine);
+    if (showTrend) {
+      state.trendLine = createOverlayPolyline(trendValues, startIdx, trendColorInput, 3);
+      if (showExtrapolation) {
+        state.trendFore = createOverlayPolyline(trendExtrap, foreIdx, trendColorInput, 3, line.style_dashed);
       }
-      let evals = matrix.eigenvalues(S);
-      let evecs = matrix.eigenvectors(S);
-      let sortedV = sortEigen(evecs, evals);
-      let trendValues = diagonalAveraging(sortedV, 0, y, lagInput, trainingInput);
-      let trendExtrap = extrapolate(trendValues, getLRR(sortedV, array.from(0), lagInput), forecastInput);
-      let rc1 = diagonalAveraging(sortedV, 1, y, lagInput, trainingInput);
-      let rc2 = diagonalAveraging(sortedV, 2, y, lagInput, trainingInput);
-      let p1Values = pinescript.arrayNew(trainingInput, 0);
-      for (let i = 0; i <= (trainingInput - 1); i++) {
-        {
-          pinescript.arraySet(p1Values, i, (pinescript.arrayGet(rc1, i) + pinescript.arrayGet(rc2, i)));
-        }
-      }
-      let rc3 = diagonalAveraging(sortedV, 3, y, lagInput, trainingInput);
-      let rc4 = diagonalAveraging(sortedV, 4, y, lagInput, trainingInput);
-      let p2Values = pinescript.arrayNew(trainingInput, 0);
-      for (let i = 0; i <= (trainingInput - 1); i++) {
-        {
-          pinescript.arraySet(p2Values, i, (pinescript.arrayGet(rc3, i) + pinescript.arrayGet(rc4, i)));
-        }
-      }
-      let noiseValues = pinescript.arrayNew(trainingInput, 0);
-      if ((lagInput > 5)) {
-        {
-          for (let k = 5; k <= (lagInput - 1); k++) {
-            {
-              let rck = diagonalAveraging(sortedV, k, y, lagInput, trainingInput);
-              for (let i = 0; i <= (trainingInput - 1); i++) {
-                {
-                  pinescript.arraySet(noiseValues, i, (pinescript.arrayGet(noiseValues, i) + pinescript.arrayGet(rck, i)));
-                }
-              }
-            }
-          }
-        }
-      }
-      polyline.delete(state.trendLine);
-      polyline.delete(state.trendFore);
-      polyline.delete(state.p1Line);
-      polyline.delete(state.p2Line);
-      polyline.delete(state.noiseLine);
-      if (showTrend) {
-        {
-          state.trendLine = createOverlayPolyline(trendValues, startIdx, trendColorInput, 3);
-          if (showExtrapolation) {
-            {
-              state.trendFore = createOverlayPolyline(trendExtrap, foreIdx, trendColorInput, 3, line.style_dashed);
-            }
-          }
-        }
-      }
-      if (showP1) {
-        {
-          state.p1Line = createPolyline(p1Values, startIdx, p1ColorInput, 2);
-        }
-      }
-      if (showP2) {
-        {
-          state.p2Line = createPolyline(p2Values, startIdx, p2ColorInput, 2);
-        }
-      }
-      if (showNoise) {
-        {
-          state.noiseLine = createPolyline(noiseValues, startIdx, noiseColorInput, 1);
-        }
-      }
-      if (dashboardInput) {
-        {
-          let period1 = getPeriod(p1Values);
-          let period2 = getPeriod(p2Values);
-          t_able.clear(0, 0, 1, 4);
-          t_able.merge_cells(0, 0, 1, 0);
-          cell(state.t_able, 0, 0, "SSA Components", ({ color: DATA, align: pinescript.text.align_center }));
-          divider(state.t_able, 1, 1);
-          cell(state.t_able, 0, 2, "Long Term Avg Period", ({ color: HEADERS, align: pinescript.text.align_left }));
-          cell(state.t_able, 1, 2, pinescript.strToString(period1, "#.##"), ({ color: DATA }));
-          divider(state.t_able, 3, 1);
-          cell(state.t_able, 0, 4, "Short Term Avg Period", ({ color: HEADERS, align: pinescript.text.align_left }));
-          cell(state.t_able, 1, 4, pinescript.strToString(period2, "#.##"), ({ color: DATA }));
-        }
-      } else {
-        {
-          t_able.clear(0, 0, 1, 4);
-        }
-      }
+    }
+    if (showP1) {
+      state.p1Line = createPolyline(p1Values, startIdx, p1ColorInput, 2);
+    }
+    if (showP2) {
+      state.p2Line = createPolyline(p2Values, startIdx, p2ColorInput, 2);
+    }
+    if (showNoise) {
+      state.noiseLine = createPolyline(noiseValues, startIdx, noiseColorInput, 1);
+    }
+    if (dashboardInput) {
+      let period1 = getPeriod(p1Values);
+      let period2 = getPeriod(p2Values);
+      t_able.clear(0, 0, 1, 4);
+      t_able.merge_cells(0, 0, 1, 0);
+      cell(state.t_able, 0, 0, "SSA Components", ({ color: DATA, align: pinescript.text.align_center }));
+      divider(state.t_able, 1, 1);
+      cell(state.t_able, 0, 2, "Long Term Avg Period", ({ color: HEADERS, align: pinescript.text.align_left }));
+      cell(state.t_able, 1, 2, pinescript.strToString(period1, "#.##"), ({ color: DATA }));
+      divider(state.t_able, 3, 1);
+      cell(state.t_able, 0, 4, "Short Term Avg Period", ({ color: HEADERS, align: pinescript.text.align_left }));
+      cell(state.t_able, 1, 4, pinescript.strToString(period2, "#.##"), ({ color: DATA }));
+    } else {
+      t_able.clear(0, 0, 1, 4);
     }
   }
   pinescript.hline(0, "Zero Line", ({ color: pinescript.color.new(pinescript.color.gray, 50), linestyle: hline.style_dotted }));

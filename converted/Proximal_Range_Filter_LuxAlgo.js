@@ -905,8 +905,8 @@ const pinescript = {
     const info = { ticker: 'AAPL', tickerid: 'NASDAQ:AAPL', prefix: 'NASDAQ', root: 'AAPL', suffix: '' };
     return info[type] || '';
   },
-  time: 1771040740657,
-  timenow: 1771040740657,
+  time: 1771178052232,
+  timenow: 1771178052232,
   barstate: "LAST",
   dividends: {},
   splits: {},
@@ -1217,38 +1217,26 @@ function main() {
   if (state.z === undefined) state.z = null;
   if (state.v === undefined) state.v = 0;
   if ((bar_index === 0)) {
-    {
-      state.z = srcInput;
-    }
+    state.z = srcInput;
   } else {
-    {
-      let zPrev = pinescript.offset(state.z, 1);
-      let vPrev = pinescript.offset(state.v, 1);
-      let zPred = (zPrev + vPrev);
-      let zTemp = (zPred + (muInput * (srcInput - zPred)));
-      let diff = (zTemp - zPrev);
-      if ((pinescript.abs(diff) > threshold)) {
-        {
-          state.v = (math.sign(diff) * (pinescript.abs(diff) - threshold));
-        }
-      } else {
-        {
-          state.v = 0;
-        }
-      }
-      state.z = (zPrev + state.v);
+    let zPrev = pinescript.offset(state.z, 1);
+    let vPrev = pinescript.offset(state.v, 1);
+    let zPred = (zPrev + vPrev);
+    let zTemp = (zPred + (muInput * (srcInput - zPred)));
+    let diff = (zTemp - zPrev);
+    if ((pinescript.abs(diff) > threshold)) {
+      state.v = (math.sign(diff) * (pinescript.abs(diff) - threshold));
+    } else {
+      state.v = 0;
     }
+    state.z = (zPrev + state.v);
   }
   if (state.trend === undefined) state.trend = 0;
   if ((state.z > pinescript.offset(state.z, 1))) {
-    {
-      state.trend = 1;
-    }
+    state.trend = 1;
   } else {
     if ((state.z < pinescript.offset(state.z, 1))) {
-      {
-        state.trend = -1;
-      }
+      state.trend = -1;
     }
   }
   let upChange = ((state.trend === 1) && (pinescript.offset(state.trend, 1) === -1));

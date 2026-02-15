@@ -905,8 +905,8 @@ const pinescript = {
     const info = { ticker: 'AAPL', tickerid: 'NASDAQ:AAPL', prefix: 'NASDAQ', root: 'AAPL', suffix: '' };
     return info[type] || '';
   },
-  time: 1771040740119,
-  timenow: 1771040740119,
+  time: 1771178051604,
+  timenow: 1771178051604,
   barstate: "LAST",
   dividends: {},
   splits: {},
@@ -1241,14 +1241,10 @@ function main() {
   let newBuy = (longCond && (state.lastSignal !== "BUY"));
   let newSell = (shortCond && (state.lastSignal !== "SELL"));
   if (newBuy) {
-    {
-      state.lastSignal = "BUY";
-    }
+    state.lastSignal = "BUY";
   } else {
     if (newSell) {
-      {
-        state.lastSignal = "SELL";
-      }
+      state.lastSignal = "SELL";
     }
   }
   let basisSmoothed = pinescript.ema(basis, smoothLen);
@@ -1265,16 +1261,12 @@ function main() {
   let sellArrowY = (upBandSmoothed + (atr * arrowOffsetFactor));
   let sellTextY = (sellArrowY + (atr * textOffsetFactor));
   if ((showArrows && newBuy)) {
-    {
-      pinescript.labelNew(bar_index, buyArrowY, ({ text: "", style: label.style_triangleup, color: pinescript.color.new(pinescript.color.green, 0), textcolor: pinescript.color.white, size: pinescript.size.large }));
-      pinescript.labelNew(bar_index, buyTextY, ({ text: "BUY", style: label.style_label_center, color: pinescript.color.new(pinescript.color.green, 85), textcolor: pinescript.color.new(pinescript.color.hex("#6186ff"), 0), size: pinescript.size.small }));
-    }
+    pinescript.labelNew(bar_index, buyArrowY, ({ text: "", style: label.style_triangleup, color: pinescript.color.new(pinescript.color.green, 0), textcolor: pinescript.color.white, size: pinescript.size.large }));
+    pinescript.labelNew(bar_index, buyTextY, ({ text: "BUY", style: label.style_label_center, color: pinescript.color.new(pinescript.color.green, 85), textcolor: pinescript.color.new(pinescript.color.hex("#6186ff"), 0), size: pinescript.size.small }));
   }
   if ((showArrows && newSell)) {
-    {
-      pinescript.labelNew(bar_index, sellArrowY, ({ text: "", style: label.style_triangledown, color: pinescript.color.new(pinescript.color.red, 0), textcolor: pinescript.color.white, size: pinescript.size.large }));
-      pinescript.labelNew(bar_index, sellTextY, ({ text: "SELL", style: label.style_label_center, color: pinescript.color.new(pinescript.color.red, 85), textcolor: pinescript.color.new(pinescript.color.hex("#6186ff"), 0), size: pinescript.size.small }));
-    }
+    pinescript.labelNew(bar_index, sellArrowY, ({ text: "", style: label.style_triangledown, color: pinescript.color.new(pinescript.color.red, 0), textcolor: pinescript.color.white, size: pinescript.size.large }));
+    pinescript.labelNew(bar_index, sellTextY, ({ text: "SELL", style: label.style_label_center, color: pinescript.color.new(pinescript.color.red, 85), textcolor: pinescript.color.new(pinescript.color.hex("#6186ff"), 0), size: pinescript.size.small }));
   }
   let neutralColor = pinescript.color.new(pinescript.color.gray, 82);
   let bgColorUp = pinescript.color.new(pinescript.color.green, 65);
@@ -1285,10 +1277,8 @@ function main() {
   let trendText = ((trend === 1) ? "UPTREND" : ((trend === -1) ? "DOWNTREND" : "NEUTRAL"));
   let trendColor = ((trend === 1) ? pinescript.color.rgb(1, 126, 66) : ((trend === -1) ? pinescript.color.rgb(200, 0, 0) : pinescript.color.gray));
   if (barstate.islast) {
-    {
-      pinescript.table.cell(state.panel, 0, 0, "CURRENT TREND DIRECTION", ({ text_color: pinescript.color.white, bgcolor: pinescript.color.black, width: 27 }));
-      pinescript.table.cell(state.panel, 0, 1, trendText, ({ text_color: pinescript.color.white, bgcolor: trendColor, width: 25 }));
-    }
+    pinescript.table.cell(state.panel, 0, 0, "CURRENT TREND DIRECTION", ({ text_color: pinescript.color.white, bgcolor: pinescript.color.black, width: 27 }));
+    pinescript.table.cell(state.panel, 0, 1, trendText, ({ text_color: pinescript.color.white, bgcolor: trendColor, width: 25 }));
   }
 }
 

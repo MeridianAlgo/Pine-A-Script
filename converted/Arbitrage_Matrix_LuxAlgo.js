@@ -905,8 +905,8 @@ const pinescript = {
     const info = { ticker: 'AAPL', tickerid: 'NASDAQ:AAPL', prefix: 'NASDAQ', root: 'AAPL', suffix: '' };
     return info[type] || '';
   },
-  time: 1771178051687,
-  timenow: 1771178051687,
+  time: 1771178050882,
+  timenow: 1771178050882,
   barstate: "LAST",
   dividends: {},
   splits: {},
@@ -1192,7 +1192,8 @@ pinescript.table = {
 
 // Input parameters
 
-const OrderBlock = { new: function(top, bottom, startTime, strength, isBullish, boxId, labelId, mitigated) { return { top: top, bottom: bottom, startTime: startTime, strength: strength, isBullish: isBullish, boxId: boxId, labelId: labelId, mitigated: mitigated }; } };
+const asset = { new: function(prices, volumes) { return { prices: prices, volumes: volumes }; } };
+const data = { new: function(lastPrices, lastVolumes, avgPrices, avgVolumes) { return { lastPrices: lastPrices, lastVolumes: lastVolumes, avgPrices: avgPrices, avgVolumes: avgVolumes }; } };
 
 // Main script logic
 
@@ -1207,188 +1208,328 @@ function main() {
   volume = pinescript.asSeries(globalThis.volume);
   time = pinescript.asSeries(globalThis.time);
   null;
-  // Study: Institutional Order Flow Strength Classifier [LuxAlgo]
-  // Options: {"overlay":true,"max_boxes_count":100,"max_labels_count":100}
-  let BULL_COLOR = pinescript.color.hex("#089981");
-  let BEAR_COLOR = pinescript.color.hex("#f23645");
-  let TEXT_COLOR = chart.fg_color;
-  let OB_GROUP = "Order Block Settings";
-  let pivotLenInput = input.int(5, "Pivot Lookback", ({ minval: 2, group: OB_GROUP }));
-  let maxOBsInput = input.int(5, "Max Unmitigated OBs", ({ minval: 1, maxval: 50, group: OB_GROUP }));
-  let VIS_GROUP = "Visualization";
-  let bullColorInput = input.color(pinescript.color.new(BULL_COLOR, 80), "Bullish OB Color", ({ group: VIS_GROUP }));
-  let bearColorInput = input.color(pinescript.color.new(BEAR_COLOR, 80), "Bearish OB Color", ({ group: VIS_GROUP }));
-  let hideOverlappedInput = input.bool(true, "Hide Overlapped Zones", ({ group: VIS_GROUP }));
-  let showLabelsInput = input.bool(true, "Show Strength Labels", ({ group: VIS_GROUP }));
-  let showStrongestInput = input.bool(true, "Show Strongest OB Plot", ({ group: VIS_GROUP }));
-  let bufferSizeInput = input.int(5, "Strongest OB Buffer Size", ({ minval: 1, maxval: 100, group: VIS_GROUP }));
-  function calculateStrength(obRange, breakoutDist, relVol) {
-    let dispFactor = pinescript.min((breakoutDist / (obRange * 5)), 1);
-    let volFactor = pinescript.min((relVol / 2), 1);
-    let score = (((dispFactor * 0.6) + (volFactor * 0.4)) * 100);
-    return pinescript.round(score, 1);
+  // Study: Arbitrage Matrix [LuxAlgo]
+  // Options: {"overlay":true}
+  let RED = pinescript.color.hex("#F23645");
+  let GREEN = pinescript.color.hex("#089981");
+  let AUTO = "Auto";
+  let CRYPTO_EXCHANGES = "Crypto Exchanges";
+  let FX_BROKERS = "Forex Brokers";
+  let TOP_RIGHT = "Top Right";
+  let BOTTOM_RIGHT = "Bottom Right";
+  let BOTTOM_LEFT = "Bottom Left";
+  let TINY = "Tiny";
+  let SMALL = "Small";
+  let NORMAL = "Normal";
+  let LARGE = "Large";
+  let HUGE = "Huge";
+  let PRICE_LAST = "Last Price";
+  let VOLUME_LAST = "Last Volume";
+  let PRICE_AVG = "Avg Price";
+  let VOLUME_AVG = "Avg Volume";
+  let DASHBOARD_GROUP = "Dashboard";
+  let STYLE_GROUP = "Style";
+  let EXCHANGES_GROUP = "Crypto Exchanges";
+  let BROKERS_GROUP = "Forex Brokers";
+  let sourceTooltip = "Choose between crypto exchanges, forex brokers, or automatic selection based on the asset in the chart.";
+  let averageLengthTooltip = "Select the length for the price and volume averages.";
+  let dashboardDataTooltip = "Select the data to display.";
+  let dashboardPositionTooltip = "Select the dashboard location.";
+  let dashboardSizeTooltip = "Select the dashboard size.";
+  let bullishColorTooltip = "Select bullish color.";
+  let bearishColorTooltip = "Select bearish color.";
+  let backgroundTooltip = "Enable background gradient color.";
+  let EM_SPACE = " ";
+  let EN_SPACE = " ";
+  let FOUR_PER_EM_SPACE = " ";
+  let SIX_PER_EM_SPACE = " ";
+  let HAIR_SPACE = " ";
+  let MS = EM_SPACE;
+  let NS = EN_SPACE;
+  let FS = FOUR_PER_EM_SPACE;
+  let SS = SIX_PER_EM_SPACE;
+  let HS = HAIR_SPACE;
+  let sourceInput = input.string(AUTO, "Sources", ({ tooltip: sourceTooltip, options: [AUTO, CRYPTO_EXCHANGES, FX_BROKERS] }));
+  let averageLengthInput = input.int(20, "Average Length", ({ tooltip: averageLengthTooltip }));
+  let enableCRYPTOCOMInput = input.bool(true, "CRYPTOCOM", ({ group: EXCHANGES_GROUP, inline: "row1" }));
+  let enableBINANCEInput = input.bool(true, "BINANCE", ({ group: EXCHANGES_GROUP, inline: "row1" }));
+  let enableBYBITInput = input.bool(true, "BYBIT", ({ group: EXCHANGES_GROUP, inline: "row1" }));
+  let enableWEBULLPAYInput = input.bool(true, (("WEBULLPAY" + FS) + HS), ({ group: EXCHANGES_GROUP, inline: "row2" }));
+  let enableGEMINIInput = input.bool(true, (("GEMINI" + NS) + FS), ({ group: EXCHANGES_GROUP, inline: "row2" }));
+  let enableCRYPTOInput = input.bool(true, "CRYPTO", ({ group: EXCHANGES_GROUP, inline: "row2" }));
+  let enableBINANCEUSInput = input.bool(true, ((("BINANCEUS" + FS) + SS) + HS), ({ group: EXCHANGES_GROUP, inline: "row3" }));
+  let enableKRAKENInput = input.bool(true, (("KRAKEN" + FS) + HS), ({ group: EXCHANGES_GROUP, inline: "row3" }));
+  let enableBTSEInput = input.bool(true, "BTSE", ({ group: EXCHANGES_GROUP, inline: "row3" }));
+  let enableBITSTAMPInput = input.bool(true, (("BITSTAMP" + MS) + SS), ({ group: EXCHANGES_GROUP, inline: "row4" }));
+  let enableKUCOINInput = input.bool(true, ("KUCOIN" + NS), ({ group: EXCHANGES_GROUP, inline: "row4" }));
+  let enableHTXInput = input.bool(true, "HTX", ({ group: EXCHANGES_GROUP, inline: "row4" }));
+  let enableCOINBASEInput = input.bool(true, (("COINBASE" + MS) + HS), ({ group: EXCHANGES_GROUP, inline: "row5" }));
+  let enableBITGETInput = input.bool(true, ((("BITGET" + NS) + HS) + HS), ({ group: EXCHANGES_GROUP, inline: "row5" }));
+  let enableGATEInput = input.bool(true, "GATE", ({ group: EXCHANGES_GROUP, inline: "row5" }));
+  let enableWHITEBITInput = input.bool(true, ((("WHITEBIT" + MS) + HS) + HS), ({ group: EXCHANGES_GROUP, inline: "row6" }));
+  let enableCOINEXInput = input.bool(true, (("COINEX" + NS) + HS), ({ group: EXCHANGES_GROUP, inline: "row6" }));
+  let enableMEXCInput = input.bool(true, "MEXC", ({ group: EXCHANGES_GROUP, inline: "row6" }));
+  let enableOKXInput = input.bool(true, "OKX", ({ group: EXCHANGES_GROUP, inline: "row7" }));
+  let enablePEPPERSTONEInput = input.bool(true, "PEPPERSTONE", ({ group: BROKERS_GROUP, inline: "row8" }));
+  let enableEIGHTCAPInput = input.bool(true, (("EIGHTCAP" + FS) + SS), ({ group: BROKERS_GROUP, inline: "row8" }));
+  let enableOANDAInput = input.bool(true, "OANDA", ({ group: BROKERS_GROUP, inline: "row8" }));
+  let enableCMCMARKETSInput = input.bool(true, ("CMCMARKETS" + FS), ({ group: BROKERS_GROUP, inline: "row9" }));
+  let enableTICKMILLInput = input.bool(true, (((("TICKMILL" + NS) + FS) + HS) + HS), ({ group: BROKERS_GROUP, inline: "row9" }));
+  let enableSAXOInput = input.bool(true, "SAXO", ({ group: BROKERS_GROUP, inline: "row9" }));
+  let enableCAPITALCOMInput = input.bool(true, ((("CAPITALCOM" + NS) + HS) + HS), ({ group: BROKERS_GROUP, inline: "row10" }));
+  let enableFOREXCOMInput = input.bool(true, "FOREXCOM", ({ group: BROKERS_GROUP, inline: "row10" }));
+  let enableIBKRInput = input.bool(true, "IBKR", ({ group: BROKERS_GROUP, inline: "row10" }));
+  let enableICMARKETSInput = input.bool(true, (("ICMARKETS" + MS) + FS), ({ group: BROKERS_GROUP, inline: "row11" }));
+  let enableVANTAGEInput = input.bool(true, (((("VANTAGE" + NS) + SS) + SS) + HS), ({ group: BROKERS_GROUP, inline: "row11" }));
+  let enableFXInput = input.bool(true, "FX", ({ group: BROKERS_GROUP, inline: "row11" }));
+  let enableIGInput = input.bool(true, "IG", ({ group: BROKERS_GROUP, inline: "row12" }));
+  let dashboardDataInput = input.string(PRICE_LAST, "Data", ({ group: DASHBOARD_GROUP, tooltip: dashboardDataTooltip, options: [PRICE_LAST, PRICE_AVG, VOLUME_LAST, VOLUME_AVG] }));
+  let dashboardPositionInput = input.string(TOP_RIGHT, "Position", ({ group: DASHBOARD_GROUP, tooltip: dashboardPositionTooltip, options: [TOP_RIGHT, BOTTOM_RIGHT, BOTTOM_LEFT] }));
+  let dashboardSizeInput = input.string(SMALL, "Size", ({ group: DASHBOARD_GROUP, tooltip: dashboardSizeTooltip, options: [TINY, SMALL, NORMAL, LARGE, HUGE] }));
+  let bullishColorInput = input.color(GREEN, "Bullish", ({ group: STYLE_GROUP, tooltip: bullishColorTooltip }));
+  let bearishColorInput = input.color(RED, "Bearish", ({ group: STYLE_GROUP, tooltip: bearishColorTooltip }));
+  let backgroundInput = input.bool(true, "Background Gradient", ({ group: STYLE_GROUP, tooltip: backgroundTooltip }));
+  if (state.crypto === undefined) state.crypto = pinescript.arrayNew();
+  if (state.forex === undefined) state.forex = pinescript.arrayNew();
+  if (barstate.isfirst) {
+    if (enableBITSTAMPInput) {
+      crypto.push("BITSTAMP");
+    }
+    if (enableCOINBASEInput) {
+      crypto.push("COINBASE");
+    }
+    if (enableCRYPTOInput) {
+      crypto.push("CRYPTO");
+    }
+    if (enableBINANCEInput) {
+      crypto.push("BINANCE");
+    }
+    if (enableKRAKENInput) {
+      crypto.push("KRAKEN");
+    }
+    if (enableOKXInput) {
+      crypto.push("OKX");
+    }
+    if (enableGEMINIInput) {
+      crypto.push("GEMINI");
+    }
+    if (enableCRYPTOCOMInput) {
+      crypto.push("CRYPTOCOM");
+    }
+    if (enableWEBULLPAYInput) {
+      crypto.push("WEBULLPAY");
+    }
+    if (enableBINANCEUSInput) {
+      crypto.push("BINANCEUS");
+    }
+    if (enableBTSEInput) {
+      crypto.push("BTSE");
+    }
+    if (enableWHITEBITInput) {
+      crypto.push("WHITEBIT");
+    }
+    if (enableBYBITInput) {
+      crypto.push("BYBIT");
+    }
+    if (enableKUCOINInput) {
+      crypto.push("KUCOIN");
+    }
+    if (enableMEXCInput) {
+      crypto.push("MEXC");
+    }
+    if (enableBITGETInput) {
+      crypto.push("BITGET");
+    }
+    if (enableCOINEXInput) {
+      crypto.push("COINEX");
+    }
+    if (enableHTXInput) {
+      crypto.push("HTX");
+    }
+    if (enableGATEInput) {
+      crypto.push("GATE");
+    }
+    if (enableTICKMILLInput) {
+      forex.push("TICKMILL");
+    }
+    if (enableFXInput) {
+      forex.push("FX");
+    }
+    if (enableOANDAInput) {
+      forex.push("OANDA");
+    }
+    if (enableFOREXCOMInput) {
+      forex.push("FOREXCOM");
+    }
+    if (enablePEPPERSTONEInput) {
+      forex.push("PEPPERSTONE");
+    }
+    if (enableCMCMARKETSInput) {
+      forex.push("CMCMARKETS");
+    }
+    if (enableICMARKETSInput) {
+      forex.push("ICMARKETS");
+    }
+    if (enableIBKRInput) {
+      forex.push("IBKR");
+    }
+    if (enableIGInput) {
+      forex.push("IG");
+    }
+    if (enableEIGHTCAPInput) {
+      forex.push("EIGHTCAP");
+    }
+    if (enableSAXOInput) {
+      forex.push("SAXO");
+    }
+    if (enableCAPITALCOMInput) {
+      forex.push("CAPITALCOM");
+    }
+    if (enableVANTAGEInput) {
+      forex.push("VANTAGE");
+    }
   }
-  if (state.obArray === undefined) state.obArray = pinescript.arrayNew();
-  let volSMA = pinescript.sma(volume, 20);
-  let hi = ta.pivothigh(pivotLenInput, pivotLenInput);
-  let lo = ta.pivotlow(pivotLenInput, pivotLenInput);
-  if (state.lastHi === undefined) state.lastHi = null;
-  if (state.lastLo === undefined) state.lastLo = null;
-  if (state.lastHiIdx === undefined) state.lastHiIdx = null;
-  if (state.lastLoIdx === undefined) state.lastLoIdx = null;
-  if (!pinescript.na(hi)) {
-    state.lastHi = hi;
-    state.lastHiIdx = (bar_index - pivotLenInput);
+  if (state.exchanges === undefined) state.exchanges = ((sourceInput === AUTO) ? ((syminfo.type === "crypto") ? state.crypto : state.forex) : ((sourceInput === CRYPTO_EXCHANGES) ? state.crypto : state.forex));
+  if (state.currentData === undefined) state.currentData = data.new(pinescript.arrayNew(), pinescript.arrayNew(), pinescript.arrayNew(), pinescript.arrayNew());
+  if (state.assets === undefined) state.assets = array.from(asset.new(pinescript.arrayNew(), pinescript.arrayNew()), asset.new(pinescript.arrayNew(), pinescript.arrayNew()), asset.new(pinescript.arrayNew(), pinescript.arrayNew()), asset.new(pinescript.arrayNew(), pinescript.arrayNew()), asset.new(pinescript.arrayNew(), pinescript.arrayNew()), asset.new(pinescript.arrayNew(), pinescript.arrayNew()), asset.new(pinescript.arrayNew(), pinescript.arrayNew()), asset.new(pinescript.arrayNew(), pinescript.arrayNew()), asset.new(pinescript.arrayNew(), pinescript.arrayNew()), asset.new(pinescript.arrayNew(), pinescript.arrayNew()), asset.new(pinescript.arrayNew(), pinescript.arrayNew()), asset.new(pinescript.arrayNew(), pinescript.arrayNew()), asset.new(pinescript.arrayNew(), pinescript.arrayNew()), asset.new(pinescript.arrayNew(), pinescript.arrayNew()), asset.new(pinescript.arrayNew(), pinescript.arrayNew()), asset.new(pinescript.arrayNew(), pinescript.arrayNew()), asset.new(pinescript.arrayNew(), pinescript.arrayNew()), asset.new(pinescript.arrayNew(), pinescript.arrayNew()), asset.new(pinescript.arrayNew(), pinescript.arrayNew()));
+  pinescript.position.bottom_left;
+  pinescript.position.bottom_right;
+  pinescript.position.top_right;
+  if (state.parsedDashboardPosition === undefined) state.parsedDashboardPosition = ((dashboardPositionInput === TOP_RIGHT) ? undefined : ((dashboardPositionInput === BOTTOM_RIGHT) ? undefined : ((dashboardPositionInput === BOTTOM_LEFT) ? undefined : null)));
+  pinescript.size.huge;
+  pinescript.size.large;
+  pinescript.size.normal;
+  pinescript.size.small;
+  pinescript.size.tiny;
+  if (state.parsedDashboardSize === undefined) state.parsedDashboardSize = ((dashboardSizeInput === TINY) ? undefined : ((dashboardSizeInput === SMALL) ? undefined : ((dashboardSizeInput === NORMAL) ? undefined : ((dashboardSizeInput === LARGE) ? undefined : ((dashboardSizeInput === HUGE) ? undefined : null)))));
+  function clearData() {
+    currentData.lastPrices.clear();
+    currentData.lastVolumes.clear();
+    currentData.avgPrices.clear();
+    return currentData.avgVolumes.clear();
   }
-  if (!pinescript.na(lo)) {
-    state.lastLo = lo;
-    state.lastLoIdx = (bar_index - pivotLenInput);
+  function gatherData() {
+    let ticker = syminfo.ticker;
+    for (const [index, eachExchange] of state.exchanges) {
+      let tickerid = ((eachExchange + ":") + ticker);
+      let [assetPrice, assetVolume] = pinescript.requestSecurity(tickerid, "", [close, volume], ({ ignore_invalid_symbol: true, calc_bars_count: averageLengthInput }));
+      if (!pinescript.na(assetPrice)) {
+        assets.get(index).prices.push(pinescript.nz(assetPrice));
+        if ((assets.get(index).prices.size() > averageLengthInput)) {
+          assets.get(index).prices.shift();
+        }
+      }
+      if (!pinescript.na(assetVolume)) {
+        assets.get(index).volumes.push(pinescript.nz(assetVolume));
+        if ((assets.get(index).prices.size() > averageLengthInput)) {
+          assets.get(index).volumes.shift();
+        }
+      }
+    }
   }
-  let bullBOS = pinescript.cross(close, state.lastHi);
-  let bearBOS = pinescript.cross(close, state.lastLo);
-  if ((bullBOS || bearBOS)) {
-    let searchLen = (bar_index - (bullBOS ? state.lastHiIdx : state.lastLoIdx));
-    let obTop = null;
-    let obBtm = null;
-    let obIdx = null;
-    let obVol = null;
-    if (bullBOS) {
-      let minLow = null;
-      for (let i = 1; i <= searchLen; i++) {
-        if ((pinescript.offset(close, i) < pinescript.offset(open, i))) {
-          if ((pinescript.na(minLow) || (pinescript.offset(low, i) < minLow))) {
-            minLow = pinescript.offset(low, i);
-            obTop = pinescript.offset(high, i);
-            obBtm = pinescript.offset(low, i);
-            obIdx = i;
-            obVol = pinescript.offset(volume, i);
+  function updateData() {
+    clearData();
+    for (const eachAsset of state.assets) {
+      if ((eachAsset.prices.size() !== 0)) {
+        currentData.lastPrices.push(eachAsset.prices.last());
+        currentData.avgPrices.push(eachAsset.prices.avg());
+      }
+      if ((eachAsset.volumes.size() !== 0)) {
+        currentData.lastVolumes.push(eachAsset.volumes.last());
+        currentData.avgVolumes.push(eachAsset.volumes.avg());
+      }
+    }
+  }
+  function cell(t_able, column, row, data, color = pinescript.color.white, align = pinescript.text.align_right, background = null, tooltip = "") {
+    return t_able.cell(column, row, data, ({ text_color: pinescript.color, text_size: state.parsedDashboardSize, text_halign: align, bgcolor: background, tooltip: tooltip }));
+  }
+  function checkData(index) {
+    return (((dashboardDataInput === PRICE_LAST) || (dashboardDataInput === PRICE_AVG)) ? ((assets.get(index).prices.size() !== 0) && (assets.get(index).prices.avg() !== 0)) : ((assets.get(index).volumes.size() !== 0) && (assets.get(index).volumes.avg() !== 0)));
+  }
+  function dashboardData(column, row) {
+    switch (dashboardDataInput) {
+      case PRICE_LAST:
+      {
+        (assets.get(row).prices.last() - assets.get(column).prices.last());
+        break;
+      }
+      case VOLUME_LAST:
+      {
+        (assets.get(row).volumes.last() - assets.get(column).volumes.last());
+        break;
+      }
+      case PRICE_AVG:
+      {
+        (assets.get(row).prices.avg() - assets.get(column).prices.avg());
+        break;
+      }
+      case VOLUME_AVG:
+      {
+        (assets.get(row).volumes.avg() - assets.get(column).volumes.avg());
+        break;
+      }
+    }
+  }
+  function dashboardFormat() {
+    return (((dashboardDataInput === PRICE_LAST) || (dashboardDataInput === PRICE_AVG)) ? format.mintick : format.volume);
+  }
+  function extremeDataValue() {
+    switch (dashboardDataInput) {
+      case PRICE_LAST:
+      {
+        currentData.lastPrices.range();
+        break;
+      }
+      case VOLUME_LAST:
+      {
+        currentData.lastVolumes.range();
+        break;
+      }
+      case PRICE_AVG:
+      {
+        currentData.avgPrices.range();
+        break;
+      }
+      case VOLUME_AVG:
+      {
+        currentData.avgVolumes.range();
+        break;
+      }
+    }
+  }
+  function drawDashboard() {
+    if (state.t_able === undefined) state.t_able = pinescript.table.new(state.parsedDashboardPosition, 21, 21, ({ bgcolor: pinescript.color.hex("#1e222d"), border_color: pinescript.color.hex("#373a46"), border_width: 1, frame_color: pinescript.color.hex("#373a46"), frame_width: 1, force_overlay: true }));
+    cell(state.t_able, 0, 0, syminfo.ticker, pinescript.color.new(pinescript.color.white, 20), ({ align: pinescript.text.align_center }));
+    t_able.cell_set_text_formatting(0, 0, pinescript.text.format_bold);
+    for (const [row, rowExchange] of state.exchanges) {
+      if (checkData(row)) {
+        cell(state.t_able, 0, (row + 1), rowExchange, ({ align: pinescript.text.align_left }));
+        for (const [column, columnExchange] of state.exchanges) {
+          if (checkData(column)) {
+            let delta = dashboardData(column, row);
+            let maxDelta = extremeDataValue();
+            let backgroundColor = (backgroundInput ? pinescript.color.from_gradient(pinescript.abs(delta), 0, maxDelta, pinescript.color.new(((delta > 0) ? bullishColorInput : bearishColorInput), 100), pinescript.color.new(((delta > 0) ? bullishColorInput : bearishColorInput), 70)) : null);
+            let textColor = pinescript.color.from_gradient(pinescript.abs(delta), 0, maxDelta, pinescript.color.new(((delta > 0) ? bullishColorInput : bearishColorInput), 50), pinescript.color.new(((delta > 0) ? bullishColorInput : bearishColorInput), 0));
+            cell(state.t_able, (column + 1), 0, columnExchange, ({ align: pinescript.text.align_center }));
+            cell(state.t_able, (column + 1), (row + 1), ((delta !== 0) ? pinescript.strToString(delta, dashboardFormat()) : ""), ({ align: pinescript.text.align_center, color: textColor, background: backgroundColor, tooltip: ((rowExchange + " vs ") + columnExchange) }));
+            if ((pinescript.abs(delta) === maxDelta)) {
+              t_able.cell_set_bgcolor((column + 1), (row + 1), ((delta > 0) ? bullishColorInput : bearishColorInput));
+              t_able.cell_set_text_formatting((column + 1), (row + 1), pinescript.text.format_bold);
+              t_able.cell_set_text_color((column + 1), (row + 1), pinescript.color.white);
+            }
           }
         }
       }
-      state.lastHi = null;
-    } else {
-      let maxHigh = null;
-      for (let i = 1; i <= searchLen; i++) {
-        if ((pinescript.offset(close, i) > pinescript.offset(open, i))) {
-          if ((pinescript.na(maxHigh) || (pinescript.offset(high, i) > maxHigh))) {
-            maxHigh = pinescript.offset(high, i);
-            obTop = pinescript.offset(high, i);
-            obBtm = pinescript.offset(low, i);
-            obIdx = i;
-            obVol = pinescript.offset(volume, i);
-          }
-        }
-      }
-      state.lastLo = null;
-    }
-    if (!pinescript.na(obIdx)) {
-      let obHeight = (obTop - obBtm);
-      let breakoutDist = (bullBOS ? (close - obTop) : (obBtm - close));
-      let avgVol = pinescript.offset(volSMA, obIdx);
-      let strength = calculateStrength(obHeight, breakoutDist, (obVol / avgVol));
-      let newOB = OrderBlock.new(obTop, obBtm, pinescript.offset(time, obIdx), strength, bullBOS, null, null, false);
-      pinescript.arrayUnshift(state.obArray, newOB);
     }
   }
-  if ((pinescript.arraySize(state.obArray) > 0)) {
-    for (let i = 0; i <= (pinescript.arraySize(state.obArray) - 1); i++) {
-      let ob = pinescript.arrayGet(state.obArray, i);
-      if (!ob.mitigated) {
-        let isMitigated = (ob.isBullish ? (low < ob.bottom) : (high > ob.top));
-        if (isMitigated) {
-          ob.mitigated = true;
-        }
-      }
-    }
+  if (barstate.isconfirmed) {
+    gatherData();
   }
-  let strongestTop = null;
-  let strongestBottom = null;
-  let strongestAvgPrice = null;
-  let strongestIsBullish = false;
-  let maxStrength = -1;
-  if ((pinescript.arraySize(state.obArray) > 0)) {
-    let checkedCount = 0;
-    for (let i = 0; i <= (pinescript.arraySize(state.obArray) - 1); i++) {
-      let ob = pinescript.arrayGet(state.obArray, i);
-      if (!ob.mitigated) {
-        if ((ob.strength > maxStrength)) {
-          maxStrength = ob.strength;
-          strongestTop = ob.top;
-          strongestBottom = ob.bottom;
-          strongestAvgPrice = ((ob.top + ob.bottom) / 2);
-          strongestIsBullish = ob.isBullish;
-        }
-        checkedCount += 1;
-        if ((checkedCount >= bufferSizeInput)) {
-          break;
-        }
-      }
-    }
+  if ((barstate.islastconfirmedhistory || (barstate.isrealtime && barstate.isconfirmed))) {
+    updateData();
   }
-  let plotCol = (pinescript.na(strongestAvgPrice) ? null : (strongestIsBullish ? bullColorInput : bearColorInput));
-  let hasChanged = (strongestAvgPrice !== pinescript.offset(strongestAvgPrice, 1));
-  let plotTop = pinescript.plot((showStrongestInput ? strongestTop : null), "Strongest OB Top", ({ color: (hasChanged ? null : pinescript.color.new(plotCol, 70)) }));
-  let plotBtm = pinescript.plot((showStrongestInput ? strongestBottom : null), "Strongest OB Bottom", ({ color: (hasChanged ? null : pinescript.color.new(plotCol, 70)) }));
-  pinescript.fill(plotTop, plotBtm, (hasChanged ? null : pinescript.color.new(plotCol, 90)), "Strongest OB Zone Fill");
-  pinescript.plot((showStrongestInput ? strongestAvgPrice : null), "Strongest OB Median", ({ color: (hasChanged ? null : pinescript.color.new(plotCol, 40)), linewidth: 2 }));
   if (barstate.islast) {
-    let activeCount = 0;
-    if (state.occupiedTops === undefined) state.occupiedTops = pinescript.arrayNew(0);
-    if (state.occupiedBtms === undefined) state.occupiedBtms = pinescript.arrayNew(0);
-    pinescript.arrayClear(state.occupiedTops);
-    pinescript.arrayClear(state.occupiedBtms);
-    if ((pinescript.arraySize(state.obArray) > 0)) {
-      for (let i = 0; i <= (pinescript.arraySize(state.obArray) - 1); i++) {
-        let ob = pinescript.arrayGet(state.obArray, i);
-        let isOverlapped = false;
-        if (((!ob.mitigated && hideOverlappedInput) && (pinescript.arraySize(state.occupiedTops) > 0))) {
-          for (let j = 0; j <= (pinescript.arraySize(state.occupiedTops) - 1); j++) {
-            let otherTop = pinescript.arrayGet(state.occupiedTops, j);
-            let otherBtm = pinescript.arrayGet(state.occupiedBtms, j);
-            if (((((ob.top <= otherTop) && (ob.top >= otherBtm)) || ((ob.bottom <= otherTop) && (ob.bottom >= otherBtm))) || ((ob.top >= otherTop) && (ob.bottom <= otherBtm)))) {
-              isOverlapped = true;
-              break;
-            }
-          }
-        }
-        if (((!ob.mitigated && !isOverlapped) && (activeCount < maxOBsInput))) {
-          activeCount += 1;
-          pinescript.arrayPush(state.occupiedTops, ob.top);
-          pinescript.arrayPush(state.occupiedBtms, ob.bottom);
-          let obCol = (ob.isBullish ? bullColorInput : bearColorInput);
-          let labelCol = (ob.isBullish ? BULL_COLOR : BEAR_COLOR);
-          if (pinescript.na(ob.boxId)) {
-            ob.boxId = box.new(ob.startTime, ob.top, time, ob.bottom, ({ bgcolor: obCol, border_color: obCol, border_style: line.style_dashed, xloc: xloc.bar_time }));
-          }
-          if (showLabelsInput) {
-            if (pinescript.na(ob.labelId)) {
-              ob.labelId = pinescript.labelNew(time, ((ob.top + ob.bottom) / 2), ({ text: str.format("{0}%", ob.strength), style: label.style_label_left, textcolor: labelCol, color: pinescript.color.hex("#00000000"), size: pinescript.size.small, textalign: pinescript.text.align_center, xloc: xloc.bar_time }));
-            }
-          }
-        } else {
-          if (!pinescript.na(ob.boxId)) {
-            box.delete(ob.boxId);
-            ob.boxId = null;
-          }
-          if (!pinescript.na(ob.labelId)) {
-            pinescript.labelDelete(ob.labelId);
-            ob.labelId = null;
-          }
-        }
-      }
-    }
-  }
-  if ((pinescript.arraySize(state.obArray) > 100)) {
-    for (let i = (pinescript.arraySize(state.obArray) - 1); i <= 0; i++) {
-      let ob = pinescript.arrayGet(state.obArray, i);
-      if ((ob.mitigated && (pinescript.arraySize(state.obArray) > 50))) {
-        pinescript.arrayRemove(state.obArray, i);
-      } else {
-        if ((pinescript.arraySize(state.obArray) > 100)) {
-          pinescript.arrayPop(state.obArray);
-        }
-      }
-    }
+    drawDashboard();
   }
 }
 

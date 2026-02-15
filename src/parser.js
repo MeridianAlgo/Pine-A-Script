@@ -15,7 +15,7 @@ class Parser {
   constructor(tokens) {
     this.tokens = tokens;
     this.pos = 0;
-    this.currentToken = this.tokens[0];
+    this.currentToken = this.tokens[this.pos];
   }
 
   parseTypeAnnotation() {
@@ -57,11 +57,6 @@ class Parser {
   advance() {
     this.pos++;
     this.currentToken = this.tokens[this.pos];
-    // Automatically skip newlines in expression contexts
-    while (this.currentToken && this.currentToken.type === TokenType.NEWLINE) {
-      this.pos++;
-      this.currentToken = this.tokens[this.pos];
-    }
   }
 
   expect(type, message) {
@@ -75,6 +70,14 @@ class Parser {
 
   peek(offset = 0) {
     return this.tokens[this.pos + offset];
+  }
+
+  peekNonNewline(offset = 1) {
+    let i = this.pos + offset;
+    while (i < this.tokens.length && this.tokens[i]?.type === TokenType.NEWLINE) {
+      i++;
+    }
+    return this.tokens[i];
   }
 
   match(type) {
@@ -141,7 +144,14 @@ class Parser {
     // Defensive: stray INDENT/DEDENT should be skipped.
     if (this.match(TokenType.INDENT) || this.match(TokenType.DEDENT)) {
       this.advance();
-      return new ASTNode('ExpressionStatement', { expression: new ASTNode('Literal', { value: null, dataType: 'na' }) });
+      return this.parseStatement();
+    }
+
+    // Defensive: if a stray ')' appears at the start of a line, skip it.
+    // (This can happen with heavily formatted multiline expressions.)
+    if (this.match(TokenType.RPAREN) && this.currentToken.column === 0) {
+      this.advance();
+      return this.parseStatement();
     }
 
     if (this.match(TokenType.IMPORT)) return this.parseImportStatement();
@@ -158,7 +168,19 @@ class Parser {
       return new ASTNode('ExpressionStatement', { expression: new ASTNode('Literal', { value: null, dataType: 'na' }) });
     }
 
-    if (this.match(TokenType.LBRACKET) && this.isDestructuringAssignmentStart()) return this.parseDestructuringAssignment();
+    if (this.match(TokenType.LBRACKET)) {
+      const startPos = this.pos;
+      const startTok = this.currentToken;
+      try {
+        if (this.isDestructuringAssignmentStart()) {
+          return this.parseDestructuringAssignment();
+        }
+      } catch {
+        // Backtrack and treat it as a normal expression/array literal.
+        this.pos = startPos;
+        this.currentToken = startTok;
+      }
+    }
 
     if (this.match(TokenType.INPUT)) return this.parseInputDeclaration();
     if (this.match(TokenType.VAR) || this.match(TokenType.VARIP)) return this.parseVariableDeclaration();
@@ -176,11 +198,13 @@ class Parser {
     if (this.match(TokenType.RETURN)) return this.parseReturnStatement();
     if (this.match(TokenType.STUDY) || this.match(TokenType.STRATEGY) || this.match(TokenType.INDICATOR)) return this.parseStudyDeclaration();
 
-    // Pine allows `switch` blocks in statement position (often used for returning a value).
-    // Parse it as an expression-statement switch expression.
-    if (this.match(TokenType.SWITCH)) {
-      const expr = this.parseSwitchExpression();
-      return new ASTNode('ExpressionStatement', { expression: expr });
+    if (this.match(TokenType.SWITCH)) return this.parseSwitchStatementPine();
+
+    // Pine v5/v6 method declarations:
+    //   method name(Type this, ...) =>
+    // Tokenized as IDENTIFIER('method') IDENTIFIER(name) LPAREN ...
+    if (this.match(TokenType.IDENTIFIER) && this.currentToken.value === 'method' && this.peek(1)?.type === TokenType.IDENTIFIER && this.peek(2)?.type === TokenType.LPAREN) {
+      return this.parseMethodDeclaration();
     }
 
     // Function declarations can begin with an IDENTIFIER token, but we need to detect them
@@ -294,16 +318,20 @@ class Parser {
 
   isDestructuringAssignmentStart() {
     if (!this.match(TokenType.LBRACKET)) return false;
+
     // Look ahead: [ ... ] must be followed by '=' to be assignment.
+    // This handles cases like `x = [a, b] = expr` (chained assignment)
     let depth = 0;
-    for (let i = 0; this.peek(i); i++) {
-      const t = this.peek(i);
+    for (let i = 0; (this.tokens[this.pos + i]); i++) {
+      const t = this.tokens[this.pos + i];
       if (t.type === TokenType.LBRACKET) depth++;
       else if (t.type === TokenType.RBRACKET) {
         depth--;
         if (depth === 0) {
-          const next = this.peek(i + 1);
-          return !!next && (next.type === TokenType.EQUAL || next.type === TokenType.COLON_EQUAL);
+          const next = this.tokens[this.pos + i + 1];
+          return !!next && (next.type === TokenType.EQUAL || next.type === TokenType.COLON_EQUAL ||
+            next.type === TokenType.PLUS_EQUAL || next.type === TokenType.MINUS_EQUAL ||
+            next.type === TokenType.MULTIPLY_EQUAL || next.type === TokenType.DIVIDE_EQUAL);
         }
       }
     }
@@ -376,18 +404,24 @@ class Parser {
     if (this.match(TokenType.INDENT)) {
       this.advance();
       const statements = [];
-      while (!this.match(TokenType.DEDENT) && !this.match(TokenType.EOF)) {
+      let indentDepth = 1;
+      while (!this.match(TokenType.EOF)) {
         this.skipNewlines();
-        if (this.match(TokenType.DEDENT) || this.match(TokenType.EOF)) break;
-        // Allow bare switch blocks in statement position inside indented blocks.
-        if (this.match(TokenType.SWITCH)) {
-          const expr = this.parseSwitchExpression();
-          statements.push(new ASTNode('ExpressionStatement', { expression: expr }));
+        if (this.match(TokenType.DEDENT)) {
+          indentDepth--;
+          this.advance();
+          if (indentDepth === 0) {
+            break;
+          }
+          continue;
+        }
+        if (this.match(TokenType.INDENT)) {
+          indentDepth++;
+          this.advance();
           continue;
         }
         statements.push(this.parseStatement());
       }
-      this.consume(TokenType.DEDENT);
       return new ASTNode('Block', { statements });
     }
 
@@ -609,7 +643,11 @@ class Parser {
 
   parseSwitchStatementPine() {
     this.advance();
-    const expression = this.parseExpression();
+    let expression = null;
+    // Pine supports bare `switch` with no subject, where each case is a boolean condition.
+    if (!this.match(TokenType.NEWLINE) && !this.match(TokenType.INDENT) && !this.match(TokenType.EOF)) {
+      expression = this.parseExpression();
+    }
 
     this.skipNewlines();
     this.expect(TokenType.INDENT, 'Expected indented switch body');
@@ -627,13 +665,95 @@ class Parser {
         this.expect(TokenType.ARROW, 'Expected =>');
       }
 
-      const resultExpr = this.parseExpression();
-      cases.push({ value: caseValue, body: [new ASTNode('ReturnStatement', { value: resultExpr })] });
+      // Case bodies can be either:
+      // - an indented block (multiple statements)
+      // - a single statement/expression on the same line
+      let bodyStatements = [];
+
+      // If the case header ends the line, skip blank/comment-only lines and then parse the indented body.
+      this.skipNewlines();
+
+      if (this.match(TokenType.INDENT)) {
+        const block = this.parseIndentedBlock();
+        bodyStatements = block?.type === 'Block' ? block.statements : [block];
+      } else {
+        const stmt = this.parseStatement();
+        bodyStatements = stmt?.type === 'Block' ? stmt.statements : [stmt];
+      }
+      cases.push({ value: caseValue, body: bodyStatements });
       this.skipNewlines();
     }
 
     this.consume(TokenType.DEDENT);
     return new ASTNode('SwitchStatement', { expression, cases });
+  }
+
+  parseMethodDeclaration() {
+    // consume `method`
+    this.advance();
+    const name = this.expect(TokenType.IDENTIFIER, 'Expected method name').value;
+    this.expect(TokenType.LPAREN, 'Expected (');
+
+    const params = [];
+    if (!this.match(TokenType.RPAREN)) {
+      while (true) {
+        // Optional type annotation before param name
+        while (this.match(TokenType.IDENTIFIER)) {
+          const nextType = this.peek(1)?.type;
+          if (nextType === TokenType.IDENTIFIER) {
+            this.advance();
+            if (this.match(TokenType.LESS)) this.skipGenericAnnotation();
+          } else if (nextType === TokenType.LESS) {
+            this.advance();
+            this.skipGenericAnnotation();
+          } else {
+            break;
+          }
+        }
+
+        const paramName = this.expect(TokenType.IDENTIFIER, 'Expected parameter name').value;
+        let defaultValue = null;
+        if (this.match(TokenType.EQUAL)) {
+          this.advance();
+          defaultValue = this.parseExpression();
+        }
+        params.push({ name: paramName, defaultValue });
+
+        if (this.match(TokenType.COMMA)) {
+          this.advance();
+          continue;
+        }
+        break;
+      }
+    }
+
+    this.expect(TokenType.RPAREN, 'Expected )');
+    this.skipNewlines();
+    if (this.match(TokenType.INDENT)) this.advance();
+    this.expect(TokenType.ARROW, 'Expected =>');
+    this.skipNewlines();
+
+    let body;
+    if (this.match(TokenType.INDENT)) {
+      this.advance();
+      const statements = [];
+      while (!this.match(TokenType.DEDENT) && !this.match(TokenType.EOF)) {
+        this.skipNewlines();
+        if (this.match(TokenType.DEDENT) || this.match(TokenType.EOF)) break;
+        statements.push(this.parseStatement());
+      }
+      this.consume(TokenType.DEDENT);
+
+      if (statements.length === 1 && statements[0]?.type === 'ExpressionStatement') {
+        body = statements[0].expression;
+      } else {
+        body = new ASTNode('Block', { statements });
+      }
+    } else {
+      body = this.parseExpression();
+    }
+
+    return new ASTNode('FunctionDeclaration', { name, params, body, isMethod: true });
   }
 
   parseFunctionDeclaration() {
@@ -690,11 +810,6 @@ class Parser {
       while (!this.match(TokenType.DEDENT) && !this.match(TokenType.EOF)) {
         this.skipNewlines();
         if (this.match(TokenType.DEDENT) || this.match(TokenType.EOF)) break;
-        if (this.match(TokenType.SWITCH)) {
-          const expr = this.parseSwitchExpression();
-          statements.push(new ASTNode('ExpressionStatement', { expression: expr }));
-          continue;
-        }
         statements.push(this.parseStatement());
       }
       this.consume(TokenType.DEDENT);
@@ -720,9 +835,7 @@ class Parser {
 
   parseStudyDeclaration() {
     const isStrategy = this.match(TokenType.STRATEGY);
-    console.log('DEBUG parseStudyDeclaration: isStrategy =', isStrategy, 'currentToken =', this.currentToken?.toString());
     this.advance();
-    console.log('DEBUG parseStudyDeclaration: after advance, currentToken =', this.currentToken?.toString());
 
     // Modern Pine uses function-call style:
     // indicator("Title", overlay=true, ...)
@@ -842,6 +955,16 @@ class Parser {
         }
         this.advance();
         const value = this.parseExpression();
+        // If a statement ends with extra ')' that close a multiline group, consume them only
+        // when the next token is a statement boundary.
+        while (this.match(TokenType.RPAREN)) {
+          const next = this.peek(1);
+          if (next && (next.type === TokenType.NEWLINE || next.type === TokenType.DEDENT || next.type === TokenType.EOF)) {
+            this.advance();
+            continue;
+          }
+          break;
+        }
         return new ASTNode('Assignment', { operator: opTok.value, target, value });
       };
 
@@ -861,6 +984,16 @@ class Parser {
 
   parseExpressionStatement() {
     let expr = this.parseExpression();
+    // If a statement ends with extra ')' that close a multiline group, consume them only
+    // when the next token is a statement boundary.
+    while (this.match(TokenType.RPAREN)) {
+      const next = this.peek(1);
+      if (next && (next.type === TokenType.NEWLINE || next.type === TokenType.DEDENT || next.type === TokenType.EOF)) {
+        this.advance();
+        continue;
+      }
+      break;
+    }
     if (this.match(TokenType.COMMA)) {
       const expressions = [expr];
       while (this.match(TokenType.COMMA)) {
@@ -873,7 +1006,31 @@ class Parser {
   }
 
   parseExpression() {
-    return this.parseConditional();
+    return this.parseAssignmentExpression();
+  }
+
+  parseAssignmentExpression() {
+    let expr = this.parseConditional();
+
+    if (this.matchAny([
+      TokenType.EQUAL,
+      TokenType.COLON_EQUAL,
+      TokenType.PLUS_EQUAL,
+      TokenType.MINUS_EQUAL,
+      TokenType.MULTIPLY_EQUAL,
+      TokenType.DIVIDE_EQUAL
+    ])) {
+      const operator = this.currentToken.value;
+      this.advance();
+      // Allow multiline assignments: tolerate newline/indent/dedent between operator and RHS.
+      while (this.match(TokenType.NEWLINE) || this.match(TokenType.INDENT) || this.match(TokenType.DEDENT)) {
+        this.advance();
+      }
+      const value = this.parseAssignmentExpression();
+      return new ASTNode('AssignmentExpression', { operator, target: expr, value });
+    }
+
+    return expr;
   }
 
   parseConditional() {
@@ -1048,6 +1205,37 @@ class Parser {
         continue;
       }
       if (this.match(TokenType.LBRACKET)) {
+        // Do not treat statement-start `[` as postfix array access.
+        // This prevents constructs like `x = switch ...` followed by a new-line destructuring
+        // assignment `[a,b] = ...` from being parsed as `switchExpr[a, b]`.
+        const prev = this.tokens[this.pos - 1];
+        if (prev && (prev.type === TokenType.DEDENT || prev.type === TokenType.NEWLINE || prev.type === TokenType.INDENT)) {
+          break;
+        }
+        // Distinguish array access from array literal in statement position.
+        // If there's an assignment operator before this bracket, it's likely destructuring or access.
+        // If we're in a context like: `a := [b, c]` then this is array literal.
+        let isArrayLiteral = false;
+        // Check if we're at the start of an expression
+        // by looking at the previous token
+        const prevIdx = this.pos - 1;
+        if (prevIdx >= 0 && this.tokens[prevIdx]) {
+          const prevType = this.tokens[prevIdx].type;
+          // If previous token is not something that can precede array access, it's an array literal
+          if (prevType === TokenType.NEWLINE || prevType === TokenType.INDENT ||
+              prevType === TokenType.LPAREN || prevType === TokenType.LBRACE ||
+              prevType === TokenType.COMMA || prevType === TokenType.EQUAL ||
+              prevType === TokenType.COLON_EQUAL || prevType === TokenType.ARROW ||
+              prevType === TokenType.RETURN || prevType === TokenType.COLON ||
+              prevType === TokenType.QUESTION || prevType === undefined ||
+              prevType === null) {
+            isArrayLiteral = true;
+          }
+        }
+        if (isArrayLiteral) {
+          // This is an array literal, break out to let parsePrimary handle it
+          break;
+        }
         expr = this.parseArrayAccess(expr);
       } else if (this.match(TokenType.DOT)) {
         expr = this.parsePropertyAccess(expr);
@@ -1149,7 +1337,13 @@ class Parser {
 
     if (this.match(TokenType.LPAREN)) {
       this.advance();
+      while (this.match(TokenType.NEWLINE) || this.match(TokenType.INDENT) || this.match(TokenType.DEDENT)) {
+        this.advance();
+      }
       const expr = this.parseExpression();
+      while (this.match(TokenType.NEWLINE) || this.match(TokenType.INDENT) || this.match(TokenType.DEDENT)) {
+        this.advance();
+      }
       this.expect(TokenType.RPAREN, 'Expected )');
       return expr;
     }

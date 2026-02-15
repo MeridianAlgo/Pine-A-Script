@@ -17,6 +17,11 @@ class CodeGenerator {
     this.indent = '  ';
     this.functions = new Map();
 
+    this.methodFunctions = new Set();
+    this.localRenameStack = [];
+
+    this.functionLocalDeclStack = [];
+
     this.renameMap = new Map();
 
     this.reservedNamespaces = new Set([
@@ -93,6 +98,9 @@ class CodeGenerator {
 
       case 'DestructuringAssignment':
         return this.generateDestructuringAssignment(node);
+
+      case 'AssignmentExpression':
+        return this.generateAssignmentExpression(node);
 
       default:
         const methodName = `generate${node.type}`;
@@ -302,6 +310,8 @@ class CodeGenerator {
     this.write('function main() {\n');
     this.pushIndent();
 
+    this.functionLocalDeclStack.push(new Set());
+
     this.writeln('globalThis.__pineState = globalThis.__pineState || {};');
     this.writeln('const state = globalThis.__pineState["main"] = globalThis.__pineState["main"] || {};');
 
@@ -315,6 +325,8 @@ class CodeGenerator {
     for (const statement of node.body) {
       this.generate(statement);
     }
+
+    this.functionLocalDeclStack.pop();
 
     this.popIndent();
     this.write('}\n\n');
@@ -333,6 +345,21 @@ class CodeGenerator {
     this.context.inputs.push(node);
     this.writeln(`// Input: ${node.name} (${node.inputType})`);
     this.writeln(`const ${this.getSafeName(node.name)} = ${JSON.stringify(node.defaultValue)};`);
+  }
+
+  generateTypedDeclarationStatement(node) {
+    const type = node.dataType;
+    const name = this.getSafeName(node.name);
+    const value = node.value;
+    const alreadyDeclared = this.markLocalDeclared(name);
+    const declPrefix = alreadyDeclared ? '' : 'let ';
+    if (value) {
+      this.writeln(`${declPrefix}${name} = ${this.generate(value)};`);
+    } else {
+      // Default values based on type
+      const defaultValue = this.getDefaultValueForType(type);
+      this.writeln(`${declPrefix}${name} = ${defaultValue};`);
+    }
   }
 
   generateVariableDeclaration(node) {
@@ -374,16 +401,34 @@ class CodeGenerator {
     }
   }
 
+  generateAssignmentExpression(node) {
+    const op = node.operator === ':=' ? '=' : node.operator;
+    return `(${this.generate(node.target)} ${op} ${this.generate(node.value)})`;
+  }
+
   generateIfStatement(node) {
     this.writeln(`if (${this.generate(node.condition)}) {`);
     this.pushIndent();
-    this.generate(node.thenBranch);
+    if (node.thenBranch && node.thenBranch.type === 'Block') {
+      // Don't wrap in extra block - generate statements directly
+      for (const statement of node.thenBranch.statements) {
+        this.generate(statement);
+      }
+    } else {
+      this.generate(node.thenBranch);
+    }
     this.popIndent();
 
     if (node.elseBranch) {
       this.writeln('} else {');
       this.pushIndent();
-      this.generate(node.elseBranch);
+      if (node.elseBranch.type === 'Block') {
+        for (const statement of node.elseBranch.statements) {
+          this.generate(statement);
+        }
+      } else {
+        this.generate(node.elseBranch);
+      }
       this.popIndent();
     }
 
@@ -416,6 +461,29 @@ class CodeGenerator {
   }
 
   generateSwitchStatement(node) {
+    // Pine supports bare `switch` (no subject). In that form, each case value is a boolean condition.
+    // JS requires a subject for `switch`, so emit an if/else-if chain.
+    if (node.expression == null) {
+      let first = true;
+      for (const caseNode of node.cases) {
+        if (caseNode.value === null) {
+          this.writeln('else {');
+        } else if (first) {
+          this.writeln(`if (${this.generate(caseNode.value)}) {`);
+        } else {
+          this.writeln(`else if (${this.generate(caseNode.value)}) {`);
+        }
+        this.pushIndent();
+        for (const stmt of caseNode.body) {
+          this.generate(stmt);
+        }
+        this.popIndent();
+        this.writeln('}');
+        first = false;
+      }
+      return;
+    }
+
     this.writeln(`switch (${this.generate(node.expression)}) {`);
     this.pushIndent();
 
@@ -425,12 +493,15 @@ class CodeGenerator {
       } else {
         this.writeln(`case ${this.generate(caseNode.value)}:`);
       }
+      // Wrap case bodies in a block so `let` declarations inside different cases don't collide.
+      this.writeln('{');
       this.pushIndent();
       for (const stmt of caseNode.body) {
         this.generate(stmt);
       }
       this.writeln('break;');
       this.popIndent();
+      this.writeln('}');
     }
 
     this.popIndent();
@@ -456,14 +527,27 @@ class CodeGenerator {
   }
 
   generateFunctionDeclaration(node) {
+    if (node.isMethod) {
+      this.methodFunctions.add(node.name);
+    }
+
+    const localRename = new Map();
     const params = (node.params || []).map(p => {
       if (typeof p === 'string') return p;
       if (p && typeof p === 'object') {
-        if (p.defaultValue) return `${p.name} = ${this.generate(p.defaultValue)}`;
-        return p.name;
+        let paramName = p.name;
+        if (node.isMethod && paramName === 'this') {
+          paramName = '_this';
+          localRename.set('this', '_this');
+        }
+        if (p.defaultValue) return `${paramName} = ${this.generate(p.defaultValue)}`;
+        return paramName;
       }
       return String(p);
     });
+
+    this.localRenameStack.push(localRename);
+    this.functionLocalDeclStack.push(new Set());
     this.writeln(`function ${node.name}(${params.join(', ')}) {`);
     this.pushIndent();
 
@@ -487,13 +571,20 @@ class CodeGenerator {
   }
 
   generateBlock(node) {
-    this.writeln('{');
-    this.pushIndent();
+    // Only add braces if this is a top-level block, not a nested one
+    // For nested blocks (like loop bodies), just generate statements directly
+    const isTopLevel = this.indentLevel === 0;
+    if (isTopLevel) {
+      this.writeln('{');
+      this.pushIndent();
+    }
     for (const statement of node.statements) {
       this.generate(statement);
     }
-    this.popIndent();
-    this.writeln('}');
+    if (isTopLevel) {
+      this.popIndent();
+      this.writeln('}');
+    }
   }
 
   generateExpressionStatement(node) {
@@ -546,6 +637,12 @@ class CodeGenerator {
   }
 
   generateIdentifier(node) {
+    // Apply local renames (e.g. method receiver param `this` -> `_this`).
+    if (this.localRenameStack.length > 0) {
+      const top = this.localRenameStack[this.localRenameStack.length - 1];
+      const renamed = top?.get(node.name);
+      if (renamed) return renamed;
+    }
     if (this.renameMap.has(node.name)) {
       return this.renameMap.get(node.name);
     }
@@ -559,6 +656,19 @@ class CodeGenerator {
   }
 
   generateFunctionCall(node) {
+    // Pine `method` calls look like `obj.methodName(...)`.
+    // We transpile methods to plain functions and rewrite the call to pass the receiver explicitly.
+    if (node.callee && node.callee.type === 'PropertyAccess') {
+      const prop = node.callee.property;
+      if (this.methodFunctions.has(prop)) {
+        const recv = this.generate(node.callee.object);
+        const args = (node.arguments || []).map(arg => {
+          if (arg && arg.type === 'NamedArgument') return this.generate(arg.value);
+          return this.generate(arg);
+        });
+        return `${prop}(${[recv, ...args].join(', ')})`;
+      }
+    }
     const calleeName = this.getCalleeName(node.callee);
 
     const positionalArgs = [];

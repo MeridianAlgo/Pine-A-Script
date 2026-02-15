@@ -905,8 +905,8 @@ const pinescript = {
     const info = { ticker: 'AAPL', tickerid: 'NASDAQ:AAPL', prefix: 'NASDAQ', root: 'AAPL', suffix: '' };
     return info[type] || '';
   },
-  time: 1771040739784,
-  timenow: 1771040739784,
+  time: 1771178051144,
+  timenow: 1771178051144,
   barstate: "LAST",
   dividends: {},
   splits: {},

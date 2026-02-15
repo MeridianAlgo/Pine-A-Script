@@ -905,8 +905,8 @@ const pinescript = {
     const info = { ticker: 'AAPL', tickerid: 'NASDAQ:AAPL', prefix: 'NASDAQ', root: 'AAPL', suffix: '' };
     return info[type] || '';
   },
-  time: 1771040624113,
-  timenow: 1771040624113,
+  time: 1771178051865,
+  timenow: 1771178051865,
   barstate: "LAST",
   dividends: {},
   splits: {},
@@ -1306,114 +1306,70 @@ function main() {
   if (state.phase_start_bar === undefined) state.phase_start_bar = null;
   let new_phase = "NORMAL";
   if ((crash_score > crash_threshold)) {
-    {
-      new_phase = "CRASH";
-    }
+    new_phase = "CRASH";
   } else {
     if ((panic_score > panic_threshold)) {
-      {
-        new_phase = "PANIC";
-      }
+      new_phase = "PANIC";
     } else {
       if ((mania_score > mania_threshold)) {
-        {
-          new_phase = "MANIA";
-        }
+        new_phase = "MANIA";
       }
     }
   }
   let phase_changed = (new_phase !== state.phase);
   if (phase_changed) {
-    {
-      state.phase = new_phase;
-      state.phase_start_bar = bar_index;
-    }
+    state.phase = new_phase;
+    state.phase_start_bar = bar_index;
   }
   state.phase_color = ((state.phase === "CRASH") ? color_red_danger : ((state.phase === "PANIC") ? color_orange_alert : ((state.phase === "MANIA") ? color_yellow_bright : color_green_soft)));
   let days_in_phase = (!pinescript.na(state.phase_start_bar) ? ((bar_index - state.phase_start_bar) + 1) : 0);
   if (state.historical_context === undefined) state.historical_context = "";
   if (show_historical_context) {
-    {
-      if ((state.phase === "CRASH")) {
-        {
-          if ((crash_score > 90)) {
-            {
-              state.historical_context = "Similar to: 2008 Crisis Peak";
-            }
-          } else {
-            if ((crash_score > 80)) {
-              {
-                state.historical_context = "Similar to: COVID-19 March 2020";
-              }
-            } else {
-              {
-                state.historical_context = "Similar to: Dec 2018 Selloff";
-              }
-            }
-          }
+    if ((state.phase === "CRASH")) {
+      if ((crash_score > 90)) {
+        state.historical_context = "Similar to: 2008 Crisis Peak";
+      } else {
+        if ((crash_score > 80)) {
+          state.historical_context = "Similar to: COVID-19 March 2020";
+        } else {
+          state.historical_context = "Similar to: Dec 2018 Selloff";
+        }
+      }
+    } else {
+      if ((state.phase === "PANIC")) {
+        if ((panic_score > 75)) {
+          state.historical_context = "Similar to: Pre-2020 Crash";
+        } else {
+          state.historical_context = "Similar to: Flash Crash";
         }
       } else {
-        if ((state.phase === "PANIC")) {
-          {
-            if ((panic_score > 75)) {
-              {
-                state.historical_context = "Similar to: Pre-2020 Crash";
-              }
-            } else {
-              {
-                state.historical_context = "Similar to: Flash Crash";
-              }
-            }
+        if ((state.phase === "MANIA")) {
+          if ((mania_score > 85)) {
+            state.historical_context = "Similar to: Dot-Com Bubble 2000";
+          } else {
+            state.historical_context = "Similar to: Pre-2008 Peak";
           }
         } else {
-          if ((state.phase === "MANIA")) {
-            {
-              if ((mania_score > 85)) {
-                {
-                  state.historical_context = "Similar to: Dot-Com Bubble 2000";
-                }
-              } else {
-                {
-                  state.historical_context = "Similar to: Pre-2008 Peak";
-                }
-              }
-            }
-          } else {
-            {
-              state.historical_context = "Normal Market Conditions";
-            }
-          }
+          state.historical_context = "Normal Market Conditions";
         }
       }
     }
   }
   if (state.action_hint === undefined) state.action_hint = "";
   if (show_action_hints) {
-    {
-      if ((state.phase === "CRASH")) {
-        {
-          state.action_hint = "🆘 CAPITULATION - Prepare to Buy Quality";
-        }
+    if ((state.phase === "CRASH")) {
+      state.action_hint = "🆘 CAPITULATION - Prepare to Buy Quality";
+    } else {
+      if ((state.phase === "PANIC")) {
+        state.action_hint = "⚠️ RAISE CASH - Avoid Buying Dips";
       } else {
-        if ((state.phase === "PANIC")) {
-          {
-            state.action_hint = "⚠️ RAISE CASH - Avoid Buying Dips";
-          }
+        if ((state.phase === "MANIA")) {
+          state.action_hint = "⚠️ REDUCE EXPOSURE - Take Profits";
         } else {
-          if ((state.phase === "MANIA")) {
-            {
-              state.action_hint = "⚠️ REDUCE EXPOSURE - Take Profits";
-            }
+          if ((composite_risk > 50)) {
+            state.action_hint = "⚡ ELEVATED RISK - Monitor Closely";
           } else {
-            if ((composite_risk > 50)) {
-              {
-                state.action_hint = "⚡ ELEVATED RISK - Monitor Closely";
-              }
-            } else {
-              {
-                state.action_hint = "✅ NORMAL - Continue Regular Strategy";
-              }
-            }
+            state.action_hint = "✅ NORMAL - Continue Regular Strategy";
           }
         }
       }
@@ -1424,17 +1380,11 @@ function main() {
   let breadth_status = (show_breadth ? ((breadth_proxy < 20) ? "🔴 COLLAPSE" : ((breadth_proxy < 40) ? "🟠 WEAK" : ((breadth_proxy > 60) ? "🟢 STRONG" : "🟡 NEUTRAL"))) : "N/A");
   let momentum_status = ((rsi > 70) ? "🔴 OVERBOUGHT" : ((rsi < 30) ? "🟢 OVERSOLD" : ((roc > 5) ? "🟢 BULLISH" : ((roc < -5) ? "🔴 BEARISH" : "🟡 NEUTRAL"))));
   if (((show_phase_labels && phase_changed) && barstate.isconfirmed)) {
-    {
-      if ((state.phase !== "NORMAL")) {
-        {
-          let label_text = ((state.phase === "CRASH") ? "🔴 CRASH" : ((state.phase === "PANIC") ? "🟠 PANIC" : ((state.phase === "MANIA") ? "🟡 MANIA" : "")));
-          let label_color = ((state.phase === "CRASH") ? pinescript.color.new(color_red_danger, 0) : ((state.phase === "PANIC") ? pinescript.color.new(color_orange_alert, 0) : ((state.phase === "MANIA") ? pinescript.color.new(color_yellow_bright, 0) : null)));
-          if ((label_text !== "")) {
-            {
-              pinescript.labelNew(bar_index, composite_risk, label_text, ({ style: label.style_label_down, color: label_color, textcolor: pinescript.color.white, size: pinescript.size.large, textalign: pinescript.text.align_center }));
-            }
-          }
-        }
+    if ((state.phase !== "NORMAL")) {
+      let label_text = ((state.phase === "CRASH") ? "🔴 CRASH" : ((state.phase === "PANIC") ? "🟠 PANIC" : ((state.phase === "MANIA") ? "🟡 MANIA" : "")));
+      let label_color = ((state.phase === "CRASH") ? pinescript.color.new(color_red_danger, 0) : ((state.phase === "PANIC") ? pinescript.color.new(color_orange_alert, 0) : ((state.phase === "MANIA") ? pinescript.color.new(color_yellow_bright, 0) : null)));
+      if ((label_text !== "")) {
+        pinescript.labelNew(bar_index, composite_risk, label_text, ({ style: label.style_label_down, color: label_color, textcolor: pinescript.color.white, size: pinescript.size.large, textalign: pinescript.text.align_center }));
       }
     }
   }
@@ -1463,39 +1413,25 @@ function main() {
   pinescript.fill(h0, h30, ({ color: pinescript.color.new(color_green_soft, 95), title: "Normal" }));
   if (state.h_position === undefined) state.h_position = pinescript.position.top_right;
   if ((dashboard_position === "Top Left")) {
-    {
-      state.h_position = pinescript.position.top_left;
-    }
+    state.h_position = pinescript.position.top_left;
   } else {
     if ((dashboard_position === "Top Center")) {
-      {
-        state.h_position = pinescript.position.top_center;
-      }
+      state.h_position = pinescript.position.top_center;
     } else {
       if ((dashboard_position === "Top Right")) {
-        {
-          state.h_position = pinescript.position.top_right;
-        }
+        state.h_position = pinescript.position.top_right;
       } else {
         if ((dashboard_position === "Middle Left")) {
-          {
-            state.h_position = pinescript.position.middle_left;
-          }
+          state.h_position = pinescript.position.middle_left;
         } else {
           if ((dashboard_position === "Middle Right")) {
-            {
-              state.h_position = pinescript.position.middle_right;
-            }
+            state.h_position = pinescript.position.middle_right;
           } else {
             if ((dashboard_position === "Bottom Left")) {
-              {
-                state.h_position = pinescript.position.bottom_left;
-              }
+              state.h_position = pinescript.position.bottom_left;
             } else {
               if ((dashboard_position === "Bottom Right")) {
-                {
-                  state.h_position = pinescript.position.bottom_right;
-                }
+                state.h_position = pinescript.position.bottom_right;
               }
             }
           }
@@ -1507,25 +1443,19 @@ function main() {
   if (state.text_size_normal === undefined) state.text_size_normal = pinescript.size.normal;
   if (state.text_size_small === undefined) state.text_size_small = pinescript.size.small;
   if ((dashboard_size === "Small")) {
-    {
-      state.text_size_header = pinescript.size.normal;
-      state.text_size_normal = pinescript.size.small;
-      state.text_size_small = pinescript.size.tiny;
-    }
+    state.text_size_header = pinescript.size.normal;
+    state.text_size_normal = pinescript.size.small;
+    state.text_size_small = pinescript.size.tiny;
   } else {
     if ((dashboard_size === "Large")) {
-      {
-        state.text_size_header = pinescript.size.large;
-        state.text_size_normal = pinescript.size.normal;
-        state.text_size_small = pinescript.size.small;
-      }
+      state.text_size_header = pinescript.size.large;
+      state.text_size_normal = pinescript.size.normal;
+      state.text_size_small = pinescript.size.small;
     } else {
       if ((dashboard_size === "Extra Large")) {
-        {
-          state.text_size_header = pinescript.size.huge;
-          state.text_size_normal = pinescript.size.large;
-          state.text_size_small = pinescript.size.normal;
-        }
+        state.text_size_header = pinescript.size.huge;
+        state.text_size_normal = pinescript.size.large;
+        state.text_size_small = pinescript.size.normal;
       }
     }
   }
@@ -1535,55 +1465,47 @@ function main() {
   let total_rows = ((title_rows + base_rows) + component_rows);
   if (state.dashboard === undefined) state.dashboard = pinescript.table.new(state.h_position, 2, total_rows, ({ bgcolor: pinescript.color.new(color_dark_bg, 80), border_width: 3, border_color: state.phase_color }));
   if (barstate.islast) {
-    {
-      let row = 0;
-      pinescript.table.cell(state.dashboard, 0, row, "", ({ bgcolor: pinescript.color.new(state.phase_color, 20) }));
-      pinescript.table.cell(state.dashboard, 1, row, "🟡 Manias, 🟠 Panics and 🔴 Crashes", ({ text_color: pinescript.color.white, text_size: state.text_size_header, text_halign: pinescript.text.align_center, bgcolor: pinescript.color.new(state.phase_color, 20) }));
+    let row = 0;
+    pinescript.table.cell(state.dashboard, 0, row, "", ({ bgcolor: pinescript.color.new(state.phase_color, 20) }));
+    pinescript.table.cell(state.dashboard, 1, row, "🟡 Manias, 🟠 Panics and 🔴 Crashes", ({ text_color: pinescript.color.white, text_size: state.text_size_header, text_halign: pinescript.text.align_center, bgcolor: pinescript.color.new(state.phase_color, 20) }));
+    row = (row + 1);
+    pinescript.table.cell(state.dashboard, 0, row, "PHASE", ({ text_color: pinescript.color.white, text_size: state.text_size_normal, bgcolor: pinescript.color.new(color_gray_neutral, 60) }));
+    pinescript.table.cell(state.dashboard, 1, row, state.phase, ({ text_color: state.phase_color, text_size: state.text_size_header, bgcolor: pinescript.color.new(color_dark_bg, 50) }));
+    row = (row + 1);
+    let risk_display = (pinescript.strToString(pinescript.round(composite_risk)) + " / 100");
+    let risk_label = ((composite_risk > 85) ? "🔴 EXTREME RISK" : ((composite_risk > 60) ? "🟠 HIGH RISK" : ((composite_risk > 30) ? "🟡 ELEVATED RISK" : "🟢 LOW RISK")));
+    pinescript.table.cell(state.dashboard, 0, row, "RISK", ({ text_color: pinescript.color.white, text_size: state.text_size_normal, bgcolor: pinescript.color.new(color_gray_neutral, 60) }));
+    pinescript.table.cell(state.dashboard, 1, row, ((risk_display + "n") + risk_label), ({ text_color: state.phase_color, text_size: state.text_size_normal, bgcolor: pinescript.color.new(color_dark_bg, 50) }));
+    row = (row + 1);
+    if (show_action_hints) {
+      pinescript.table.cell(state.dashboard, 0, row, "ACTION", ({ text_color: pinescript.color.white, text_size: state.text_size_normal, bgcolor: pinescript.color.new(color_gray_neutral, 60) }));
+      pinescript.table.cell(state.dashboard, 1, row, state.action_hint, ({ text_color: pinescript.color.white, text_size: state.text_size_normal, bgcolor: pinescript.color.new(color_dark_bg, 50) }));
       row = (row + 1);
-      pinescript.table.cell(state.dashboard, 0, row, "PHASE", ({ text_color: pinescript.color.white, text_size: state.text_size_normal, bgcolor: pinescript.color.new(color_gray_neutral, 60) }));
-      pinescript.table.cell(state.dashboard, 1, row, state.phase, ({ text_color: state.phase_color, text_size: state.text_size_header, bgcolor: pinescript.color.new(color_dark_bg, 50) }));
+    }
+    if (show_historical_context) {
+      pinescript.table.cell(state.dashboard, 0, row, "CONTEXT", ({ text_color: pinescript.color.white, text_size: state.text_size_normal, bgcolor: pinescript.color.new(color_gray_neutral, 60) }));
+      pinescript.table.cell(state.dashboard, 1, row, ((((state.historical_context + "nDay ") + pinescript.strToString(days_in_phase)) + " of ") + state.phase), ({ text_color: pinescript.color.gray, text_size: state.text_size_normal, bgcolor: pinescript.color.new(color_dark_bg, 50) }));
       row = (row + 1);
-      let risk_display = (pinescript.strToString(pinescript.round(composite_risk)) + " / 100");
-      let risk_label = ((composite_risk > 85) ? "🔴 EXTREME RISK" : ((composite_risk > 60) ? "🟠 HIGH RISK" : ((composite_risk > 30) ? "🟡 ELEVATED RISK" : "🟢 LOW RISK")));
-      pinescript.table.cell(state.dashboard, 0, row, "RISK", ({ text_color: pinescript.color.white, text_size: state.text_size_normal, bgcolor: pinescript.color.new(color_gray_neutral, 60) }));
-      pinescript.table.cell(state.dashboard, 1, row, ((risk_display + "n") + risk_label), ({ text_color: state.phase_color, text_size: state.text_size_normal, bgcolor: pinescript.color.new(color_dark_bg, 50) }));
+    }
+    if (show_components) {
+      pinescript.table.cell(state.dashboard, 0, row, "COMPONENTS", ({ text_color: pinescript.color.white, text_size: state.text_size_normal, bgcolor: pinescript.color.new(color_purple_composite, 40) }));
+      pinescript.table.cell(state.dashboard, 1, row, "STATUS", ({ text_color: pinescript.color.white, text_size: state.text_size_normal, bgcolor: pinescript.color.new(color_purple_composite, 40) }));
       row = (row + 1);
-      if (show_action_hints) {
-        {
-          pinescript.table.cell(state.dashboard, 0, row, "ACTION", ({ text_color: pinescript.color.white, text_size: state.text_size_normal, bgcolor: pinescript.color.new(color_gray_neutral, 60) }));
-          pinescript.table.cell(state.dashboard, 1, row, state.action_hint, ({ text_color: pinescript.color.white, text_size: state.text_size_normal, bgcolor: pinescript.color.new(color_dark_bg, 50) }));
-          row = (row + 1);
-        }
-      }
-      if (show_historical_context) {
-        {
-          pinescript.table.cell(state.dashboard, 0, row, "CONTEXT", ({ text_color: pinescript.color.white, text_size: state.text_size_normal, bgcolor: pinescript.color.new(color_gray_neutral, 60) }));
-          pinescript.table.cell(state.dashboard, 1, row, ((((state.historical_context + "nDay ") + pinescript.strToString(days_in_phase)) + " of ") + state.phase), ({ text_color: pinescript.color.gray, text_size: state.text_size_normal, bgcolor: pinescript.color.new(color_dark_bg, 50) }));
-          row = (row + 1);
-        }
-      }
-      if (show_components) {
-        {
-          pinescript.table.cell(state.dashboard, 0, row, "COMPONENTS", ({ text_color: pinescript.color.white, text_size: state.text_size_normal, bgcolor: pinescript.color.new(color_purple_composite, 40) }));
-          pinescript.table.cell(state.dashboard, 1, row, "STATUS", ({ text_color: pinescript.color.white, text_size: state.text_size_normal, bgcolor: pinescript.color.new(color_purple_composite, 40) }));
-          row = (row + 1);
-          let vix_value = ((show_vix && !pinescript.na(vix)) ? pinescript.strToString((pinescript.round((vix * 10)) / 10)) : "N/A");
-          pinescript.table.cell(state.dashboard, 0, row, ("VIX (Fear): " + vix_value), ({ text_color: pinescript.color.white, text_size: state.text_size_normal, bgcolor: pinescript.color.new(color_dark_bg, 65) }));
-          pinescript.table.cell(state.dashboard, 1, row, vix_status, ({ text_color: pinescript.color.white, text_size: state.text_size_normal, bgcolor: pinescript.color.new(color_dark_bg, 65) }));
-          row = (row + 1);
-          let credit_value = (show_credit ? pinescript.strToString(pinescript.round(credit_stress)) : "N/A");
-          pinescript.table.cell(state.dashboard, 0, row, ("Credit (Bonds): " + credit_value), ({ text_color: pinescript.color.white, text_size: state.text_size_normal, bgcolor: pinescript.color.new(color_dark_bg, 65) }));
-          pinescript.table.cell(state.dashboard, 1, row, credit_status, ({ text_color: pinescript.color.white, text_size: state.text_size_normal, bgcolor: pinescript.color.new(color_dark_bg, 65) }));
-          row = (row + 1);
-          let breadth_value = (show_breadth ? (pinescript.strToString(pinescript.round(breadth_proxy)) + "%") : "N/A");
-          pinescript.table.cell(state.dashboard, 0, row, ("Breadth (Participation): " + breadth_value), ({ text_color: pinescript.color.white, text_size: state.text_size_normal, bgcolor: pinescript.color.new(color_dark_bg, 65) }));
-          pinescript.table.cell(state.dashboard, 1, row, breadth_status, ({ text_color: pinescript.color.white, text_size: state.text_size_normal, bgcolor: pinescript.color.new(color_dark_bg, 65) }));
-          row = (row + 1);
-          let rsi_value = pinescript.strToString(pinescript.round(rsi));
-          pinescript.table.cell(state.dashboard, 0, row, ("Momentum (RSI): " + rsi_value), ({ text_color: pinescript.color.white, text_size: state.text_size_normal, bgcolor: pinescript.color.new(color_dark_bg, 65) }));
-          pinescript.table.cell(state.dashboard, 1, row, momentum_status, ({ text_color: pinescript.color.white, text_size: state.text_size_normal, bgcolor: pinescript.color.new(color_dark_bg, 65) }));
-        }
-      }
+      let vix_value = ((show_vix && !pinescript.na(vix)) ? pinescript.strToString((pinescript.round((vix * 10)) / 10)) : "N/A");
+      pinescript.table.cell(state.dashboard, 0, row, ("VIX (Fear): " + vix_value), ({ text_color: pinescript.color.white, text_size: state.text_size_normal, bgcolor: pinescript.color.new(color_dark_bg, 65) }));
+      pinescript.table.cell(state.dashboard, 1, row, vix_status, ({ text_color: pinescript.color.white, text_size: state.text_size_normal, bgcolor: pinescript.color.new(color_dark_bg, 65) }));
+      row = (row + 1);
+      let credit_value = (show_credit ? pinescript.strToString(pinescript.round(credit_stress)) : "N/A");
+      pinescript.table.cell(state.dashboard, 0, row, ("Credit (Bonds): " + credit_value), ({ text_color: pinescript.color.white, text_size: state.text_size_normal, bgcolor: pinescript.color.new(color_dark_bg, 65) }));
+      pinescript.table.cell(state.dashboard, 1, row, credit_status, ({ text_color: pinescript.color.white, text_size: state.text_size_normal, bgcolor: pinescript.color.new(color_dark_bg, 65) }));
+      row = (row + 1);
+      let breadth_value = (show_breadth ? (pinescript.strToString(pinescript.round(breadth_proxy)) + "%") : "N/A");
+      pinescript.table.cell(state.dashboard, 0, row, ("Breadth (Participation): " + breadth_value), ({ text_color: pinescript.color.white, text_size: state.text_size_normal, bgcolor: pinescript.color.new(color_dark_bg, 65) }));
+      pinescript.table.cell(state.dashboard, 1, row, breadth_status, ({ text_color: pinescript.color.white, text_size: state.text_size_normal, bgcolor: pinescript.color.new(color_dark_bg, 65) }));
+      row = (row + 1);
+      let rsi_value = pinescript.strToString(pinescript.round(rsi));
+      pinescript.table.cell(state.dashboard, 0, row, ("Momentum (RSI): " + rsi_value), ({ text_color: pinescript.color.white, text_size: state.text_size_normal, bgcolor: pinescript.color.new(color_dark_bg, 65) }));
+      pinescript.table.cell(state.dashboard, 1, row, momentum_status, ({ text_color: pinescript.color.white, text_size: state.text_size_normal, bgcolor: pinescript.color.new(color_dark_bg, 65) }));
     }
   }
   let mania_alert = ((state.phase === "MANIA") && (pinescript.offset(state.phase, 1) !== "MANIA"));

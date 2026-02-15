@@ -905,8 +905,8 @@ const pinescript = {
     const info = { ticker: 'AAPL', tickerid: 'NASDAQ:AAPL', prefix: 'NASDAQ', root: 'AAPL', suffix: '' };
     return info[type] || '';
   },
-  time: 1771040625379,
-  timenow: 1771040625379,
+  time: 1771178053528,
+  timenow: 1771178053528,
   barstate: "LAST",
   dividends: {},
   splits: {},
@@ -1238,48 +1238,34 @@ function main() {
   let cond_S2 = ((isGreenCandle && (relVol > effort_mult)) && (relBodyATR < 0.8));
   let signal_ZAYIFLIK_Gorsel = (((isRedZone && !isTrendNewRed) && isVolumeValid) && (cond_S1 || cond_S2));
   if (signal_AL) {
-    {
-      pinescript.strategyEntry("Long_Giris", pinescript.strategy.long, ({ comment: "AL %100" }));
-    }
+    pinescript.strategyEntry("Long_Giris", pinescript.strategy.long, ({ comment: "AL %100" }));
   }
   if (signal_SAT) {
-    {
-      strategy.close_all(({ comment: "NAKİTE GEÇ 🔴" }));
-    }
+    strategy.close_all(({ comment: "NAKİTE GEÇ 🔴" }));
   }
   let lineColor = (isGreenZone ? pinescript.color.new(pinescript.color.green, 0) : pinescript.color.new(pinescript.color.red, 0));
   pinescript.plot(superTrendVal, "Trend Hattı", ({ color: lineColor, linewidth: 2 }));
   pinescript.bgcolor((isGreenZone ? pinescript.color.new(pinescript.color.green, 90) : pinescript.color.new(pinescript.color.red, 90)), ({ title: "Trend Bölgeleri" }));
   if (signal_AL) {
-    {
-      pinescript.labelNew(bar_index, low, ("🟢n" + txt_start_long), ({ style: label.style_label_up, color: pinescript.color.green, textcolor: pinescript.color.white, size: pinescript.size.normal }));
-    }
+    pinescript.labelNew(bar_index, low, ("🟢n" + txt_start_long), ({ style: label.style_label_up, color: pinescript.color.green, textcolor: pinescript.color.white, size: pinescript.size.normal }));
   }
   if (signal_SAT) {
-    {
-      pinescript.labelNew(bar_index, high, ("🔴n" + txt_start_short), ({ style: label.style_label_down, color: pinescript.color.red, textcolor: pinescript.color.white, size: pinescript.size.normal }));
-    }
+    pinescript.labelNew(bar_index, high, ("🔴n" + txt_start_short), ({ style: label.style_label_down, color: pinescript.color.red, textcolor: pinescript.color.white, size: pinescript.size.normal }));
   }
   if (signal_EKLE_Gorsel) {
-    {
-      pinescript.labelNew(bar_index, (low * 0.998), "➕", ({ style: label.style_label_center, color: pinescript.color.new(pinescript.color.hex("#00f2ff"), 0), textcolor: pinescript.color.black, size: pinescript.size.small, tooltip: "Güçlü Alım/Ekleme" }));
-    }
+    pinescript.labelNew(bar_index, (low * 0.998), "➕", ({ style: label.style_label_center, color: pinescript.color.new(pinescript.color.hex("#00f2ff"), 0), textcolor: pinescript.color.black, size: pinescript.size.small, tooltip: "Güçlü Alım/Ekleme" }));
   }
   if (signal_ZAYIFLIK_Gorsel) {
-    {
-      pinescript.labelNew(bar_index, (high * 1.002), "⚠️", ({ style: label.style_label_center, color: pinescript.color.new(pinescript.color.hex("#ffea00"), 0), textcolor: pinescript.color.black, size: pinescript.size.small, tooltip: "Trend Zayıf / Dikkat" }));
-    }
+    pinescript.labelNew(bar_index, (high * 1.002), "⚠️", ({ style: label.style_label_center, color: pinescript.color.new(pinescript.color.hex("#ffea00"), 0), textcolor: pinescript.color.black, size: pinescript.size.small, tooltip: "Trend Zayıf / Dikkat" }));
   }
   if (state.legend === undefined) state.legend = pinescript.table.new(pinescript.position.bottom_right, 2, 2, ({ bgcolor: pinescript.color.new(pinescript.color.black, 60), frame_color: pinescript.color.gray, border_width: 1, force_overlay: true }));
   if (barstate.islast) {
-    {
-      pinescript.table.cell(state.legend, 0, 0, "STRATEJİ DURUMU", ({ text_color: pinescript.color.yellow }));
-      table.merge_cells(state.legend, 0, 0, 1, 0);
-      let statusText = (isGreenZone ? "ALIMDA (Yükseliş)" : "NAKİTTE (Düşüş)");
-      let statusColor = (isGreenZone ? pinescript.color.green : pinescript.color.red);
-      pinescript.table.cell(state.legend, 0, 1, statusText, ({ text_color: statusColor, text_size: pinescript.size.normal }));
-      table.merge_cells(state.legend, 0, 1, 1, 1);
-    }
+    pinescript.table.cell(state.legend, 0, 0, "STRATEJİ DURUMU", ({ text_color: pinescript.color.yellow }));
+    table.merge_cells(state.legend, 0, 0, 1, 0);
+    let statusText = (isGreenZone ? "ALIMDA (Yükseliş)" : "NAKİTTE (Düşüş)");
+    let statusColor = (isGreenZone ? pinescript.color.green : pinescript.color.red);
+    pinescript.table.cell(state.legend, 0, 1, statusText, ({ text_color: statusColor, text_size: pinescript.size.normal }));
+    table.merge_cells(state.legend, 0, 1, 1, 1);
   }
 }
 

@@ -905,8 +905,8 @@ const pinescript = {
     const info = { ticker: 'AAPL', tickerid: 'NASDAQ:AAPL', prefix: 'NASDAQ', root: 'AAPL', suffix: '' };
     return info[type] || '';
   },
-  time: 1771040625106,
-  timenow: 1771040625106,
+  time: 1771178053204,
+  timenow: 1771178053204,
   barstate: "LAST",
   dividends: {},
   splits: {},
@@ -1212,38 +1212,24 @@ function main() {
   function getAlignedTimeframe() {
     let result = "";
     if ((timeframe.in_seconds() <= 60)) {
-      {
-        result = "15";
-      }
+      result = "15";
     } else {
       if ((timeframe.in_seconds() <= 180)) {
-        {
-          result = "30";
-        }
+        result = "30";
       } else {
         if ((timeframe.in_seconds() <= 300)) {
-          {
-            result = "60";
-          }
+          result = "60";
         } else {
           if ((timeframe.in_seconds() <= 900)) {
-            {
-              result = "240";
-            }
+            result = "240";
           } else {
             if ((timeframe.in_seconds() <= 3600)) {
-              {
-                result = "D";
-              }
+              result = "D";
             } else {
               if ((timeframe.in_seconds() <= 14400)) {
-                {
-                  result = "W";
-                }
+                result = "W";
               } else {
-                {
-                  result = "M";
-                }
+                result = "M";
               }
             }
           }
@@ -1255,43 +1241,27 @@ function main() {
   function getTimeframeDisplay(tf) {
     let result = "";
     if ((tf === "15")) {
-      {
-        result = "15M";
-      }
+      result = "15M";
     } else {
       if ((tf === "30")) {
-        {
-          result = "30M";
-        }
+        result = "30M";
       } else {
         if ((tf === "60")) {
-          {
-            result = "1H";
-          }
+          result = "1H";
         } else {
           if ((tf === "240")) {
-            {
-              result = "4H";
-            }
+            result = "4H";
           } else {
             if ((tf === "D")) {
-              {
-                result = "Daily";
-              }
+              result = "Daily";
             } else {
               if ((tf === "W")) {
-                {
-                  result = "Weekly";
-                }
+                result = "Weekly";
               } else {
                 if ((tf === "M")) {
-                  {
-                    result = "Monthly";
-                  }
+                  result = "Monthly";
                 } else {
-                  {
-                    result = tf;
-                  }
+                  result = tf;
                 }
               }
             }
@@ -1327,12 +1297,10 @@ function main() {
   if (state.htfBarStart2 === undefined) state.htfBarStart2 = null;
   if (state.htfBarStart3 === undefined) state.htfBarStart3 = null;
   if (htfChanged) {
-    {
-      state.htfBarStart3 = state.htfBarStart2;
-      state.htfBarStart2 = state.htfBarStart1;
-      state.htfBarStart1 = state.htfBarStart;
-      state.htfBarStart = bar_index;
-    }
+    state.htfBarStart3 = state.htfBarStart2;
+    state.htfBarStart2 = state.htfBarStart1;
+    state.htfBarStart1 = state.htfBarStart;
+    state.htfBarStart = bar_index;
   }
   let threshold = (Gapsize / 100);
   let bullFVG = ((htfChanged && (htfLow > htfHigh2)) && (((htfLow - htfHigh2) / htfHigh2) > threshold));
@@ -1341,223 +1309,149 @@ function main() {
   let bearFVG_entry = false;
   let i = 0;
   while ((i < pinescript.arraySize(state.fvg_records))) {
-    {
-      let get = pinescript.arrayGet(state.fvg_records, i);
-      if (get.isFilled) {
-        {
-          i += 1;
-          continue;
+    let get = pinescript.arrayGet(state.fvg_records, i);
+    if (get.isFilled) {
+      i += 1;
+      continue;
+    }
+    let right_edge = (bar_index + extendBars);
+    let top = get.top;
+    let bot = get.bot;
+    let changed = false;
+    let shouldMarkFilled = false;
+    if ((!get.triggered && (bar_index > get.created_bar))) {
+      let inGap = ((low <= top) && (high >= bot));
+      if (inGap) {
+        if (get.Bullish) {
+          bullFVG_entry = true;
+        } else {
+          bearFVG_entry = true;
         }
+        get = FVG.new(top, bot, get.Bullish, get.created_bar, get.start_bar, true, get.fvgBox, get.midLine, get.isFilled, get.isVisible);
+        pinescript.arraySet(state.fvg_records, i, get);
       }
-      let right_edge = (bar_index + extendBars);
-      let top = get.top;
-      let bot = get.bot;
-      let changed = false;
-      let shouldMarkFilled = false;
-      if ((!get.triggered && (bar_index > get.created_bar))) {
-        {
-          let inGap = ((low <= top) && (high >= bot));
-          if (inGap) {
-            {
-              if (get.Bullish) {
-                {
-                  bullFVG_entry = true;
-                }
-              } else {
-                {
-                  bearFVG_entry = true;
-                }
-              }
-              get = FVG.new(top, bot, get.Bullish, get.created_bar, get.start_bar, true, get.fvgBox, get.midLine, get.isFilled, get.isVisible);
-              pinescript.arraySet(state.fvg_records, i, get);
-            }
-          }
+    }
+    if (dynamicGaps) {
+      if (get.Bullish) {
+        if ((low < top)) {
+          top = pinescript.max(low, bot);
+          changed = true;
         }
-      }
-      if (dynamicGaps) {
-        {
-          if (get.Bullish) {
-            {
-              if ((low < top)) {
-                {
-                  top = pinescript.max(low, bot);
-                  changed = true;
-                }
-              }
-              if ((top <= bot)) {
-                {
-                  shouldMarkFilled = true;
-                }
-              }
-            }
-          } else {
-            {
-              if ((high > bot)) {
-                {
-                  bot = pinescript.min(high, top);
-                  changed = true;
-                }
-              }
-              if ((bot >= top)) {
-                {
-                  shouldMarkFilled = true;
-                }
-              }
-            }
-          }
+        if ((top <= bot)) {
+          shouldMarkFilled = true;
         }
       } else {
-        {
-          if ((get.Bullish && (low <= bot))) {
-            {
-              shouldMarkFilled = true;
-            }
-          }
-          if ((!get.Bullish && (high >= top))) {
-            {
-              shouldMarkFilled = true;
-            }
-          }
+        if ((high > bot)) {
+          bot = pinescript.min(high, top);
+          changed = true;
+        }
+        if ((bot >= top)) {
+          shouldMarkFilled = true;
         }
       }
-      if (shouldMarkFilled) {
-        {
-          if (get.isVisible) {
-            {
-              box.delete(get.fvgBox);
-              if ((showMidline && !pinescript.na(get.midLine))) {
-                {
-                  pinescript.lineDelete(get.midLine);
-                }
-              }
-            }
-          }
-          get = FVG.new(top, bot, get.Bullish, get.created_bar, get.start_bar, get.triggered, null, null, true, false);
-          pinescript.arraySet(state.fvg_records, i, get);
-          i += 1;
-          continue;
-        }
+    } else {
+      if ((get.Bullish && (low <= bot))) {
+        shouldMarkFilled = true;
       }
-      if (changed) {
-        {
-          if (get.isVisible) {
-            {
-              box.set_top(get.fvgBox, top);
-              box.set_bottom(get.fvgBox, bot);
-            }
-          }
-          get = FVG.new(top, bot, get.Bullish, get.created_bar, get.start_bar, get.triggered, get.fvgBox, get.midLine, get.isFilled, get.isVisible);
-          pinescript.arraySet(state.fvg_records, i, get);
-        }
+      if ((!get.Bullish && (high >= top))) {
+        shouldMarkFilled = true;
       }
-      if (get.isVisible) {
-        {
-          box.set_right(get.fvgBox, right_edge);
-          if ((showMidline && !pinescript.na(get.midLine))) {
-            {
-              let mid = ((top + bot) / 2);
-              line.set_x2(get.midLine, right_edge);
-              line.set_y1(get.midLine, mid);
-              line.set_y2(get.midLine, mid);
-              line.set_style(get.midLine, midlineStyle);
-            }
-          }
-        }
-      }
-      i += 1;
     }
+    if (shouldMarkFilled) {
+      if (get.isVisible) {
+        box.delete(get.fvgBox);
+        if ((showMidline && !pinescript.na(get.midLine))) {
+          pinescript.lineDelete(get.midLine);
+        }
+      }
+      get = FVG.new(top, bot, get.Bullish, get.created_bar, get.start_bar, get.triggered, null, null, true, false);
+      pinescript.arraySet(state.fvg_records, i, get);
+      i += 1;
+      continue;
+    }
+    if (changed) {
+      if (get.isVisible) {
+        box.set_top(get.fvgBox, top);
+        box.set_bottom(get.fvgBox, bot);
+      }
+      get = FVG.new(top, bot, get.Bullish, get.created_bar, get.start_bar, get.triggered, get.fvgBox, get.midLine, get.isFilled, get.isVisible);
+      pinescript.arraySet(state.fvg_records, i, get);
+    }
+    if (get.isVisible) {
+      box.set_right(get.fvgBox, right_edge);
+      if ((showMidline && !pinescript.na(get.midLine))) {
+        let mid = ((top + bot) / 2);
+        line.set_x2(get.midLine, right_edge);
+        line.set_y1(get.midLine, mid);
+        line.set_y2(get.midLine, mid);
+        line.set_style(get.midLine, midlineStyle);
+      }
+    }
+    i += 1;
   }
   function addFVG(isBull, top, bot, color, startBar) {
     let fvgBox = box.new(({ left: startBar, top: top, right: (bar_index + extendBars), bottom: bot, bgcolor: pinescript.color, border_color: gapBorderColor }));
     if (showLabel) {
-      {
-        box.set_text(fvgBox, (tfDisplay + " FVG"));
-        box.set_text_color(fvgBox, labelColor);
-        box.set_text_size(fvgBox, textSize);
-        box.set_text_halign(fvgBox, pinescript.text.align_center);
-        box.set_text_valign(fvgBox, pinescript.text.align_center);
-      }
+      box.set_text(fvgBox, (tfDisplay + " FVG"));
+      box.set_text_color(fvgBox, labelColor);
+      box.set_text_size(fvgBox, textSize);
+      box.set_text_halign(fvgBox, pinescript.text.align_center);
+      box.set_text_valign(fvgBox, pinescript.text.align_center);
     }
     mid = ((top + bot) / 2);
     let midLine = (showMidline ? pinescript.lineNew(startBar, mid, (bar_index + extendBars), mid, xloc.bar_index, ({ color: midlineColor, style: midlineStyle })) : null);
     let newFvg = FVG.new(top, bot, isBull, bar_index, startBar, false, fvgBox, midLine, false, true);
     fvg_records.unshift(newFvg);
     if ((pinescript.arraySize(state.fvg_records) > maxHistory)) {
-      {
-        let oldFvg = pinescript.arrayPop(state.fvg_records);
-        if ((!oldFvg.isFilled && oldFvg.isVisible)) {
-          {
-            box.delete(oldFvg.fvgBox);
-            if ((showMidline && !pinescript.na(oldFvg.midLine))) {
-              {
-                pinescript.lineDelete(oldFvg.midLine);
-              }
-            }
-          }
+      let oldFvg = pinescript.arrayPop(state.fvg_records);
+      if ((!oldFvg.isFilled && oldFvg.isVisible)) {
+        box.delete(oldFvg.fvgBox);
+        if ((showMidline && !pinescript.na(oldFvg.midLine))) {
+          pinescript.lineDelete(oldFvg.midLine);
         }
       }
     }
   }
   if ((bullFVG && !pinescript.na(state.htfBarStart2))) {
-    {
-      addFVG(true, htfLow, htfHigh2, bullColor, state.htfBarStart2);
-    }
+    addFVG(true, htfLow, htfHigh2, bullColor, state.htfBarStart2);
   }
   if ((bearFVG && !pinescript.na(state.htfBarStart2))) {
-    {
-      addFVG(false, htfLow2, htfHigh, bearColor, state.htfBarStart2);
-    }
+    addFVG(false, htfLow2, htfHigh, bearColor, state.htfBarStart2);
   }
   let unfilledCount = 0;
   let i2 = 0;
   while ((i2 < pinescript.arraySize(state.fvg_records))) {
-    {
-      let get2 = pinescript.arrayGet(state.fvg_records, i2);
-      if (!get2.isFilled) {
-        {
-          unfilledCount += 1;
-          if ((unfilledCount <= maxGaps)) {
-            {
-              if (!get2.isVisible) {
-                {
-                  let color_1 = (get2.Bullish ? bullColor : bearColor);
-                  let newBox = box.new(({ left: get2.start_bar, top: get2.top, right: (bar_index + extendBars), bottom: get2.bot, bgcolor: color_1, border_color: gapBorderColor }));
-                  if (showLabel) {
-                    {
-                      box.set_text(newBox, (tfDisplay + " FVG"));
-                      box.set_text_color(newBox, labelColor);
-                      box.set_text_size(newBox, textSize);
-                      box.set_text_halign(newBox, pinescript.text.align_center);
-                      box.set_text_valign(newBox, pinescript.text.align_center);
-                    }
-                  }
-                  mid = ((get2.top + get2.bot) / 2);
-                  let newLine = (showMidline ? pinescript.lineNew(get2.start_bar, mid, (bar_index + extendBars), mid, xloc.bar_index, ({ color: midlineColor, style: midlineStyle })) : null);
-                  get2 = FVG.new(get2.top, get2.bot, get2.Bullish, get2.created_bar, get2.start_bar, get2.triggered, newBox, newLine, get2.isFilled, true);
-                  pinescript.arraySet(state.fvg_records, i2, get2);
-                }
-              }
-            }
-          } else {
-            {
-              if (get2.isVisible) {
-                {
-                  box.delete(get2.fvgBox);
-                  if ((showMidline && !pinescript.na(get2.midLine))) {
-                    {
-                      pinescript.lineDelete(get2.midLine);
-                    }
-                  }
-                  get2 = FVG.new(get2.top, get2.bot, get2.Bullish, get2.created_bar, get2.start_bar, get2.triggered, null, null, get2.isFilled, false);
-                  pinescript.arraySet(state.fvg_records, i2, get2);
-                }
-              }
-            }
+    let get2 = pinescript.arrayGet(state.fvg_records, i2);
+    if (!get2.isFilled) {
+      unfilledCount += 1;
+      if ((unfilledCount <= maxGaps)) {
+        if (!get2.isVisible) {
+          let color_1 = (get2.Bullish ? bullColor : bearColor);
+          let newBox = box.new(({ left: get2.start_bar, top: get2.top, right: (bar_index + extendBars), bottom: get2.bot, bgcolor: color_1, border_color: gapBorderColor }));
+          if (showLabel) {
+            box.set_text(newBox, (tfDisplay + " FVG"));
+            box.set_text_color(newBox, labelColor);
+            box.set_text_size(newBox, textSize);
+            box.set_text_halign(newBox, pinescript.text.align_center);
+            box.set_text_valign(newBox, pinescript.text.align_center);
           }
+          mid = ((get2.top + get2.bot) / 2);
+          let newLine = (showMidline ? pinescript.lineNew(get2.start_bar, mid, (bar_index + extendBars), mid, xloc.bar_index, ({ color: midlineColor, style: midlineStyle })) : null);
+          get2 = FVG.new(get2.top, get2.bot, get2.Bullish, get2.created_bar, get2.start_bar, get2.triggered, newBox, newLine, get2.isFilled, true);
+          pinescript.arraySet(state.fvg_records, i2, get2);
+        }
+      } else {
+        if (get2.isVisible) {
+          box.delete(get2.fvgBox);
+          if ((showMidline && !pinescript.na(get2.midLine))) {
+            pinescript.lineDelete(get2.midLine);
+          }
+          get2 = FVG.new(get2.top, get2.bot, get2.Bullish, get2.created_bar, get2.start_bar, get2.triggered, null, null, get2.isFilled, false);
+          pinescript.arraySet(state.fvg_records, i2, get2);
         }
       }
-      i2 += 1;
     }
+    i2 += 1;
   }
 }
 

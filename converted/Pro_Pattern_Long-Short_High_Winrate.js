@@ -905,8 +905,8 @@ const pinescript = {
     const info = { ticker: 'AAPL', tickerid: 'NASDAQ:AAPL', prefix: 'NASDAQ', root: 'AAPL', suffix: '' };
     return info[type] || '';
   },
-  time: 1771040624486,
-  timenow: 1771040624486,
+  time: 1771178052327,
+  timenow: 1771178052327,
   barstate: "LAST",
   dividends: {},
   splits: {},
@@ -1259,14 +1259,10 @@ function main() {
   if (state.lastResistance === undefined) state.lastResistance = null;
   if (state.lastSupport === undefined) state.lastSupport = null;
   if (!pinescript.na(pivotHigh)) {
-    {
-      state.lastResistance = pinescript.offset(high, pivotLookback);
-    }
+    state.lastResistance = pinescript.offset(high, pivotLookback);
   }
   if (!pinescript.na(pivotLow)) {
-    {
-      state.lastSupport = pinescript.offset(low, pivotLookback);
-    }
+    state.lastSupport = pinescript.offset(low, pivotLookback);
   }
   let proximityPercent = (srProximity / 100);
   let nearSupport = (!pinescript.na(state.lastSupport) && ((pinescript.abs((close - state.lastSupport)) / state.lastSupport) < proximityPercent));
@@ -1326,108 +1322,78 @@ function main() {
   if (state.activeTpLabel === undefined) state.activeTpLabel = null;
   let patternName = "";
   if ((bullishPattern || bearishPattern)) {
-    {
-      state.totalSignalsBeforeFilter = 1;
-    }
+    state.totalSignalsBeforeFilter = 1;
   }
   if ((bullishSignal || bearishSignal)) {
-    {
-      state.totalSignalsAfterFilter = 1;
-    }
+    state.totalSignalsAfterFilter = 1;
   }
   if (bullishSignal) {
-    {
-      patternName = (bullishEngulfing ? "Bullish Engulfing" : (isHammer ? "Hammer" : (isMorningStar ? "Morning Star" : (threeWhiteSoldiers ? "Three White Soldiers" : (piercingLine ? "Piercing Line" : "")))));
-      state.lastPattern = patternName;
-      state.lastEntry = close;
-      state.lastStop = (low - (atrValue * stopLossATR));
-      state.lastTarget = (state.lastEntry + ((state.lastEntry - state.lastStop) * riskRewardRatio));
-      state.lastSignalType = "ALIŞ";
-      state.lastSignalColor = pinescript.color.green;
-      state.lastSignalIndex = bar_index;
-      state.tradeActive = true;
-      state.activeTradeType = "BUY";
-    }
+    patternName = (bullishEngulfing ? "Bullish Engulfing" : (isHammer ? "Hammer" : (isMorningStar ? "Morning Star" : (threeWhiteSoldiers ? "Three White Soldiers" : (piercingLine ? "Piercing Line" : "")))));
+    state.lastPattern = patternName;
+    state.lastEntry = close;
+    state.lastStop = (low - (atrValue * stopLossATR));
+    state.lastTarget = (state.lastEntry + ((state.lastEntry - state.lastStop) * riskRewardRatio));
+    state.lastSignalType = "ALIŞ";
+    state.lastSignalColor = pinescript.color.green;
+    state.lastSignalIndex = bar_index;
+    state.tradeActive = true;
+    state.activeTradeType = "BUY";
   }
   if (bearishSignal) {
-    {
-      patternName = (bearishEngulfing ? "Bearish Engulfing" : (isShootingStar ? "Shooting Star" : (isEveningStar ? "Evening Star" : (threeBlackCrows ? "Three Black Crows" : (darkCloudCover ? "Dark Cloud Cover" : "")))));
-      state.lastPattern = patternName;
-      state.lastEntry = close;
-      state.lastStop = (high + (atrValue * stopLossATR));
-      state.lastTarget = (state.lastEntry - ((state.lastStop - state.lastEntry) * riskRewardRatio));
-      state.lastSignalType = "SATIŞ";
-      state.lastSignalColor = pinescript.color.red;
-      state.lastSignalIndex = bar_index;
-      state.tradeActive = true;
-      state.activeTradeType = "SELL";
-    }
+    patternName = (bearishEngulfing ? "Bearish Engulfing" : (isShootingStar ? "Shooting Star" : (isEveningStar ? "Evening Star" : (threeBlackCrows ? "Three Black Crows" : (darkCloudCover ? "Dark Cloud Cover" : "")))));
+    state.lastPattern = patternName;
+    state.lastEntry = close;
+    state.lastStop = (high + (atrValue * stopLossATR));
+    state.lastTarget = (state.lastEntry - ((state.lastStop - state.lastEntry) * riskRewardRatio));
+    state.lastSignalType = "SATIŞ";
+    state.lastSignalColor = pinescript.color.red;
+    state.lastSignalIndex = bar_index;
+    state.tradeActive = true;
+    state.activeTradeType = "SELL";
   }
   if ((((state.tradeActive && !pinescript.na(state.lastEntry)) && !pinescript.na(state.lastStop)) && !pinescript.na(state.lastTarget))) {
-    {
-      if ((state.activeTradeType === "BUY")) {
-        {
-          if ((high >= state.lastTarget)) {
-            {
-              state.totalTrades = 1;
-              state.winningTrades = 1;
-              let profit = (state.lastTarget - state.lastEntry);
-              state.totalProfit = profit;
-              state.tradeActive = false;
-              if (showTradeResults) {
-                {
-                  pinescript.labelNew(bar_index, state.lastTarget, ("✓ TP HITn+" + pinescript.strToString(profit, "#.####")), ({ yloc: yloc.price, color: pinescript.color.new(pinescript.color.green, 0), textcolor: pinescript.color.white, style: label.style_label_down, size: pinescript.size.small }));
-                }
-              }
-            }
-          } else {
-            if ((low <= state.lastStop)) {
-              {
-                state.totalTrades = 1;
-                state.losingTrades = 1;
-                let loss = (state.lastEntry - state.lastStop);
-                state.totalLoss = loss;
-                state.tradeActive = false;
-                if (showTradeResults) {
-                  {
-                    pinescript.labelNew(bar_index, state.lastStop, ("✗ STOPn-" + pinescript.strToString(loss, "#.####")), ({ yloc: yloc.price, color: pinescript.color.new(pinescript.color.red, 0), textcolor: pinescript.color.white, style: label.style_label_up, size: pinescript.size.small }));
-                  }
-                }
-              }
-            }
-          }
+    if ((state.activeTradeType === "BUY")) {
+      if ((high >= state.lastTarget)) {
+        state.totalTrades = 1;
+        state.winningTrades = 1;
+        let profit = (state.lastTarget - state.lastEntry);
+        state.totalProfit = profit;
+        state.tradeActive = false;
+        if (showTradeResults) {
+          pinescript.labelNew(bar_index, state.lastTarget, ("✓ TP HITn+" + pinescript.strToString(profit, "#.####")), ({ yloc: yloc.price, color: pinescript.color.new(pinescript.color.green, 0), textcolor: pinescript.color.white, style: label.style_label_down, size: pinescript.size.small }));
         }
       } else {
-        if ((state.activeTradeType === "SELL")) {
-          {
-            if ((low <= state.lastTarget)) {
-              {
-                state.totalTrades = 1;
-                state.winningTrades = 1;
-                profit = (state.lastEntry - state.lastTarget);
-                state.totalProfit = profit;
-                state.tradeActive = false;
-                if (showTradeResults) {
-                  {
-                    pinescript.labelNew(bar_index, state.lastTarget, ("✓ TP HITn+" + pinescript.strToString(profit, "#.####")), ({ yloc: yloc.price, color: pinescript.color.new(pinescript.color.green, 0), textcolor: pinescript.color.white, style: label.style_label_up, size: pinescript.size.small }));
-                  }
-                }
-              }
-            } else {
-              if ((high >= state.lastStop)) {
-                {
-                  state.totalTrades = 1;
-                  state.losingTrades = 1;
-                  loss = (state.lastStop - state.lastEntry);
-                  state.totalLoss = loss;
-                  state.tradeActive = false;
-                  if (showTradeResults) {
-                    {
-                      pinescript.labelNew(bar_index, state.lastStop, ("✗ STOPn-" + pinescript.strToString(loss, "#.####")), ({ yloc: yloc.price, color: pinescript.color.new(pinescript.color.red, 0), textcolor: pinescript.color.white, style: label.style_label_down, size: pinescript.size.small }));
-                    }
-                  }
-                }
-              }
+        if ((low <= state.lastStop)) {
+          state.totalTrades = 1;
+          state.losingTrades = 1;
+          let loss = (state.lastEntry - state.lastStop);
+          state.totalLoss = loss;
+          state.tradeActive = false;
+          if (showTradeResults) {
+            pinescript.labelNew(bar_index, state.lastStop, ("✗ STOPn-" + pinescript.strToString(loss, "#.####")), ({ yloc: yloc.price, color: pinescript.color.new(pinescript.color.red, 0), textcolor: pinescript.color.white, style: label.style_label_up, size: pinescript.size.small }));
+          }
+        }
+      }
+    } else {
+      if ((state.activeTradeType === "SELL")) {
+        if ((low <= state.lastTarget)) {
+          state.totalTrades = 1;
+          state.winningTrades = 1;
+          profit = (state.lastEntry - state.lastTarget);
+          state.totalProfit = profit;
+          state.tradeActive = false;
+          if (showTradeResults) {
+            pinescript.labelNew(bar_index, state.lastTarget, ("✓ TP HITn+" + pinescript.strToString(profit, "#.####")), ({ yloc: yloc.price, color: pinescript.color.new(pinescript.color.green, 0), textcolor: pinescript.color.white, style: label.style_label_up, size: pinescript.size.small }));
+          }
+        } else {
+          if ((high >= state.lastStop)) {
+            state.totalTrades = 1;
+            state.losingTrades = 1;
+            loss = (state.lastStop - state.lastEntry);
+            state.totalLoss = loss;
+            state.tradeActive = false;
+            if (showTradeResults) {
+              pinescript.labelNew(bar_index, state.lastStop, ("✗ STOPn-" + pinescript.strToString(loss, "#.####")), ({ yloc: yloc.price, color: pinescript.color.new(pinescript.color.red, 0), textcolor: pinescript.color.white, style: label.style_label_down, size: pinescript.size.small }));
             }
           }
         }
@@ -1445,97 +1411,87 @@ function main() {
   if (state.lineSL === undefined) state.lineSL = null;
   if (state.lineTP === undefined) state.lineTP = null;
   if ((bullishSignal || bearishSignal)) {
-    {
-      pinescript.lineDelete(state.lineSL);
-      pinescript.lineDelete(state.lineTP);
-      if (showExtendedLines) {
-        {
-          state.lineSL = pinescript.lineNew(state.lastSignalIndex, state.lastStop, bar_index, state.lastStop, ({ extend: extend.right, color: pinescript.color.new(pinescript.color.red, 40), width: 1, style: line.style_dashed }));
-          state.lineTP = pinescript.lineNew(state.lastSignalIndex, state.lastTarget, bar_index, state.lastTarget, ({ extend: extend.right, color: pinescript.color.new(pinescript.color.green, 40), width: 1, style: line.style_dashed }));
-        }
-      }
+    pinescript.lineDelete(state.lineSL);
+    pinescript.lineDelete(state.lineTP);
+    if (showExtendedLines) {
+      state.lineSL = pinescript.lineNew(state.lastSignalIndex, state.lastStop, bar_index, state.lastStop, ({ extend: extend.right, color: pinescript.color.new(pinescript.color.red, 40), width: 1, style: line.style_dashed }));
+      state.lineTP = pinescript.lineNew(state.lastSignalIndex, state.lastTarget, bar_index, state.lastTarget, ({ extend: extend.right, color: pinescript.color.new(pinescript.color.green, 40), width: 1, style: line.style_dashed }));
     }
   }
   if (((bullishSignal || bearishSignal) && showExtendedLines)) {
-    {
-      pinescript.lineDelete(state.activeEntryLine);
-      pinescript.lineDelete(state.activeStopLine);
-      pinescript.lineDelete(state.activeTpLine);
-      pinescript.labelDelete(state.activeEntryLabel);
-      pinescript.labelDelete(state.activeStopLabel);
-      pinescript.labelDelete(state.activeTpLabel);
-      state.activeEntryLine = pinescript.lineNew(state.lastSignalIndex, state.lastEntry, (bar_index + 50), state.lastEntry, ({ color: pinescript.color.new(pinescript.color.blue, 30), width: 2, style: line.style_solid }));
-      state.activeStopLine = pinescript.lineNew(state.lastSignalIndex, state.lastStop, (bar_index + 50), state.lastStop, ({ color: pinescript.color.new(pinescript.color.red, 30), width: 2, style: line.style_dashed }));
-      state.activeTpLine = pinescript.lineNew(state.lastSignalIndex, state.lastTarget, (bar_index + 50), state.lastTarget, ({ color: pinescript.color.new(pinescript.color.green, 30), width: 2, style: line.style_dashed }));
-      state.activeEntryLabel = pinescript.labelNew((bar_index + 3), state.lastEntry, ("Giriş: " + pinescript.strToString(state.lastEntry, "#.####")), ({ yloc: yloc.price, color: pinescript.color.new(pinescript.color.blue, 70), textcolor: pinescript.color.white, style: label.style_label_left, size: pinescript.size.tiny }));
-      state.activeStopLabel = pinescript.labelNew((bar_index + 3), state.lastStop, ("Stop: " + pinescript.strToString(state.lastStop, "#.####")), ({ yloc: yloc.price, color: pinescript.color.new(pinescript.color.red, 70), textcolor: pinescript.color.white, style: label.style_label_left, size: pinescript.size.tiny }));
-      state.activeTpLabel = pinescript.labelNew((bar_index + 3), state.lastTarget, ("TP: " + pinescript.strToString(state.lastTarget, "#.####")), ({ yloc: yloc.price, color: pinescript.color.new(pinescript.color.green, 70), textcolor: pinescript.color.white, style: label.style_label_left, size: pinescript.size.tiny }));
-    }
+    pinescript.lineDelete(state.activeEntryLine);
+    pinescript.lineDelete(state.activeStopLine);
+    pinescript.lineDelete(state.activeTpLine);
+    pinescript.labelDelete(state.activeEntryLabel);
+    pinescript.labelDelete(state.activeStopLabel);
+    pinescript.labelDelete(state.activeTpLabel);
+    state.activeEntryLine = pinescript.lineNew(state.lastSignalIndex, state.lastEntry, (bar_index + 50), state.lastEntry, ({ color: pinescript.color.new(pinescript.color.blue, 30), width: 2, style: line.style_solid }));
+    state.activeStopLine = pinescript.lineNew(state.lastSignalIndex, state.lastStop, (bar_index + 50), state.lastStop, ({ color: pinescript.color.new(pinescript.color.red, 30), width: 2, style: line.style_dashed }));
+    state.activeTpLine = pinescript.lineNew(state.lastSignalIndex, state.lastTarget, (bar_index + 50), state.lastTarget, ({ color: pinescript.color.new(pinescript.color.green, 30), width: 2, style: line.style_dashed }));
+    state.activeEntryLabel = pinescript.labelNew((bar_index + 3), state.lastEntry, ("Giriş: " + pinescript.strToString(state.lastEntry, "#.####")), ({ yloc: yloc.price, color: pinescript.color.new(pinescript.color.blue, 70), textcolor: pinescript.color.white, style: label.style_label_left, size: pinescript.size.tiny }));
+    state.activeStopLabel = pinescript.labelNew((bar_index + 3), state.lastStop, ("Stop: " + pinescript.strToString(state.lastStop, "#.####")), ({ yloc: yloc.price, color: pinescript.color.new(pinescript.color.red, 70), textcolor: pinescript.color.white, style: label.style_label_left, size: pinescript.size.tiny }));
+    state.activeTpLabel = pinescript.labelNew((bar_index + 3), state.lastTarget, ("TP: " + pinescript.strToString(state.lastTarget, "#.####")), ({ yloc: yloc.price, color: pinescript.color.new(pinescript.color.green, 70), textcolor: pinescript.color.white, style: label.style_label_left, size: pinescript.size.tiny }));
   }
   if (state.lastLabel === undefined) state.lastLabel = null;
   if ((bullishSignal || bearishSignal)) {
-    {
-      pinescript.labelDelete(state.lastLabel);
-      let y_pos = (bullishSignal ? low : high);
-      let label_style = (bullishSignal ? label.style_label_up : label.style_label_down);
-      let label_color = (bullishSignal ? pinescript.color.new(pinescript.color.green, 70) : pinescript.color.new(pinescript.color.red, 70));
-      let signal_text = (bullishSignal ? "ALIŞ" : "SATIŞ");
-      state.lastLabel = pinescript.labelNew(state.lastSignalIndex, y_pos, ((((((((signal_text + "n") + state.lastPattern) + "nGiriş: ") + pinescript.strToString(state.lastEntry, "#.####")) + "nSL: ") + pinescript.strToString(state.lastStop, "#.####")) + "nTP: ") + pinescript.strToString(state.lastTarget, "#.####")), ({ yloc: (bullishSignal ? yloc.belowbar : yloc.abovebar), color: label_color, textcolor: pinescript.color.white, style: label_style, size: pinescript.size.small }));
-    }
+    pinescript.labelDelete(state.lastLabel);
+    let y_pos = (bullishSignal ? low : high);
+    let label_style = (bullishSignal ? label.style_label_up : label.style_label_down);
+    let label_color = (bullishSignal ? pinescript.color.new(pinescript.color.green, 70) : pinescript.color.new(pinescript.color.red, 70));
+    let signal_text = (bullishSignal ? "ALIŞ" : "SATIŞ");
+    state.lastLabel = pinescript.labelNew(state.lastSignalIndex, y_pos, ((((((((signal_text + "n") + state.lastPattern) + "nGiriş: ") + pinescript.strToString(state.lastEntry, "#.####")) + "nSL: ") + pinescript.strToString(state.lastStop, "#.####")) + "nTP: ") + pinescript.strToString(state.lastTarget, "#.####")), ({ yloc: (bullishSignal ? yloc.belowbar : yloc.abovebar), color: label_color, textcolor: pinescript.color.white, style: label_style, size: pinescript.size.small }));
   }
   if (showTable) {
-    {
-      if (state.t === undefined) state.t = pinescript.table.new(((tablePosition === "top_right") ? pinescript.position.top_right : ((tablePosition === "top_left") ? pinescript.position.top_left : ((tablePosition === "bottom_right") ? pinescript.position.bottom_right : pinescript.position.bottom_left))), ({ columns: 3, rows: 16, bgcolor: pinescript.color.new(pinescript.color.black, 85), border_width: 1, border_color: pinescript.color.new(pinescript.color.blue, 60) }));
-      table.clear(state.t, 0, 0, 2, 15);
-      pinescript.table.cell(state.t, 0, 0, "PRO SİSTEM - HIGH WINRATE", ({ text_color: pinescript.color.white, bgcolor: pinescript.color.new(pinescript.color.blue, 40), text_size: pinescript.size.normal }));
-      table.merge_cells(state.t, 0, 0, 2, 0);
-      pinescript.table.cell(state.t, 0, 1, "Parametre", ({ text_color: pinescript.color.yellow, bgcolor: pinescript.color.new(pinescript.color.gray, 70) }));
-      pinescript.table.cell(state.t, 1, 1, "Değer", ({ text_color: pinescript.color.yellow, bgcolor: pinescript.color.new(pinescript.color.gray, 70) }));
-      pinescript.table.cell(state.t, 2, 1, "Durum", ({ text_color: pinescript.color.yellow, bgcolor: pinescript.color.new(pinescript.color.gray, 70) }));
-      pinescript.table.cell(state.t, 0, 2, "Son Sinyal", ({ text_color: pinescript.color.white }));
-      pinescript.table.cell(state.t, 1, 2, state.lastSignalType, ({ text_color: state.lastSignalColor }));
-      pinescript.table.cell(state.t, 2, 2, ((state.lastSignalType === "Bekleniyor") ? "○" : "●"), ({ text_color: state.lastSignalColor, text_size: pinescript.size.normal }));
-      pinescript.table.cell(state.t, 0, 3, "Pattern", ({ text_color: pinescript.color.white }));
-      pinescript.table.cell(state.t, 1, 3, state.lastPattern, ({ text_color: pinescript.color.white }));
-      pinescript.table.cell(state.t, 2, 3, "");
-      pinescript.table.cell(state.t, 0, 4, "Giriş", ({ text_color: pinescript.color.white }));
-      pinescript.table.cell(state.t, 1, 4, (pinescript.na(state.lastEntry) ? "-" : pinescript.strToString(state.lastEntry, "#.####")), ({ text_color: pinescript.color.aqua }));
-      pinescript.table.cell(state.t, 2, 4, "");
-      pinescript.table.cell(state.t, 0, 5, "Stop Loss", ({ text_color: pinescript.color.white }));
-      pinescript.table.cell(state.t, 1, 5, (pinescript.na(state.lastStop) ? "-" : pinescript.strToString(state.lastStop, "#.####")), ({ text_color: pinescript.color.red }));
-      pinescript.table.cell(state.t, 2, 5, ((pinescript.na(state.lastEntry) || pinescript.na(state.lastStop)) ? "-" : pinescript.strToString(pinescript.abs((state.lastEntry - state.lastStop)), "#.####")), ({ text_color: pinescript.color.orange }));
-      pinescript.table.cell(state.t, 0, 6, "Take Profit", ({ text_color: pinescript.color.white }));
-      pinescript.table.cell(state.t, 1, 6, (pinescript.na(state.lastTarget) ? "-" : pinescript.strToString(state.lastTarget, "#.####")), ({ text_color: pinescript.color.green }));
-      pinescript.table.cell(state.t, 2, 6, ((pinescript.na(state.lastEntry) || pinescript.na(state.lastTarget)) ? "-" : pinescript.strToString(pinescript.abs((state.lastTarget - state.lastEntry)), "#.####")), ({ text_color: pinescript.color.lime }));
-      pinescript.table.cell(state.t, 0, 7, "Risk/Ödül", ({ text_color: pinescript.color.white }));
-      pinescript.table.cell(state.t, 1, 7, ("1:" + pinescript.strToString(riskRewardRatio, "#.#")), ({ text_color: pinescript.color.yellow }));
-      pinescript.table.cell(state.t, 2, 7, "");
-      pinescript.table.cell(state.t, 0, 8, "━━━━━ PERFORMANS ━━━━━", ({ text_color: pinescript.color.aqua }));
-      table.merge_cells(state.t, 0, 8, 2, 8);
-      pinescript.table.cell(state.t, 0, 9, "Toplam İşlem", ({ text_color: pinescript.color.white }));
-      pinescript.table.cell(state.t, 1, 9, pinescript.strToString(state.totalTrades), ({ text_color: pinescript.color.aqua }));
-      pinescript.table.cell(state.t, 2, 9, "📊", ({ text_color: pinescript.color.white }));
-      pinescript.table.cell(state.t, 0, 10, "🎯 WINRATE", ({ text_color: pinescript.color.white, text_size: pinescript.size.normal }));
-      let winRateColor = ((winRate >= 70) ? pinescript.color.new(pinescript.color.green, 0) : ((winRate >= 50) ? pinescript.color.orange : pinescript.color.red));
-      pinescript.table.cell(state.t, 1, 10, (pinescript.strToString(winRate, "#.##") + "%"), ({ text_color: winRateColor, text_size: pinescript.size.normal }));
-      pinescript.table.cell(state.t, 2, 10, (((pinescript.strToString(state.winningTrades) + "W/") + pinescript.strToString(state.losingTrades)) + "L"), ({ text_color: pinescript.color.orange, text_size: pinescript.size.tiny }));
-      pinescript.table.cell(state.t, 0, 11, "Kar/Zarar Oranı", ({ text_color: pinescript.color.white }));
-      let plRatioColor = ((profitLossRatio >= 2) ? pinescript.color.new(pinescript.color.green, 0) : ((profitLossRatio >= 1) ? pinescript.color.orange : pinescript.color.red));
-      pinescript.table.cell(state.t, 1, 11, pinescript.strToString(profitLossRatio, "#.##"), ({ text_color: plRatioColor }));
-      pinescript.table.cell(state.t, 2, 11, ((profitLossRatio >= 1) ? "✓" : "✗"), ({ text_color: plRatioColor }));
-      pinescript.table.cell(state.t, 0, 12, "━━━━━ FİLTRELER ━━━━━", ({ text_color: pinescript.color.purple }));
-      table.merge_cells(state.t, 0, 12, 2, 12);
-      pinescript.table.cell(state.t, 0, 13, "Ham Sinyal", ({ text_color: pinescript.color.white }));
-      pinescript.table.cell(state.t, 1, 13, pinescript.strToString(state.totalSignalsBeforeFilter), ({ text_color: pinescript.color.gray }));
-      pinescript.table.cell(state.t, 2, 13, "📡", ({ text_color: pinescript.color.gray }));
-      pinescript.table.cell(state.t, 0, 14, "Filtrelenmiş", ({ text_color: pinescript.color.white }));
-      pinescript.table.cell(state.t, 1, 14, pinescript.strToString(state.totalSignalsAfterFilter), ({ text_color: pinescript.color.green }));
-      pinescript.table.cell(state.t, 2, 14, "✓", ({ text_color: pinescript.color.green }));
-      pinescript.table.cell(state.t, 0, 15, "Filtre Etkinliği", ({ text_color: pinescript.color.white }));
-      let filterColor = ((filterEfficiency >= 60) ? pinescript.color.green : ((filterEfficiency >= 40) ? pinescript.color.orange : pinescript.color.red));
-      pinescript.table.cell(state.t, 1, 15, (pinescript.strToString(filterEfficiency, "#.#") + "%"), ({ text_color: filterColor }));
-      pinescript.table.cell(state.t, 2, 15, ((filterEfficiency >= 50) ? "🔥" : "⚡"), ({ text_color: filterColor }));
-    }
+    if (state.t === undefined) state.t = pinescript.table.new(((tablePosition === "top_right") ? pinescript.position.top_right : ((tablePosition === "top_left") ? pinescript.position.top_left : ((tablePosition === "bottom_right") ? pinescript.position.bottom_right : pinescript.position.bottom_left))), ({ columns: 3, rows: 16, bgcolor: pinescript.color.new(pinescript.color.black, 85), border_width: 1, border_color: pinescript.color.new(pinescript.color.blue, 60) }));
+    table.clear(state.t, 0, 0, 2, 15);
+    pinescript.table.cell(state.t, 0, 0, "PRO SİSTEM - HIGH WINRATE", ({ text_color: pinescript.color.white, bgcolor: pinescript.color.new(pinescript.color.blue, 40), text_size: pinescript.size.normal }));
+    table.merge_cells(state.t, 0, 0, 2, 0);
+    pinescript.table.cell(state.t, 0, 1, "Parametre", ({ text_color: pinescript.color.yellow, bgcolor: pinescript.color.new(pinescript.color.gray, 70) }));
+    pinescript.table.cell(state.t, 1, 1, "Değer", ({ text_color: pinescript.color.yellow, bgcolor: pinescript.color.new(pinescript.color.gray, 70) }));
+    pinescript.table.cell(state.t, 2, 1, "Durum", ({ text_color: pinescript.color.yellow, bgcolor: pinescript.color.new(pinescript.color.gray, 70) }));
+    pinescript.table.cell(state.t, 0, 2, "Son Sinyal", ({ text_color: pinescript.color.white }));
+    pinescript.table.cell(state.t, 1, 2, state.lastSignalType, ({ text_color: state.lastSignalColor }));
+    pinescript.table.cell(state.t, 2, 2, ((state.lastSignalType === "Bekleniyor") ? "○" : "●"), ({ text_color: state.lastSignalColor, text_size: pinescript.size.normal }));
+    pinescript.table.cell(state.t, 0, 3, "Pattern", ({ text_color: pinescript.color.white }));
+    pinescript.table.cell(state.t, 1, 3, state.lastPattern, ({ text_color: pinescript.color.white }));
+    pinescript.table.cell(state.t, 2, 3, "");
+    pinescript.table.cell(state.t, 0, 4, "Giriş", ({ text_color: pinescript.color.white }));
+    pinescript.table.cell(state.t, 1, 4, (pinescript.na(state.lastEntry) ? "-" : pinescript.strToString(state.lastEntry, "#.####")), ({ text_color: pinescript.color.aqua }));
+    pinescript.table.cell(state.t, 2, 4, "");
+    pinescript.table.cell(state.t, 0, 5, "Stop Loss", ({ text_color: pinescript.color.white }));
+    pinescript.table.cell(state.t, 1, 5, (pinescript.na(state.lastStop) ? "-" : pinescript.strToString(state.lastStop, "#.####")), ({ text_color: pinescript.color.red }));
+    pinescript.table.cell(state.t, 2, 5, ((pinescript.na(state.lastEntry) || pinescript.na(state.lastStop)) ? "-" : pinescript.strToString(pinescript.abs((state.lastEntry - state.lastStop)), "#.####")), ({ text_color: pinescript.color.orange }));
+    pinescript.table.cell(state.t, 0, 6, "Take Profit", ({ text_color: pinescript.color.white }));
+    pinescript.table.cell(state.t, 1, 6, (pinescript.na(state.lastTarget) ? "-" : pinescript.strToString(state.lastTarget, "#.####")), ({ text_color: pinescript.color.green }));
+    pinescript.table.cell(state.t, 2, 6, ((pinescript.na(state.lastEntry) || pinescript.na(state.lastTarget)) ? "-" : pinescript.strToString(pinescript.abs((state.lastTarget - state.lastEntry)), "#.####")), ({ text_color: pinescript.color.lime }));
+    pinescript.table.cell(state.t, 0, 7, "Risk/Ödül", ({ text_color: pinescript.color.white }));
+    pinescript.table.cell(state.t, 1, 7, ("1:" + pinescript.strToString(riskRewardRatio, "#.#")), ({ text_color: pinescript.color.yellow }));
+    pinescript.table.cell(state.t, 2, 7, "");
+    pinescript.table.cell(state.t, 0, 8, "━━━━━ PERFORMANS ━━━━━", ({ text_color: pinescript.color.aqua }));
+    table.merge_cells(state.t, 0, 8, 2, 8);
+    pinescript.table.cell(state.t, 0, 9, "Toplam İşlem", ({ text_color: pinescript.color.white }));
+    pinescript.table.cell(state.t, 1, 9, pinescript.strToString(state.totalTrades), ({ text_color: pinescript.color.aqua }));
+    pinescript.table.cell(state.t, 2, 9, "📊", ({ text_color: pinescript.color.white }));
+    pinescript.table.cell(state.t, 0, 10, "🎯 WINRATE", ({ text_color: pinescript.color.white, text_size: pinescript.size.normal }));
+    let winRateColor = ((winRate >= 70) ? pinescript.color.new(pinescript.color.green, 0) : ((winRate >= 50) ? pinescript.color.orange : pinescript.color.red));
+    pinescript.table.cell(state.t, 1, 10, (pinescript.strToString(winRate, "#.##") + "%"), ({ text_color: winRateColor, text_size: pinescript.size.normal }));
+    pinescript.table.cell(state.t, 2, 10, (((pinescript.strToString(state.winningTrades) + "W/") + pinescript.strToString(state.losingTrades)) + "L"), ({ text_color: pinescript.color.orange, text_size: pinescript.size.tiny }));
+    pinescript.table.cell(state.t, 0, 11, "Kar/Zarar Oranı", ({ text_color: pinescript.color.white }));
+    let plRatioColor = ((profitLossRatio >= 2) ? pinescript.color.new(pinescript.color.green, 0) : ((profitLossRatio >= 1) ? pinescript.color.orange : pinescript.color.red));
+    pinescript.table.cell(state.t, 1, 11, pinescript.strToString(profitLossRatio, "#.##"), ({ text_color: plRatioColor }));
+    pinescript.table.cell(state.t, 2, 11, ((profitLossRatio >= 1) ? "✓" : "✗"), ({ text_color: plRatioColor }));
+    pinescript.table.cell(state.t, 0, 12, "━━━━━ FİLTRELER ━━━━━", ({ text_color: pinescript.color.purple }));
+    table.merge_cells(state.t, 0, 12, 2, 12);
+    pinescript.table.cell(state.t, 0, 13, "Ham Sinyal", ({ text_color: pinescript.color.white }));
+    pinescript.table.cell(state.t, 1, 13, pinescript.strToString(state.totalSignalsBeforeFilter), ({ text_color: pinescript.color.gray }));
+    pinescript.table.cell(state.t, 2, 13, "📡", ({ text_color: pinescript.color.gray }));
+    pinescript.table.cell(state.t, 0, 14, "Filtrelenmiş", ({ text_color: pinescript.color.white }));
+    pinescript.table.cell(state.t, 1, 14, pinescript.strToString(state.totalSignalsAfterFilter), ({ text_color: pinescript.color.green }));
+    pinescript.table.cell(state.t, 2, 14, "✓", ({ text_color: pinescript.color.green }));
+    pinescript.table.cell(state.t, 0, 15, "Filtre Etkinliği", ({ text_color: pinescript.color.white }));
+    let filterColor = ((filterEfficiency >= 60) ? pinescript.color.green : ((filterEfficiency >= 40) ? pinescript.color.orange : pinescript.color.red));
+    pinescript.table.cell(state.t, 1, 15, (pinescript.strToString(filterEfficiency, "#.#") + "%"), ({ text_color: filterColor }));
+    pinescript.table.cell(state.t, 2, 15, ((filterEfficiency >= 50) ? "🔥" : "⚡"), ({ text_color: filterColor }));
   }
   alertcondition(bullishSignal, ({ title: "🟢 Filtrelenmiş Alış", message: "ALIŞ {{ticker}} - {{plot(\"Pattern\")}} | Giriş {{close}}" }));
   alertcondition(bearishSignal, ({ title: "🔴 Filtrelenmiş Satış", message: "SATIŞ {{ticker}} - {{plot(\"Pattern\")}} | Giriş {{close}}" }));

@@ -905,8 +905,8 @@ const pinescript = {
     const info = { ticker: 'AAPL', tickerid: 'NASDAQ:AAPL', prefix: 'NASDAQ', root: 'AAPL', suffix: '' };
     return info[type] || '';
   },
-  time: 1771040623402,
-  timenow: 1771040623402,
+  time: 1771178051057,
+  timenow: 1771178051057,
   barstate: "LAST",
   dividends: {},
   splits: {},
@@ -1228,16 +1228,14 @@ function main() {
   let supportColor = input.color(pinescript.color.new(pinescript.color.hex("#20A56C"), 0), "Support Color", ({ group: GROUP_VISUAL }));
   let resistColor = input.color(pinescript.color.new(pinescript.color.hex("#C24545"), 0), "Resistance Color", ({ group: GROUP_VISUAL }));
   let neutralColor = input.color(pinescript.color.new(pinescript.color.hex("#607D8B"), 0), "Fill Base Color", ({ group: GROUP_VISUAL }));
-  {
-    let FAST_LOAD_BUFFER_BARS = 100;
-    let BAR_SCAN_WINDOW = 250;
-    let BAR_SCAN_STEP = 5;
-    let minAnchorBars = 10;
-    let pivotMemory = 200;
-    let maxBarViolRatio = 1;
-    let minTouches = 2;
-    let breakTolATR = 0.6;
-  }
+  let FAST_LOAD_BUFFER_BARS = 100;
+  let BAR_SCAN_WINDOW = 250;
+  let BAR_SCAN_STEP = 5;
+  let minAnchorBars = 10;
+  let pivotMemory = 200;
+  let maxBarViolRatio = 1;
+  let minTouches = 2;
+  let breakTolATR = 0.6;
   function f_line_y(x1, y1, x2, y2, x) {
     let dx = (x2 - x1);
     return ((dx === 0) ? y2 : (y1 + (((y2 - y1) * (x - x1)) / dx)));
@@ -1245,57 +1243,37 @@ function main() {
   function f_store_pivot(idxArr, priceArr, idx, price, isLow, mergeBars, maxCount) {
     let sz = pinescript.arraySize(idxArr);
     if ((sz === 0)) {
-      {
-        pinescript.arrayUnshift(idxArr, idx);
-        pinescript.arrayUnshift(priceArr, price);
-      }
+      pinescript.arrayUnshift(idxArr, idx);
+      pinescript.arrayUnshift(priceArr, price);
     } else {
-      {
-        let latestIdx = pinescript.arrayGet(idxArr, 0);
-        let latestPrice = pinescript.arrayGet(priceArr, 0);
-        if ((idx > latestIdx)) {
-          {
-            if (((idx - latestIdx) <= mergeBars)) {
-              {
-                let replace = (isLow ? (price < latestPrice) : (price > latestPrice));
-                if (replace) {
-                  {
-                    pinescript.arraySet(idxArr, 0, idx);
-                    pinescript.arraySet(priceArr, 0, price);
-                  }
-                }
-              }
-            } else {
-              {
-                pinescript.arrayUnshift(idxArr, idx);
-                pinescript.arrayUnshift(priceArr, price);
-              }
-            }
+      let latestIdx = pinescript.arrayGet(idxArr, 0);
+      let latestPrice = pinescript.arrayGet(priceArr, 0);
+      if ((idx > latestIdx)) {
+        if (((idx - latestIdx) <= mergeBars)) {
+          let replace = (isLow ? (price < latestPrice) : (price > latestPrice));
+          if (replace) {
+            pinescript.arraySet(idxArr, 0, idx);
+            pinescript.arraySet(priceArr, 0, price);
           }
+        } else {
+          pinescript.arrayUnshift(idxArr, idx);
+          pinescript.arrayUnshift(priceArr, price);
         }
       }
     }
     while ((pinescript.arraySize(idxArr) > maxCount)) {
-      {
-        pinescript.arrayPop(idxArr);
-        pinescript.arrayPop(priceArr);
-      }
+      pinescript.arrayPop(idxArr);
+      pinescript.arrayPop(priceArr);
     }
   }
   function f_trim_lookback(idxArr, priceArr, lbBars) {
     while ((pinescript.arraySize(idxArr) > 0)) {
-      {
-        let oldestIdx = pinescript.arrayGet(idxArr, (pinescript.arraySize(idxArr) - 1));
-        if (((bar_index - oldestIdx) > lbBars)) {
-          {
-            pinescript.arrayPop(idxArr);
-            pinescript.arrayPop(priceArr);
-          }
-        } else {
-          {
-            break;
-          }
-        }
+      let oldestIdx = pinescript.arrayGet(idxArr, (pinescript.arraySize(idxArr) - 1));
+      if (((bar_index - oldestIdx) > lbBars)) {
+        pinescript.arrayPop(idxArr);
+        pinescript.arrayPop(priceArr);
+      } else {
+        break;
       }
     }
     return 0;
@@ -1314,159 +1292,111 @@ function main() {
     let maxSlopeAtrPerBar = math.tan(((maxDeg * pinescript.math.pi) / 180));
     let maxRelDist = (safeAtr * maxRelAtrMult);
     if ((n >= needTouches)) {
-      {
-        let localBest = -10000000000;
-        for (let newer = 0; newer <= (n - 2); newer++) {
-          {
-            let p2Idx = pinescript.arrayGet(idxArr, newer);
-            let p2Price = pinescript.arrayGet(priceArr, newer);
-            if (((bar_index - p2Idx) > lbBars)) {
-              {
-                break;
-              }
-            }
-            for (let older = (newer + 1); older <= (n - 1); older++) {
-              {
-                let p1Idx = pinescript.arrayGet(idxArr, older);
-                let p1Price = pinescript.arrayGet(priceArr, older);
-                if (((bar_index - p1Idx) > lbBars)) {
-                  {
+      let localBest = -10000000000;
+      for (let newer = 0; newer <= (n - 2); newer++) {
+        let p2Idx = pinescript.arrayGet(idxArr, newer);
+        let p2Price = pinescript.arrayGet(priceArr, newer);
+        if (((bar_index - p2Idx) > lbBars)) {
+          break;
+        }
+        for (let older = (newer + 1); older <= (n - 1); older++) {
+          let p1Idx = pinescript.arrayGet(idxArr, older);
+          let p1Price = pinescript.arrayGet(priceArr, older);
+          if (((bar_index - p1Idx) > lbBars)) {
+            break;
+          }
+          let span = (p2Idx - p1Idx);
+          if ((span >= minSpan)) {
+            let slope = ((p2Price - p1Price) / span);
+            let slopeAtrPerBar = ((safeAtr > 0) ? (pinescript.abs(slope) / safeAtr) : 0);
+            if ((slopeAtrPerBar <= maxSlopeAtrPerBar)) {
+              let yNow = (p1Price + (slope * (bar_index - p1Idx)));
+              if ((pinescript.abs((close - yNow)) <= maxRelDist)) {
+                let touches = 0;
+                let violations = 0;
+                let errorSum = 0;
+                let touchedPoints = 0;
+                let eligible = (older + 1);
+                for (let k = 0; k <= (eligible - 1); k++) {
+                  let pIdx = pinescript.arrayGet(idxArr, k);
+                  let pPrice = pinescript.arrayGet(priceArr, k);
+                  let y = (p1Price + (slope * (pIdx - p1Idx)));
+                  let dev = (pPrice - y);
+                  let isTouch = (pinescript.abs(dev) <= touchTol);
+                  if (isTouch) {
+                    touches = (touches + 1);
+                    errorSum = (errorSum + pinescript.abs(dev));
+                    touchedPoints = (touchedPoints + 1);
+                  }
+                  let isViolation = (support ? (dev < -breakTol) : (dev > breakTol));
+                  if (isViolation) {
+                    violations = (violations + 1);
+                  }
+                  let remaining = ((eligible - 1) - k);
+                  if (((touches + remaining) < needTouches)) {
+                    break;
+                  }
+                  if ((violations > allowViol)) {
                     break;
                   }
                 }
-                let span = (p2Idx - p1Idx);
-                if ((span >= minSpan)) {
-                  {
-                    let slope = ((p2Price - p1Price) / span);
-                    let slopeAtrPerBar = ((safeAtr > 0) ? (pinescript.abs(slope) / safeAtr) : 0);
-                    if ((slopeAtrPerBar <= maxSlopeAtrPerBar)) {
-                      {
-                        let yNow = (p1Price + (slope * (bar_index - p1Idx)));
-                        if ((pinescript.abs((close - yNow)) <= maxRelDist)) {
-                          {
-                            let touches = 0;
-                            let violations = 0;
-                            let errorSum = 0;
-                            let touchedPoints = 0;
-                            let eligible = (older + 1);
-                            for (let k = 0; k <= (eligible - 1); k++) {
-                              {
-                                let pIdx = pinescript.arrayGet(idxArr, k);
-                                let pPrice = pinescript.arrayGet(priceArr, k);
-                                let y = (p1Price + (slope * (pIdx - p1Idx)));
-                                let dev = (pPrice - y);
-                                let isTouch = (pinescript.abs(dev) <= touchTol);
-                                if (isTouch) {
-                                  {
-                                    touches = (touches + 1);
-                                    errorSum = (errorSum + pinescript.abs(dev));
-                                    touchedPoints = (touchedPoints + 1);
-                                  }
-                                }
-                                let isViolation = (support ? (dev < -breakTol) : (dev > breakTol));
-                                if (isViolation) {
-                                  {
-                                    violations = (violations + 1);
-                                  }
-                                }
-                                let remaining = ((eligible - 1) - k);
-                                if (((touches + remaining) < needTouches)) {
-                                  {
-                                    break;
-                                  }
-                                }
-                                if ((violations > allowViol)) {
-                                  {
-                                    break;
-                                  }
-                                }
-                              }
-                            }
-                            let brokenNow = (support ? (close < (yNow - breakTol)) : (close > (yNow + breakTol)));
-                            if (brokenNow) {
-                              {
-                                violations = (violations + 2);
-                              }
-                            }
-                            if (((touches >= needTouches) && (violations <= allowViol))) {
-                              {
-                                let avgErr = ((touchedPoints > 0) ? (errorSum / touchedPoints) : touchTol);
-                                let recency = (1 - pinescript.min(((bar_index - p2Idx) / (lbBars * 1)), 1));
-                                let spanScore = pinescript.min((span / (lbBars * 1)), 1);
-                                let tightness = (1 - pinescript.min((avgErr / touchTol), 1));
-                                let slopePenalty = ((maxSlopeAtrPerBar > 0) ? (slopeAtrPerBar / maxSlopeAtrPerBar) : 0);
-                                let preScore = (touches * 2.8);
-                                preScore = (preScore + (recency * 1.2));
-                                preScore = (preScore + (spanScore * 1));
-                                preScore = (preScore + (tightness * 1.3));
-                                preScore = (preScore - (violations * 2.2));
-                                preScore = (preScore - (slopePenalty * 0.5));
-                                if ((preScore > localBest)) {
-                                  {
-                                    let scanLen = pinescript.min(barWindow, (bar_index - p1Idx));
-                                    let barSamples = 0;
-                                    let barBreaks = 0;
-                                    let maxSamples = ((scanLen / sampleStep) + 1);
-                                    let scanRejected = false;
-                                    let off = 0;
-                                    while ((off <= scanLen)) {
-                                      {
-                                        let yBar = (p1Price + (slope * ((bar_index - off) - p1Idx)));
-                                        let barBreak = (support ? (pinescript.offset(low, off) < (yBar - breakTol)) : (pinescript.offset(high, off) > (yBar + breakTol)));
-                                        barSamples = (barSamples + 1);
-                                        if (barBreak) {
-                                          {
-                                            barBreaks = (barBreaks + 1);
-                                          }
-                                        }
-                                        let minPossibleRatio = (barBreaks / (maxSamples * 1));
-                                        if ((minPossibleRatio > maxBarBreakRatio)) {
-                                          {
-                                            scanRejected = true;
-                                            break;
-                                          }
-                                        }
-                                        off = (off + sampleStep);
-                                      }
-                                    }
-                                    if (!scanRejected) {
-                                      {
-                                        let barBreakRatio = ((barSamples > 0) ? (barBreaks / (barSamples * 1)) : 1);
-                                        let finalViol = violations;
-                                        if ((barBreakRatio > maxBarBreakRatio)) {
-                                          {
-                                            finalViol = ((finalViol + allowViol) + 1);
-                                          }
-                                        } else {
-                                          {
-                                            finalViol = (finalViol + int(math.floor((barBreakRatio * 2))));
-                                          }
-                                        }
-                                        if ((finalViol <= allowViol)) {
-                                          {
-                                            let score = preScore;
-                                            score = (score - ((finalViol - violations) * 2.2));
-                                            score = (score - (barBreakRatio * 2));
-                                            if ((score > localBest)) {
-                                              {
-                                                localBest = score;
-                                                bestValid = true;
-                                                bestX1 = p1Idx;
-                                                bestY1 = p1Price;
-                                                bestX2 = p2Idx;
-                                                bestY2 = p2Price;
-                                                bestScore = score;
-                                              }
-                                            }
-                                          }
-                                        }
-                                      }
-                                    }
-                                  }
-                                }
-                              }
-                            }
-                          }
+                let brokenNow = (support ? (close < (yNow - breakTol)) : (close > (yNow + breakTol)));
+                if (brokenNow) {
+                  violations = (violations + 2);
+                }
+                if (((touches >= needTouches) && (violations <= allowViol))) {
+                  let avgErr = ((touchedPoints > 0) ? (errorSum / touchedPoints) : touchTol);
+                  let recency = (1 - pinescript.min(((bar_index - p2Idx) / (lbBars * 1)), 1));
+                  let spanScore = pinescript.min((span / (lbBars * 1)), 1);
+                  let tightness = (1 - pinescript.min((avgErr / touchTol), 1));
+                  let slopePenalty = ((maxSlopeAtrPerBar > 0) ? (slopeAtrPerBar / maxSlopeAtrPerBar) : 0);
+                  let preScore = (touches * 2.8);
+                  preScore = (preScore + (recency * 1.2));
+                  preScore = (preScore + (spanScore * 1));
+                  preScore = (preScore + (tightness * 1.3));
+                  preScore = (preScore - (violations * 2.2));
+                  preScore = (preScore - (slopePenalty * 0.5));
+                  if ((preScore > localBest)) {
+                    let scanLen = pinescript.min(barWindow, (bar_index - p1Idx));
+                    let barSamples = 0;
+                    let barBreaks = 0;
+                    let maxSamples = ((scanLen / sampleStep) + 1);
+                    let scanRejected = false;
+                    let off = 0;
+                    while ((off <= scanLen)) {
+                      let yBar = (p1Price + (slope * ((bar_index - off) - p1Idx)));
+                      let barBreak = (support ? (pinescript.offset(low, off) < (yBar - breakTol)) : (pinescript.offset(high, off) > (yBar + breakTol)));
+                      barSamples = (barSamples + 1);
+                      if (barBreak) {
+                        barBreaks = (barBreaks + 1);
+                      }
+                      let minPossibleRatio = (barBreaks / (maxSamples * 1));
+                      if ((minPossibleRatio > maxBarBreakRatio)) {
+                        scanRejected = true;
+                        break;
+                      }
+                      off = (off + sampleStep);
+                    }
+                    if (!scanRejected) {
+                      let barBreakRatio = ((barSamples > 0) ? (barBreaks / (barSamples * 1)) : 1);
+                      let finalViol = violations;
+                      if ((barBreakRatio > maxBarBreakRatio)) {
+                        finalViol = ((finalViol + allowViol) + 1);
+                      } else {
+                        finalViol = (finalViol + int(math.floor((barBreakRatio * 2))));
+                      }
+                      if ((finalViol <= allowViol)) {
+                        let score = preScore;
+                        score = (score - ((finalViol - violations) * 2.2));
+                        score = (score - (barBreakRatio * 2));
+                        if ((score > localBest)) {
+                          localBest = score;
+                          bestValid = true;
+                          bestX1 = p1Idx;
+                          bestY1 = p1Price;
+                          bestX2 = p2Idx;
+                          bestY2 = p2Price;
+                          bestScore = score;
                         }
                       }
                     }
@@ -1494,77 +1424,55 @@ function main() {
   let ph = ta.pivothigh(high, pivotLen, pivotLen);
   let pl = ta.pivotlow(low, pivotLen, pivotLen);
   if ((processEngine && !pinescript.na(pl))) {
-    {
-      f_store_pivot(state.lowPivotIdxs, state.lowPivotPrices, (bar_index - pivotLen), pl, true, pivotLen, pivotMemory);
-    }
+    f_store_pivot(state.lowPivotIdxs, state.lowPivotPrices, (bar_index - pivotLen), pl, true, pivotLen, pivotMemory);
   }
   if ((processEngine && !pinescript.na(ph))) {
-    {
-      f_store_pivot(state.highPivotIdxs, state.highPivotPrices, (bar_index - pivotLen), ph, false, pivotLen, pivotMemory);
-    }
+    f_store_pivot(state.highPivotIdxs, state.highPivotPrices, (bar_index - pivotLen), ph, false, pivotLen, pivotMemory);
   }
   if (processEngine) {
-    {
-      f_trim_lookback(state.lowPivotIdxs, state.lowPivotPrices, lookbackBars);
-      f_trim_lookback(state.highPivotIdxs, state.highPivotPrices, lookbackBars);
-    }
+    f_trim_lookback(state.lowPivotIdxs, state.lowPivotPrices, lookbackBars);
+    f_trim_lookback(state.highPivotIdxs, state.highPivotPrices, lookbackBars);
   }
   let [supValid, supX1, supY1, supX2, supY2, supScore] = f_find_best_line(state.lowPivotIdxs, state.lowPivotPrices, true, atrValue, lookbackBars, minAnchorBars, minTouches, maxViolations, touchTolATR, breakTolATR, maxSlopeDeg, maxRelevanceATR, BAR_SCAN_WINDOW, BAR_SCAN_STEP, maxBarViolRatio);
   let [resValid, resX1, resY1, resX2, resY2, resScore] = f_find_best_line(state.highPivotIdxs, state.highPivotPrices, false, atrValue, lookbackBars, minAnchorBars, minTouches, maxViolations, touchTolATR, breakTolATR, maxSlopeDeg, maxRelevanceATR, BAR_SCAN_WINDOW, BAR_SCAN_STEP, maxBarViolRatio);
   let supRight = null;
   if (supValid) {
-    {
-      supRight = f_line_y(supX1, supY1, supX2, supY2, (bar_index + extendBars));
-    }
+    supRight = f_line_y(supX1, supY1, supX2, supY2, (bar_index + extendBars));
   }
   let resRight = null;
   if (resValid) {
-    {
-      resRight = f_line_y(resX1, resY1, resX2, resY2, (bar_index + extendBars));
-    }
+    resRight = f_line_y(resX1, resY1, resX2, resY2, (bar_index + extendBars));
   }
   if (supValid) {
-    {
-      line.set_xy1(state.supportLine, supX1, supY1);
-      line.set_xy2(state.supportLine, (bar_index + extendBars), supRight);
-      line.set_color(state.supportLine, supportColor);
-      line.set_width(state.supportLine, lineWidth);
-      line.set_style(state.supportLine, line.style_solid);
-    }
+    line.set_xy1(state.supportLine, supX1, supY1);
+    line.set_xy2(state.supportLine, (bar_index + extendBars), supRight);
+    line.set_color(state.supportLine, supportColor);
+    line.set_width(state.supportLine, lineWidth);
+    line.set_style(state.supportLine, line.style_solid);
   } else {
-    {
-      line.set_xy1(state.supportLine, bar_index, close);
-      line.set_xy2(state.supportLine, (bar_index + 1), close);
-      line.set_color(state.supportLine, pinescript.color.new(supportColor, 100));
-    }
+    line.set_xy1(state.supportLine, bar_index, close);
+    line.set_xy2(state.supportLine, (bar_index + 1), close);
+    line.set_color(state.supportLine, pinescript.color.new(supportColor, 100));
   }
   if (resValid) {
-    {
-      line.set_xy1(state.resistanceLine, resX1, resY1);
-      line.set_xy2(state.resistanceLine, (bar_index + extendBars), resRight);
-      line.set_color(state.resistanceLine, resistColor);
-      line.set_width(state.resistanceLine, lineWidth);
-      line.set_style(state.resistanceLine, line.style_solid);
-    }
+    line.set_xy1(state.resistanceLine, resX1, resY1);
+    line.set_xy2(state.resistanceLine, (bar_index + extendBars), resRight);
+    line.set_color(state.resistanceLine, resistColor);
+    line.set_width(state.resistanceLine, lineWidth);
+    line.set_style(state.resistanceLine, line.style_solid);
   } else {
-    {
-      line.set_xy1(state.resistanceLine, bar_index, close);
-      line.set_xy2(state.resistanceLine, (bar_index + 1), close);
-      line.set_color(state.resistanceLine, pinescript.color.new(resistColor, 100));
-    }
+    line.set_xy1(state.resistanceLine, bar_index, close);
+    line.set_xy2(state.resistanceLine, (bar_index + 1), close);
+    line.set_color(state.resistanceLine, pinescript.color.new(resistColor, 100));
   }
   if (((showFill && supValid) && resValid)) {
-    {
-      let supNow = f_line_y(supX1, supY1, supX2, supY2, bar_index);
-      let resNow = f_line_y(resX1, resY1, resX2, resY2, bar_index);
-      let mid = ((supNow + resNow) * 0.5);
-      let fillColor = ((close >= mid) ? pinescript.color.new(supportColor, 92) : pinescript.color.new(resistColor, 92));
-      linefill.set_color(state.channelFill, fillColor);
-    }
+    let supNow = f_line_y(supX1, supY1, supX2, supY2, bar_index);
+    let resNow = f_line_y(resX1, resY1, resX2, resY2, bar_index);
+    let mid = ((supNow + resNow) * 0.5);
+    let fillColor = ((close >= mid) ? pinescript.color.new(supportColor, 92) : pinescript.color.new(resistColor, 92));
+    linefill.set_color(state.channelFill, fillColor);
   } else {
-    {
-      linefill.set_color(state.channelFill, pinescript.color.new(neutralColor, 100));
-    }
+    linefill.set_color(state.channelFill, pinescript.color.new(neutralColor, 100));
   }
 }
 

@@ -905,8 +905,8 @@ const pinescript = {
     const info = { ticker: 'AAPL', tickerid: 'NASDAQ:AAPL', prefix: 'NASDAQ', root: 'AAPL', suffix: '' };
     return info[type] || '';
   },
-  time: 1771040740915,
-  timenow: 1771040740915,
+  time: 1771178052615,
+  timenow: 1771178052615,
   barstate: "LAST",
   dividends: {},
   splits: {},
@@ -1238,21 +1238,15 @@ function main() {
   let cur_lower_wick = (pinescript.min(open, close) - low);
   let sum_range = 0;
   for (let i = 1; i <= mean_length; i++) {
-    {
-      sum_range = (sum_range + (pinescript.offset(high, i) - pinescript.offset(low, i)));
-    }
+    sum_range = (sum_range + (pinescript.offset(high, i) - pinescript.offset(low, i)));
   }
   let mean_prev_range = (sum_range / mean_length);
   let is_cur_range_big_enough = (!enable_mean_range || (cur_range >= mean_prev_range));
   let prev_dir = (prev_is_bull ? 1 : (prev_is_bear ? -1 : 0));
   let match = true;
   if ((same_prev_candles > 0)) {
-    {
-      for (let i = 2; i <= (same_prev_candles + 1); i++) {
-        {
-          match = (match && (((pinescript.offset(close, i) > pinescript.offset(open, i)) ? 1 : ((pinescript.offset(close, i) < pinescript.offset(open, i)) ? -1 : 0)) === prev_dir));
-        }
-      }
+    for (let i = 2; i <= (same_prev_candles + 1); i++) {
+      match = (match && (((pinescript.offset(close, i) > pinescript.offset(open, i)) ? 1 : ((pinescript.offset(close, i) < pinescript.offset(open, i)) ? -1 : 0)) === prev_dir));
     }
   }
   let last_n_same_as_prev = (!enable_prev_candles || ((prev_dir !== 0) && match));

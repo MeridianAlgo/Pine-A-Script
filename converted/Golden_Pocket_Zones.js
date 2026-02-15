@@ -905,8 +905,8 @@ const pinescript = {
     const info = { ticker: 'AAPL', tickerid: 'NASDAQ:AAPL', prefix: 'NASDAQ', root: 'AAPL', suffix: '' };
     return info[type] || '';
   },
-  time: 1771040623757,
-  timenow: 1771040623757,
+  time: 1771178051405,
+  timenow: 1771178051405,
   barstate: "LAST",
   dividends: {},
   splits: {},
@@ -1246,38 +1246,24 @@ function main() {
     let strengthPct = ((candleSize / adr) * 100);
     let strength = 0;
     if ((strengthPct >= 160)) {
-      {
-        strength = 10;
-      }
+      strength = 10;
     } else {
       if ((strengthPct >= 140)) {
-        {
-          strength = 9;
-        }
+        strength = 9;
       } else {
         if ((strengthPct >= 120)) {
-          {
-            strength = 8;
-          }
+          strength = 8;
         } else {
           if ((strengthPct >= 100)) {
-            {
-              strength = 7;
-            }
+            strength = 7;
           } else {
             if ((strengthPct >= 80)) {
-              {
-                strength = 6;
-              }
+              strength = 6;
             } else {
               if ((strengthPct >= 60)) {
-                {
-                  strength = 5;
-                }
+                strength = 5;
               } else {
-                {
-                  strength = 4;
-                }
+                strength = 4;
               }
             }
           }
@@ -1287,226 +1273,156 @@ function main() {
     return strength;
   }
   if (((dailyTime !== state.lastDailyTime) && !pinescript.na(dailyTime))) {
-    {
-      state.lastDailyTime = dailyTime;
-      if ((!pinescript.na(adr10) && (adr10 > 0))) {
-        {
-          state.currentADR10 = adr10;
-        }
-      }
-      if (!pinescript.na(state.lastDailyStartBar)) {
-        {
-          pinescript.arrayUnshift(state.dailyBars, state.lastDailyStartBar);
-        }
-      }
-      state.lastDailyStartBar = bar_index;
-      pinescript.arrayUnshift(state.dailyHighs, dailyHigh);
-      pinescript.arrayUnshift(state.dailyLows, dailyLow);
-      pinescript.arrayUnshift(state.dailyADRs, adr10);
-      if ((pinescript.arraySize(state.dailyHighs) > lookbackDays)) {
-        {
-          pinescript.arrayPop(state.dailyHighs);
-          pinescript.arrayPop(state.dailyLows);
-          pinescript.arrayPop(state.dailyBars);
-          pinescript.arrayPop(state.dailyADRs);
-        }
-      }
-      pinescript.arrayClear(state.zones);
-      let fixedZoneHeight = (!pinescript.na(state.currentADR10) ? ((state.currentADR10 * (zoneHeightPct / 100)) / 2) : 0);
-      let tempZones = pinescript.arrayNew();
-      let arraySize = pinescript.arraySize(state.dailyHighs);
-      let barsArraySize = pinescript.arraySize(state.dailyBars);
-      if (((arraySize > 0) && (fixedZoneHeight > 0))) {
-        {
-          for (let i = 0; i <= (arraySize - 1); i++) {
-            {
-              let dayHigh = pinescript.arrayGet(state.dailyHighs, i);
-              let dayLow = pinescript.arrayGet(state.dailyLows, i);
-              let dayBar = ((i < barsArraySize) ? pinescript.arrayGet(state.dailyBars, i) : bar_index);
-              let dayADR = pinescript.arrayGet(state.dailyADRs, i);
-              if ((((!pinescript.na(dayHigh) && !pinescript.na(dayLow)) && !pinescript.na(dayADR)) && (dayADR > 0))) {
-                {
-                  let candleSize = (dayHigh - dayLow);
-                  let candleSizePct = ((candleSize / dayADR) * 100);
-                  if ((candleSizePct >= minCandleSizePct)) {
-                    {
-                      let [upper, lower, range] = calcGoldenPocket(dayHigh, dayLow, fixedZoneHeight);
-                      strength = calcStrength(candleSize, dayADR);
-                      let newZone = ZoneData.new(upper, lower, dayBar, i, strength);
-                      pinescript.arrayPush(tempZones, newZone);
-                    }
-                  }
-                }
-              }
-            }
+    state.lastDailyTime = dailyTime;
+    if ((!pinescript.na(adr10) && (adr10 > 0))) {
+      state.currentADR10 = adr10;
+    }
+    if (!pinescript.na(state.lastDailyStartBar)) {
+      pinescript.arrayUnshift(state.dailyBars, state.lastDailyStartBar);
+    }
+    state.lastDailyStartBar = bar_index;
+    pinescript.arrayUnshift(state.dailyHighs, dailyHigh);
+    pinescript.arrayUnshift(state.dailyLows, dailyLow);
+    pinescript.arrayUnshift(state.dailyADRs, adr10);
+    if ((pinescript.arraySize(state.dailyHighs) > lookbackDays)) {
+      pinescript.arrayPop(state.dailyHighs);
+      pinescript.arrayPop(state.dailyLows);
+      pinescript.arrayPop(state.dailyBars);
+      pinescript.arrayPop(state.dailyADRs);
+    }
+    pinescript.arrayClear(state.zones);
+    let fixedZoneHeight = (!pinescript.na(state.currentADR10) ? ((state.currentADR10 * (zoneHeightPct / 100)) / 2) : 0);
+    let tempZones = pinescript.arrayNew();
+    let arraySize = pinescript.arraySize(state.dailyHighs);
+    let barsArraySize = pinescript.arraySize(state.dailyBars);
+    if (((arraySize > 0) && (fixedZoneHeight > 0))) {
+      for (let i = 0; i <= (arraySize - 1); i++) {
+        let dayHigh = pinescript.arrayGet(state.dailyHighs, i);
+        let dayLow = pinescript.arrayGet(state.dailyLows, i);
+        let dayBar = ((i < barsArraySize) ? pinescript.arrayGet(state.dailyBars, i) : bar_index);
+        let dayADR = pinescript.arrayGet(state.dailyADRs, i);
+        if ((((!pinescript.na(dayHigh) && !pinescript.na(dayLow)) && !pinescript.na(dayADR)) && (dayADR > 0))) {
+          let candleSize = (dayHigh - dayLow);
+          let candleSizePct = ((candleSize / dayADR) * 100);
+          if ((candleSizePct >= minCandleSizePct)) {
+            let [upper, lower, range] = calcGoldenPocket(dayHigh, dayLow, fixedZoneHeight);
+            strength = calcStrength(candleSize, dayADR);
+            let newZone = ZoneData.new(upper, lower, dayBar, i, strength);
+            pinescript.arrayPush(tempZones, newZone);
           }
-          let tempZonesSize = pinescript.arraySize(tempZones);
-          if ((tempZonesSize > 0)) {
-            {
-              let mergedIndices = pinescript.arrayNew();
-              for (let i = 0; i <= (tempZonesSize - 1); i++) {
-                {
-                  pinescript.arrayPush(mergedIndices, false);
-                }
-              }
-              for (let i = 0; i <= (tempZonesSize - 1); i++) {
-                {
-                  if (!pinescript.arrayGet(mergedIndices, i)) {
-                    {
-                      let zone1 = pinescript.arrayGet(tempZones, i);
-                      if (((i + 1) < tempZonesSize)) {
-                        {
-                          for (let j = (i + 1); j <= (tempZonesSize - 1); j++) {
-                            {
-                              if (!pinescript.arrayGet(mergedIndices, j)) {
-                                {
-                                  let zone2 = pinescript.arrayGet(tempZones, j);
-                                  if (zonesOverlap(zone1.upper, zone1.lower, zone2.upper, zone2.lower)) {
-                                    {
-                                      let [mergedUpper, mergedLower] = mergeZones(zone1.upper, zone1.lower, zone2.upper, zone2.lower);
-                                      zone1.upper = mergedUpper;
-                                      zone1.lower = mergedLower;
-                                      zone1.age = pinescript.max(zone1.age, zone2.age);
-                                      zone1.strength = pinescript.max(zone1.strength, zone2.strength);
-                                      zone1.startBar = pinescript.min(zone1.startBar, zone2.startBar);
-                                      pinescript.arraySet(mergedIndices, j, true);
-                                    }
-                                  }
-                                }
-                              }
-                            }
-                          }
-                        }
-                      }
-                      pinescript.arrayPush(state.zones, zone1);
-                    }
+        }
+      }
+      let tempZonesSize = pinescript.arraySize(tempZones);
+      if ((tempZonesSize > 0)) {
+        let mergedIndices = pinescript.arrayNew();
+        for (let i = 0; i <= (tempZonesSize - 1); i++) {
+          pinescript.arrayPush(mergedIndices, false);
+        }
+        for (let i = 0; i <= (tempZonesSize - 1); i++) {
+          if (!pinescript.arrayGet(mergedIndices, i)) {
+            let zone1 = pinescript.arrayGet(tempZones, i);
+            if (((i + 1) < tempZonesSize)) {
+              for (let j = (i + 1); j <= (tempZonesSize - 1); j++) {
+                if (!pinescript.arrayGet(mergedIndices, j)) {
+                  let zone2 = pinescript.arrayGet(tempZones, j);
+                  if (zonesOverlap(zone1.upper, zone1.lower, zone2.upper, zone2.lower)) {
+                    let [mergedUpper, mergedLower] = mergeZones(zone1.upper, zone1.lower, zone2.upper, zone2.lower);
+                    zone1.upper = mergedUpper;
+                    zone1.lower = mergedLower;
+                    zone1.age = pinescript.max(zone1.age, zone2.age);
+                    zone1.strength = pinescript.max(zone1.strength, zone2.strength);
+                    zone1.startBar = pinescript.min(zone1.startBar, zone2.startBar);
+                    pinescript.arraySet(mergedIndices, j, true);
                   }
                 }
               }
             }
+            pinescript.arrayPush(state.zones, zone1);
           }
         }
       }
     }
   }
   if ((barstate.islast && (pinescript.arraySize(state.zones) > 0))) {
-    {
-      if ((pinescript.arraySize(box.all) > 0)) {
-        {
-          for (const existingBox of box.all) {
-            {
-              box.delete(existingBox);
-            }
+    if ((pinescript.arraySize(box.all) > 0)) {
+      for (const existingBox of box.all) {
+        box.delete(existingBox);
+      }
+    }
+    if ((pinescript.arraySize(label.all) > 0)) {
+      for (const existingLabel of label.all) {
+        pinescript.labelDelete(existingLabel);
+      }
+    }
+    let minDist = 999999;
+    let maxDist = 0;
+    for (let i = 0; i <= (pinescript.arraySize(state.zones) - 1); i++) {
+      let zone = pinescript.arrayGet(state.zones, i);
+      if (!pinescript.na(zone)) {
+        let distanceInPrice = 0;
+        if ((close > zone.upper)) {
+          distanceInPrice = (close - zone.upper);
+        } else {
+          if ((close < zone.lower)) {
+            distanceInPrice = (zone.lower - close);
+          } else {
+            let distToUpper = (zone.upper - close);
+            let distToLower = (close - zone.lower);
+            distanceInPrice = pinescript.min(distToUpper, distToLower);
           }
         }
+        let pipSize = ((syminfo.type === "forex") ? ((syminfo.currency === "JPY") ? 0.01 : 0.0001) : 0.01);
+        let distancePips = (distanceInPrice / pipSize);
+        minDist = pinescript.min(minDist, distancePips);
+        maxDist = pinescript.max(maxDist, distancePips);
       }
-      if ((pinescript.arraySize(label.all) > 0)) {
-        {
-          for (const existingLabel of label.all) {
-            {
-              pinescript.labelDelete(existingLabel);
-            }
+    }
+    for (let i = (pinescript.arraySize(state.zones) - 1); i <= 0; i++) {
+      zone = pinescript.arrayGet(state.zones, i);
+      if (!pinescript.na(zone)) {
+        distanceInPrice = 0;
+        if ((close > zone.upper)) {
+          distanceInPrice = (close - zone.upper);
+        } else {
+          if ((close < zone.lower)) {
+            distanceInPrice = (zone.lower - close);
+          } else {
+            distToUpper = (zone.upper - close);
+            distToLower = (close - zone.lower);
+            distanceInPrice = pinescript.min(distToUpper, distToLower);
           }
         }
-      }
-      let minDist = 999999;
-      let maxDist = 0;
-      for (let i = 0; i <= (pinescript.arraySize(state.zones) - 1); i++) {
-        {
-          let zone = pinescript.arrayGet(state.zones, i);
-          if (!pinescript.na(zone)) {
-            {
-              let distanceInPrice = 0;
-              if ((close > zone.upper)) {
-                {
-                  distanceInPrice = (close - zone.upper);
-                }
-              } else {
-                if ((close < zone.lower)) {
-                  {
-                    distanceInPrice = (zone.lower - close);
-                  }
-                } else {
-                  {
-                    let distToUpper = (zone.upper - close);
-                    let distToLower = (close - zone.lower);
-                    distanceInPrice = pinescript.min(distToUpper, distToLower);
-                  }
-                }
-              }
-              let pipSize = ((syminfo.type === "forex") ? ((syminfo.currency === "JPY") ? 0.01 : 0.0001) : 0.01);
-              let distancePips = (distanceInPrice / pipSize);
-              minDist = pinescript.min(minDist, distancePips);
-              maxDist = pinescript.max(maxDist, distancePips);
+        pipSize = ((syminfo.type === "forex") ? ((syminfo.currency === "JPY") ? 0.01 : 0.0001) : 0.01);
+        distancePips = (distanceInPrice / pipSize);
+        let normalizedDist = ((maxDist > minDist) ? ((distancePips - minDist) / (maxDist - minDist)) : 0.5);
+        let r = 255;
+        let g = pinescript.round((215 - ((215 - 140) * normalizedDist)));
+        let b = pinescript.round(0);
+        let heatmapColor = pinescript.color.new(pinescript.color.rgb(r, g, b), 20);
+        let maxLookback = pinescript.min(2000, bar_index);
+        let safeStartBar = pinescript.max(zone.startBar, (bar_index - maxLookback));
+        let boxId = box.new(({ left: safeStartBar, top: zone.upper, right: (bar_index + 50), bottom: zone.lower, border_color: pinescript.color.new(heatmapColor, 70), border_width: 1, bgcolor: heatmapColor, extend: extend.right }));
+        if (showLabels) {
+          let ageText = ((zone.age === 0) ? "TODAY" : (pinescript.strToString(zone.age) + " DAYS"));
+          let strengthText = (pinescript.strToString(zone.strength, "#") + "/10");
+          distanceInPrice = 0;
+          if ((close > zone.upper)) {
+            distanceInPrice = (close - zone.upper);
+          } else {
+            if ((close < zone.lower)) {
+              distanceInPrice = (zone.lower - close);
+            } else {
+              distToUpper = (zone.upper - close);
+              distToLower = (close - zone.lower);
+              distanceInPrice = pinescript.min(distToUpper, distToLower);
             }
           }
-        }
-      }
-      for (let i = (pinescript.arraySize(state.zones) - 1); i <= 0; i++) {
-        {
-          zone = pinescript.arrayGet(state.zones, i);
-          if (!pinescript.na(zone)) {
-            {
-              distanceInPrice = 0;
-              if ((close > zone.upper)) {
-                {
-                  distanceInPrice = (close - zone.upper);
-                }
-              } else {
-                if ((close < zone.lower)) {
-                  {
-                    distanceInPrice = (zone.lower - close);
-                  }
-                } else {
-                  {
-                    distToUpper = (zone.upper - close);
-                    distToLower = (close - zone.lower);
-                    distanceInPrice = pinescript.min(distToUpper, distToLower);
-                  }
-                }
-              }
-              pipSize = ((syminfo.type === "forex") ? ((syminfo.currency === "JPY") ? 0.01 : 0.0001) : 0.01);
-              distancePips = (distanceInPrice / pipSize);
-              let normalizedDist = ((maxDist > minDist) ? ((distancePips - minDist) / (maxDist - minDist)) : 0.5);
-              let r = 255;
-              let g = pinescript.round((215 - ((215 - 140) * normalizedDist)));
-              let b = pinescript.round(0);
-              let heatmapColor = pinescript.color.new(pinescript.color.rgb(r, g, b), 20);
-              let maxLookback = pinescript.min(2000, bar_index);
-              let safeStartBar = pinescript.max(zone.startBar, (bar_index - maxLookback));
-              let boxId = box.new(({ left: safeStartBar, top: zone.upper, right: (bar_index + 50), bottom: zone.lower, border_color: pinescript.color.new(heatmapColor, 70), border_width: 1, bgcolor: heatmapColor, extend: extend.right }));
-              if (showLabels) {
-                {
-                  let ageText = ((zone.age === 0) ? "TODAY" : (pinescript.strToString(zone.age) + " DAYS"));
-                  let strengthText = (pinescript.strToString(zone.strength, "#") + "/10");
-                  distanceInPrice = 0;
-                  if ((close > zone.upper)) {
-                    {
-                      distanceInPrice = (close - zone.upper);
-                    }
-                  } else {
-                    if ((close < zone.lower)) {
-                      {
-                        distanceInPrice = (zone.lower - close);
-                      }
-                    } else {
-                      {
-                        distToUpper = (zone.upper - close);
-                        distToLower = (close - zone.lower);
-                        distanceInPrice = pinescript.min(distToUpper, distToLower);
-                      }
-                    }
-                  }
-                  pipSize = ((syminfo.type === "forex") ? ((syminfo.currency === "JPY") ? 0.01 : 0.0001) : 0.01);
-                  distancePips = (distanceInPrice / pipSize);
-                  let distanceText = (pinescript.strToString(pinescript.round(distancePips)) + " PIPS");
-                  let labelText = ((((("GOLDEN POCKET ||| AGE " + ageText) + " ||| STRENGTH ") + strengthText) + " ||| DISTANCE ") + distanceText);
-                  let labelY = ((zone.upper + zone.lower) / 2);
-                  pinescript.labelNew(({ x: (bar_index + 25), y: labelY, text: labelText, color: pinescript.color.new(pinescript.color.black, 100), textcolor: textColor, size: pinescript.size.large, style: label.style_label_center, xloc: xloc.bar_index }));
-                }
-              }
-            }
-          }
+          pipSize = ((syminfo.type === "forex") ? ((syminfo.currency === "JPY") ? 0.01 : 0.0001) : 0.01);
+          distancePips = (distanceInPrice / pipSize);
+          let distanceText = (pinescript.strToString(pinescript.round(distancePips)) + " PIPS");
+          let labelText = ((((("GOLDEN POCKET ||| AGE " + ageText) + " ||| STRENGTH ") + strengthText) + " ||| DISTANCE ") + distanceText);
+          let labelY = ((zone.upper + zone.lower) / 2);
+          pinescript.labelNew(({ x: (bar_index + 25), y: labelY, text: labelText, color: pinescript.color.new(pinescript.color.black, 100), textcolor: textColor, size: pinescript.size.large, style: label.style_label_center, xloc: xloc.bar_index }));
         }
       }
     }

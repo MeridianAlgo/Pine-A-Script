@@ -905,8 +905,8 @@ const pinescript = {
     const info = { ticker: 'AAPL', tickerid: 'NASDAQ:AAPL', prefix: 'NASDAQ', root: 'AAPL', suffix: '' };
     return info[type] || '';
   },
-  time: 1771040741458,
-  timenow: 1771040741458,
+  time: 1771178053447,
+  timenow: 1771178053447,
   barstate: "LAST",
   dividends: {},
   splits: {},
@@ -1232,16 +1232,12 @@ function main() {
   let band_transparency = input.int(90, "Band Transparency", ({ minval: 0, maxval: 100, group: state.visual_settings, tooltip: tooltip_band_transparency }));
   let enable_barcolor = input.bool(true, "Enable Bar Coloring", ({ group: state.visual_settings, tooltip: tooltip_enable_barcolor }));
   if ((preset_config === "Fast Response")) {
-    {
-      vwma_length = 21;
-      atr_multiplier = 1.2;
-    }
+    vwma_length = 21;
+    atr_multiplier = 1.2;
   } else {
     if ((preset_config === "Smooth Trend")) {
-      {
-        vwma_length = 55;
-        atr_multiplier = 2;
-      }
+      vwma_length = 55;
+      atr_multiplier = 2;
     }
   }
   [bullish_input, bearish_input];
@@ -1257,14 +1253,10 @@ function main() {
   let lower_band = (vwma_basis - (atr_value * atr_multiplier));
   if (state.trend_direction === undefined) state.trend_direction = 0;
   if ((close > upper_band)) {
-    {
-      state.trend_direction = 1;
-    }
+    state.trend_direction = 1;
   } else {
     if ((close < lower_band)) {
-      {
-        state.trend_direction = -1;
-      }
+      state.trend_direction = -1;
     }
   }
   let trend_turned_bullish = ((state.trend_direction === 1) && (pinescript.offset(state.trend_direction, 1) !== 1));

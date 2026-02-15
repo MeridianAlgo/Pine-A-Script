@@ -905,8 +905,8 @@ const pinescript = {
     const info = { ticker: 'AAPL', tickerid: 'NASDAQ:AAPL', prefix: 'NASDAQ', root: 'AAPL', suffix: '' };
     return info[type] || '';
   },
-  time: 1771040740483,
-  timenow: 1771040740483,
+  time: 1771178051964,
+  timenow: 1771178051964,
   barstate: "LAST",
   dividends: {},
   splits: {},
@@ -1217,11 +1217,9 @@ function main() {
   let net = 0;
   let netDollars = 0;
   if (!pinescript.na(fp)) {
-    {
-      buy = fp.buy_volume();
-      sell = fp.sell_volume();
-      fpChange = (buy - sell);
-    }
+    buy = fp.buy_volume();
+    sell = fp.sell_volume();
+    fpChange = (buy - sell);
   }
   close;
   ((high + low) / 2);
@@ -1231,15 +1229,11 @@ function main() {
   close;
   let price = ((priceCalc === "Close") ? undefined : ((priceCalc === "Open") ? undefined : ((priceCalc === "(Open + Close) / 2") ? undefined : ((priceCalc === "(High + Low + Open + Close) / 4") ? undefined : ((priceCalc === "(High + Low) / 2") ? undefined : undefined)))));
   if ((bar_index === 1)) {
-    {
-      net = 0;
-      netDollars = 0;
-    }
+    net = 0;
+    netDollars = 0;
   } else {
-    {
-      net = (pinescript.offset(net, 1) + fpChange);
-      netDollars = (pinescript.offset(netDollars, 1) + (fpChange * price));
-    }
+    net = (pinescript.offset(net, 1) + fpChange);
+    netDollars = (pinescript.offset(netDollars, 1) + (fpChange * price));
   }
   let deltaColor = ((fpChange >= 0) ? pinescript.color.green : pinescript.color.red);
   pinescript.plot(((dataType === "Volume") ? net : null), "Net Vol", ({ color: pinescript.color.aqua, style: plot.style_stepline, linewidth: 2 }));

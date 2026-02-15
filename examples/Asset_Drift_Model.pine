@@ -1,0 +1,338 @@
+//@version=6
+// (c) EdgeTools | Asset Drift Model
+
+indicator("Asset Drift Model", shorttitle="ADM", overlay=false, max_bars_back=800)
+
+// Parameters
+HORIZON = 60
+SAMPLE_TOTAL = 756
+MIN_OBS_STRICT = 10
+MIN_OBS_ROBUST = 20
+T_CRIT_95 = 2.00
+T_CRIT_90 = 1.65
+MIN_DRIFT_ECON = 0.03
+MAX_DEV_SD = 1.5
+SIGN_Z_CRIT = 1.65
+ANN_FACTOR = 252.0 / HORIZON
+
+// Inputs
+i_bgMode    = input.string("On", "Background", options=["Off", "On"], group="Display", tooltip="Background color based on drift classification")
+i_bgInt     = input.int(75, "BG Intensity", minval=70, maxval=95, group="Display", tooltip="Transparency of background color")
+i_barColor  = input.bool(true, "Bar Coloring", group="Display", tooltip="Color bars based on drift direction")
+i_showDash  = input.bool(true, "Dashboard", group="Dashboard", tooltip="Show statistical details panel")
+i_dashPos   = input.string("Top Right", "Position", options=["Top Right", "Top Left", "Bottom Right", "Bottom Left"], group="Dashboard")
+i_dashSize  = input.string("Small", "Size", options=["Tiny", "Small", "Normal"], group="Dashboard", tooltip="Text size of dashboard")
+i_showWM    = input.bool(true, "Watermark", group="Watermark", tooltip="Show ticker and classification summary")
+i_wmPos     = input.string("Bottom Right", "Position", options=["Top Right", "Top Left", "Bottom Right", "Bottom Left"], group="Watermark")
+i_wmSize    = input.string("Normal", "Size", options=["Small", "Normal", "Large"], group="Watermark", tooltip="Text size of watermark")
+i_dark      = input.bool(true, "Dark Mode", group="Style", tooltip="Optimize colors for dark charts")
+i_alerts    = input.bool(false, "Alerts", group="Alerts", tooltip="Trigger alerts on classification changes")
+
+// Colors
+cBull = i_dark ? #22c55e : #16a34a
+cBear = i_dark ? #ef4444 : #dc2626
+cWeak = i_dark ? #f59e0b : #d97706
+cNeut = i_dark ? #737373 : #525252
+cPrim = i_dark ? #3b82f6 : #2563eb
+cText = i_dark ? #fafafa : #0a0a0a
+cTblBg = i_dark ? #171717 : #f5f5f5
+cHdrBg = i_dark ? #262626 : #e5e5e5
+
+// Helpers
+f_pos(p) => p == "Top Right" ? position.top_right : p == "Top Left" ? position.top_left : p == "Bottom Right" ? position.bottom_right : position.bottom_left
+
+f_size(s) => s == "Tiny" ? size.tiny : s == "Small" ? size.small : s == "Normal" ? size.normal : s == "Large" ? size.large : size.small
+
+dashSizeH = f_size(i_dashSize == "Tiny" ? "Small" : i_dashSize)
+dashSizeD = f_size(i_dashSize)
+dashSizeF = f_size(i_dashSize == "Normal" ? "Small" : "Tiny")
+
+wmSizeT = f_size(i_wmSize == "Small" ? "Normal" : i_wmSize == "Normal" ? "Large" : "Large")
+wmSizeM = f_size(i_wmSize)
+wmSizeS = f_size(i_wmSize == "Large" ? "Small" : "Tiny")
+
+f_median(arr) =>
+    n = array.size(arr)
+    if n == 0
+        0.0
+    else
+        s = array.copy(arr)
+        array.sort(s)
+        m = n / 2
+        n % 2 == 0 ? (array.get(s, m-1) + array.get(s, m)) / 2 : array.get(s, m)
+
+// Non-overlapping returns
+f_collectAllReturns(src, horizon, maxBars) =>
+    var float[] arr = array.new_float(0)
+    array.clear(arr)
+    nPeriods = math.floor(maxBars / horizon)
+    for i = 0 to nPeriods - 1
+        recentBar = i * horizon
+        pastBar = (i + 1) * horizon
+        if pastBar <= maxBars
+            pRecent = nz(src[recentBar], src)
+            pPast = nz(src[pastBar], src)
+            if pPast > 0 and pRecent > 0
+                array.push(arr, math.log(pRecent / pPast))
+    arr
+
+f_arrayStats(arr) =>
+    n = array.size(arr)
+    if n < 3
+        [0.0, 0.0, 0.0, 0, 0]
+    else
+        mean = array.avg(arr)
+        med = f_median(arr)
+        sumSq = 0.0
+        posCount = 0
+        for i = 0 to n - 1
+            v = array.get(arr, i)
+            sumSq += (v - mean) * (v - mean)
+            if v > 0
+                posCount += 1
+        sd = math.sqrt(sumSq / (n - 1))
+        [mean, med, sd, n, posCount]
+
+f_hacSE(arr, mean) =>
+    n = array.size(arr)
+    if n < 3
+        0.0
+    else
+        g0 = 0.0
+        for i = 0 to n - 1
+            d = array.get(arr, i) - mean
+            g0 += d * d
+        g0 := g0 / n
+        g1 = 0.0
+        for i = 1 to n - 1
+            di = array.get(arr, i) - mean
+            dj = array.get(arr, i - 1) - mean
+            g1 += di * dj
+        g1 := g1 / n
+        hV = g0 + g1
+        math.sqrt(math.max(hV / n, 1e-14))
+
+f_splitArray(arr, isFirstHalf) =>
+    n = array.size(arr)
+    var float[] result = array.new_float(0)
+    array.clear(result)
+    if n < 2
+        result
+    else
+        halfN = math.floor(n / 2)
+        if isFirstHalf
+            for i = 0 to halfN - 1
+                array.push(result, array.get(arr, i))
+        else
+            for i = halfN to n - 1
+                array.push(result, array.get(arr, i))
+        result
+
+f_vrTest(src, horizon, k, sampleBars) =>
+    arr1 = f_collectAllReturns(src, horizon, sampleBars)
+    arrK = f_collectAllReturns(src, horizon * k, sampleBars)
+    [m1, md1, sd1, n1, pc1] = f_arrayStats(arr1)
+    [mK, mdK, sdK, nK, pcK] = f_arrayStats(arrK)
+    if sd1 < 1e-10 or n1 < MIN_OBS_STRICT or nK < 3
+        [1.0, 0.0, false]
+    else
+        var1 = sd1 * sd1
+        varK = sdK * sdK
+        vr = varK / (k * var1)
+        vrSE = math.sqrt(2.0 * (2*k - 1) * (k - 1) / (3.0 * k * nK))
+        zVR = vrSE > 1e-10 ? math.abs(vr - 1.0) / vrSE : 0.0
+        vrSig = zVR > T_CRIT_90
+        [vr, zVR, vrSig]
+
+f_mde(sd, n, tCrit) =>
+    n < MIN_OBS_STRICT or sd <= 0 ? na : (sd / math.sqrt(n)) * tCrit * ANN_FACTOR
+
+f_signTestZ(posCount, n) =>
+    n < MIN_OBS_STRICT ? 0.0 : (float(posCount) - float(n)/2) / math.sqrt(float(n)/4)
+
+// Calculations
+allReturns = f_collectAllReturns(close, HORIZON, SAMPLE_TOTAL)
+[mF, mdF, sdF, nF, pcF] = f_arrayStats(allReturns)
+seF = f_hacSE(allReturns, mF)
+tF = seF > 1e-10 ? mF / seF : 0.0
+
+arr1 = f_splitArray(allReturns, true)
+arr2 = f_splitArray(allReturns, false)
+
+[m1, md1, sd1, n1, pc1] = f_arrayStats(arr1)
+se1 = f_hacSE(arr1, m1)
+t1 = se1 > 1e-10 ? m1 / se1 : 0.0
+
+[m2, md2, sd2, n2, pc2] = f_arrayStats(arr2)
+se2 = f_hacSE(arr2, m2)
+t2 = se2 > 1e-10 ? m2 / se2 : 0.0
+
+[vr, zVR, vrSig] = f_vrTest(close, HORIZON, 5, SAMPLE_TOTAL)
+mde95 = f_mde(sdF, nF, T_CRIT_95)
+annDrift = mF * ANN_FACTOR
+zSign = f_signTestZ(pcF, nF)
+hitRate = nF > 0 ? float(pcF) / float(nF) : 0.5
+
+// Inference
+inferenceAllowed = nF >= MIN_OBS_STRICT and n1 >= math.floor(MIN_OBS_STRICT/2) and n2 >= math.floor(MIN_OBS_STRICT/2)
+isRobust = nF >= MIN_OBS_ROBUST
+
+// Checks
+statSig = inferenceAllowed and math.abs(tF) > T_CRIT_95
+econSig = inferenceAllowed and math.abs(annDrift) >= MIN_DRIFT_ECON
+powerOK = inferenceAllowed and (na(mde95) ? false : math.abs(annDrift) >= mde95)
+medianSig = inferenceAllowed and math.abs(zSign) > SIGN_Z_CRIT
+medianDir = zSign > 0 ? 1 : zSign < 0 ? -1 : 0
+meanDir = mF > 0 ? 1 : mF < 0 ? -1 : 0
+signTestOK = inferenceAllowed and (not medianSig or medianDir == meanDir)
+meanMedOK = inferenceAllowed and ((mF > 0 and mdF > 0) or (mF < 0 and mdF < 0) or math.abs(mF) < 1e-10)
+sameSignMean = (m1 > 0 and m2 > 0) or (m1 < 0 and m2 < 0)
+pooledSD = math.sqrt((sd1*sd1 + sd2*sd2) / 2)
+levelDevSD = pooledSD > 1e-10 ? math.abs(m1 - m2) / pooledSD : 0.0
+levelOK = levelDevSD <= MAX_DEV_SD
+sameSignT = (t1 > 0 and t2 > 0 and tF > 0) or (t1 < 0 and t2 < 0 and tF < 0)
+structOK = inferenceAllowed and sameSignMean and levelOK and sameSignT
+isMeanRev = vr < 1.0 and vrSig
+vrOK = inferenceAllowed and not isMeanRev
+
+// Classification
+direction = mF > 0 ? 1 : mF < 0 ? -1 : 0
+var string classReason = ""
+var int classCode = 0
+
+if not inferenceAllowed
+    classCode := 0
+    classReason := "n<" + str.tostring(MIN_OBS_STRICT)
+else if not powerOK
+    classCode := 0
+    classReason := "power"
+else if not statSig
+    classCode := 0
+    classReason := "t<" + str.tostring(T_CRIT_95, "#.#")
+else if not signTestOK
+    classCode := 0
+    classReason := "signtest"
+else if not meanMedOK
+    classCode := 0
+    classReason := "median"
+else if not structOK
+    classCode := 0
+    classReason := not sameSignMean ? "sign(m)" : not sameSignT ? "sign(t)" : "level"
+else if not vrOK
+    classCode := 0
+    classReason := "mean-rev"
+else if not econSig
+    classCode := 1
+    classReason := "<" + str.tostring(MIN_DRIFT_ECON * 100, "#") + "%"
+else
+    classCode := 2
+    classReason := ""
+
+strongEvidence = classCode == 2
+weakEvidence = classCode == 1
+classification = classCode == 2 ? direction * 2 : classCode == 1 ? direction : 0
+
+// Strings
+evidenceStr = strongEvidence ? "STRONG" : weakEvidence ? "WEAK" : "NONE"
+biasStr = classification == 2 ? "Positive Drift" : classification == -2 ? "Negative Drift" : classification == 1 ? "Positive (weak)" : classification == -1 ? "Negative (weak)" : "No Drift"
+regimeStr = isMeanRev ? "Mean-Rev" : "Neutral"
+
+// Visuals
+color bgClr = na
+if i_bgMode == "On"
+    bgClr := classification >= 2 ? cBull : classification <= -2 ? cBear : math.abs(classification) == 1 ? cWeak : na
+bgcolor(i_bgMode == "On" ? color.new(bgClr, i_bgInt) : na)
+
+cBarLong  = #22c55e
+cBarShort = #ef4444
+cBarNeut  = #a3a3a3
+color barClr = na
+if i_barColor
+    barClr := classification >= 2 ? cBarLong : classification <= -2 ? cBarShort : math.abs(classification) == 1 ? (direction > 0 ? cBarLong : cBarShort) : cBarNeut
+barcolor(barClr)
+
+// Watermark
+var table wm = table.new(f_pos(i_wmPos), 1, 5, bgcolor=color.new(color.black, 100))
+if i_showWM and barstate.islast
+    evClr = not inferenceAllowed ? cNeut : strongEvidence ? cBull : weakEvidence ? cWeak : cNeut
+    wmClr = color.new(i_dark ? color.white : color.black, 30)
+    table.cell(wm, 0, 0, syminfo.ticker, text_color=wmClr, text_size=wmSizeT, text_halign=text.align_right)
+    table.cell(wm, 0, 1, (inferenceAllowed ? "t=" + str.tostring(tF, "#.##") : "n<" + str.tostring(MIN_OBS_STRICT)) + " | n=" + str.tostring(nF), text_color=wmClr, text_size=wmSizeS, text_halign=text.align_right)
+    table.cell(wm, 0, 2, evidenceStr + (classReason != "" ? " (" + classReason + ")" : ""), text_color=evClr, text_size=wmSizeM, text_halign=text.align_right)
+    table.cell(wm, 0, 3, biasStr, text_color=evClr, text_size=wmSizeM, text_halign=text.align_right)
+    table.cell(wm, 0, 4, isRobust ? "" : "Heuristic (n<20)", text_color=color.new(cWeak, 30), text_size=wmSizeS, text_halign=text.align_right)
+
+// Dashboard
+if i_showDash and barstate.islast
+    var table d = table.new(f_pos(i_dashPos), 2, 18, border_width=1, bgcolor=color.new(cTblBg, 80))
+    hB = color.new(cHdrBg, 20)
+    evClr = not inferenceAllowed ? cNeut : strongEvidence ? cBull : weakEvidence ? cWeak : cNeut
+    
+    table.cell(d, 0, 0, "ADM", text_color=cText, bgcolor=hB, text_size=dashSizeH)
+    table.cell(d, 1, 0, "Retrospective", text_color=color.new(cText, 50), bgcolor=hB, text_size=dashSizeF)
+    
+    table.cell(d, 0, 1, "Classification", text_color=cText, bgcolor=color.new(evClr, 80), text_size=dashSizeH)
+    table.cell(d, 1, 1, biasStr, text_color=evClr, bgcolor=color.new(evClr, 80), text_size=dashSizeH)
+    
+    table.cell(d, 0, 2, "Evidence", text_color=cText, bgcolor=color.new(evClr, 90), text_size=dashSizeD)
+    table.cell(d, 1, 2, evidenceStr + (classReason != "" ? " (" + classReason + ")" : ""), text_color=evClr, bgcolor=color.new(evClr, 90), text_size=dashSizeD)
+    
+    infClr = inferenceAllowed ? cBull : cBear
+    table.cell(d, 0, 3, "Inference", text_color=cText, bgcolor=color.new(infClr, 90), text_size=dashSizeD)
+    table.cell(d, 1, 3, inferenceAllowed ? (isRobust ? "Allowed" : "Heuristic") : "Blocked", text_color=infClr, bgcolor=color.new(infClr, 90), text_size=dashSizeD)
+    
+    tClr = statSig ? cBull : cNeut
+    table.cell(d, 0, 4, "t(full) n=" + str.tostring(nF), text_color=cText, bgcolor=color.new(tClr, 90), text_size=dashSizeD)
+    table.cell(d, 1, 4, str.tostring(tF, "#.##") + (statSig ? "**" : ""), text_color=tClr, bgcolor=color.new(tClr, 90), text_size=dashSizeD)
+    
+    t1Clr = t1 > 0 ? cBull : cBear
+    table.cell(d, 0, 5, "t(H1) n=" + str.tostring(n1), text_color=cText, bgcolor=color.new(t1Clr, 90), text_size=dashSizeD)
+    table.cell(d, 1, 5, str.tostring(t1, "#.##"), text_color=t1Clr, bgcolor=color.new(t1Clr, 90), text_size=dashSizeD)
+    
+    t2Clr = t2 > 0 ? cBull : cBear
+    table.cell(d, 0, 6, "t(H2) n=" + str.tostring(n2), text_color=cText, bgcolor=color.new(t2Clr, 90), text_size=dashSizeD)
+    table.cell(d, 1, 6, str.tostring(t2, "#.##"), text_color=t2Clr, bgcolor=color.new(t2Clr, 90), text_size=dashSizeD)
+    
+    table.cell(d, 0, 7, "Power", text_color=cText, bgcolor=color.new(powerOK ? cBull : cBear, 90), text_size=dashSizeD)
+    table.cell(d, 1, 7, powerOK ? "OK" : "MDE:" + (na(mde95) ? "N/A" : str.tostring(mde95*100, "#") + "%"), text_color=powerOK ? cBull : cBear, bgcolor=color.new(powerOK ? cBull : cBear, 90), text_size=dashSizeD)
+    
+    table.cell(d, 0, 8, "Sign Test", text_color=cText, bgcolor=color.new(signTestOK ? cBull : cBear, 90), text_size=dashSizeD)
+    table.cell(d, 1, 8, "z=" + str.tostring(zSign, "#.#") + (medianSig ? "*" : ""), text_color=signTestOK ? cBull : cBear, bgcolor=color.new(signTestOK ? cBull : cBear, 90), text_size=dashSizeD)
+    
+    table.cell(d, 0, 9, "Mean=Median", text_color=cText, bgcolor=color.new(meanMedOK ? cBull : cBear, 90), text_size=dashSizeD)
+    table.cell(d, 1, 9, meanMedOK ? "Yes" : "No", text_color=meanMedOK ? cBull : cBear, bgcolor=color.new(meanMedOK ? cBull : cBear, 90), text_size=dashSizeD)
+    
+    table.cell(d, 0, 10, "Struct(m)", text_color=cText, bgcolor=color.new(sameSignMean and levelOK ? cBull : cBear, 90), text_size=dashSizeD)
+    table.cell(d, 1, 10, (sameSignMean ? "+" : "-") + " lv:" + str.tostring(levelDevSD, "#.#") + "sd", text_color=sameSignMean and levelOK ? cBull : cBear, bgcolor=color.new(sameSignMean and levelOK ? cBull : cBear, 90), text_size=dashSizeD)
+    
+    table.cell(d, 0, 11, "Struct(t)", text_color=cText, bgcolor=color.new(sameSignT ? cBull : cBear, 90), text_size=dashSizeD)
+    table.cell(d, 1, 11, sameSignT ? "Consistent" : "Conflict", text_color=sameSignT ? cBull : cBear, bgcolor=color.new(sameSignT ? cBull : cBear, 90), text_size=dashSizeD)
+    
+    table.cell(d, 0, 12, "VR Test", text_color=cText, bgcolor=color.new(vrOK ? cBull : cBear, 90), text_size=dashSizeD)
+    table.cell(d, 1, 12, str.tostring(vr, "#.##") + " z=" + str.tostring(zVR, "#.#") + (vrSig ? "*" : ""), text_color=vrOK ? cBull : cBear, bgcolor=color.new(vrOK ? cBull : cBear, 90), text_size=dashSizeD)
+    
+    table.cell(d, 0, 13, "Econ. Sig.", text_color=cText, bgcolor=color.new(econSig ? cBull : cWeak, 90), text_size=dashSizeD)
+    table.cell(d, 1, 13, econSig ? "Yes" : "<" + str.tostring(MIN_DRIFT_ECON*100, "#") + "%", text_color=econSig ? cBull : cWeak, bgcolor=color.new(econSig ? cBull : cWeak, 90), text_size=dashSizeD)
+    
+    dClr = annDrift > 0 ? cBull : cBear
+    table.cell(d, 0, 14, "Drift (ann.)", text_color=cText, bgcolor=color.new(dClr, 90), text_size=dashSizeD)
+    table.cell(d, 1, 14, str.tostring(annDrift * 100, "#.#") + "%", text_color=dClr, bgcolor=color.new(dClr, 90), text_size=dashSizeD)
+    
+    table.cell(d, 0, 15, "Regime", text_color=cText, bgcolor=color.new(cPrim, 90), text_size=dashSizeD)
+    table.cell(d, 1, 15, regimeStr, text_color=cPrim, bgcolor=color.new(cPrim, 90), text_size=dashSizeD)
+    
+    table.cell(d, 0, 16, "H=" + str.tostring(HORIZON), text_color=color.new(cText, 50), bgcolor=color.new(cNeut, 95), text_size=dashSizeF)
+    table.cell(d, 1, 16, "MinN=" + str.tostring(MIN_OBS_STRICT), text_color=color.new(cText, 50), bgcolor=color.new(cNeut, 95), text_size=dashSizeF)
+    
+    table.cell(d, 0, 17, "**p<.05 *p<.10", text_color=color.new(cText, 50), bgcolor=color.new(cNeut, 95), text_size=dashSizeF)
+    table.cell(d, 1, 17, isRobust ? "" : "Heuristic", text_color=color.new(cWeak, 30), bgcolor=color.new(cNeut, 95), text_size=dashSizeF)
+
+// Alerts
+changed = classification != classification[1]
+if changed and i_alerts
+    alert("ADM: " + biasStr + " (" + evidenceStr + ")", alert.freq_once_per_bar)
+
+alertcondition(strongEvidence and direction > 0, "Positive Drift", "Positive Drift detected")
+alertcondition(strongEvidence and direction < 0, "Negative Drift", "Negative Drift detected")
+alertcondition(weakEvidence, "Weak", "Weak evidence")
+alertcondition(not inferenceAllowed, "Blocked", "Inference blocked")

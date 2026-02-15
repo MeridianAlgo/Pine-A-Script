@@ -905,8 +905,8 @@ const pinescript = {
     const info = { ticker: 'AAPL', tickerid: 'NASDAQ:AAPL', prefix: 'NASDAQ', root: 'AAPL', suffix: '' };
     return info[type] || '';
   },
-  time: 1771178051687,
-  timenow: 1771178051687,
+  time: 1771178050970,
+  timenow: 1771178050970,
   barstate: "LAST",
   dividends: {},
   splits: {},
@@ -1192,7 +1192,6 @@ pinescript.table = {
 
 // Input parameters
 
-const OrderBlock = { new: function(top, bottom, startTime, strength, isBullish, boxId, labelId, mitigated) { return { top: top, bottom: bottom, startTime: startTime, strength: strength, isBullish: isBullish, boxId: boxId, labelId: labelId, mitigated: mitigated }; } };
 
 // Main script logic
 
@@ -1207,189 +1206,325 @@ function main() {
   volume = pinescript.asSeries(globalThis.volume);
   time = pinescript.asSeries(globalThis.time);
   null;
-  // Study: Institutional Order Flow Strength Classifier [LuxAlgo]
-  // Options: {"overlay":true,"max_boxes_count":100,"max_labels_count":100}
-  let BULL_COLOR = pinescript.color.hex("#089981");
-  let BEAR_COLOR = pinescript.color.hex("#f23645");
-  let TEXT_COLOR = chart.fg_color;
-  let OB_GROUP = "Order Block Settings";
-  let pivotLenInput = input.int(5, "Pivot Lookback", ({ minval: 2, group: OB_GROUP }));
-  let maxOBsInput = input.int(5, "Max Unmitigated OBs", ({ minval: 1, maxval: 50, group: OB_GROUP }));
-  let VIS_GROUP = "Visualization";
-  let bullColorInput = input.color(pinescript.color.new(BULL_COLOR, 80), "Bullish OB Color", ({ group: VIS_GROUP }));
-  let bearColorInput = input.color(pinescript.color.new(BEAR_COLOR, 80), "Bearish OB Color", ({ group: VIS_GROUP }));
-  let hideOverlappedInput = input.bool(true, "Hide Overlapped Zones", ({ group: VIS_GROUP }));
-  let showLabelsInput = input.bool(true, "Show Strength Labels", ({ group: VIS_GROUP }));
-  let showStrongestInput = input.bool(true, "Show Strongest OB Plot", ({ group: VIS_GROUP }));
-  let bufferSizeInput = input.int(5, "Strongest OB Buffer Size", ({ minval: 1, maxval: 100, group: VIS_GROUP }));
-  function calculateStrength(obRange, breakoutDist, relVol) {
-    let dispFactor = pinescript.min((breakoutDist / (obRange * 5)), 1);
-    let volFactor = pinescript.min((relVol / 2), 1);
-    let score = (((dispFactor * 0.6) + (volFactor * 0.4)) * 100);
-    return pinescript.round(score, 1);
+  // Study: Asset Drift Model
+  // Options: {"shorttitle":"ADM","overlay":false,"max_bars_back":800}
+  let HORIZON = 60;
+  let SAMPLE_TOTAL = 756;
+  let MIN_OBS_STRICT = 10;
+  let MIN_OBS_ROBUST = 20;
+  let T_CRIT_95 = 2;
+  let T_CRIT_90 = 1.65;
+  let MIN_DRIFT_ECON = 0.03;
+  let MAX_DEV_SD = 1.5;
+  let SIGN_Z_CRIT = 1.65;
+  let ANN_FACTOR = (252 / HORIZON);
+  let i_bgMode = input.string("On", "Background", ({ options: ["Off", "On"], group: "Display", tooltip: "Background color based on drift classification" }));
+  let i_bgInt = input.int(75, "BG Intensity", ({ minval: 70, maxval: 95, group: "Display", tooltip: "Transparency of background color" }));
+  let i_barColor = input.bool(true, "Bar Coloring", ({ group: "Display", tooltip: "Color bars based on drift direction" }));
+  let i_showDash = input.bool(true, "Dashboard", ({ group: "Dashboard", tooltip: "Show statistical details panel" }));
+  let i_dashPos = input.string("Top Right", "Position", ({ options: ["Top Right", "Top Left", "Bottom Right", "Bottom Left"], group: "Dashboard" }));
+  let i_dashSize = input.string("Small", "Size", ({ options: ["Tiny", "Small", "Normal"], group: "Dashboard", tooltip: "Text size of dashboard" }));
+  let i_showWM = input.bool(true, "Watermark", ({ group: "Watermark", tooltip: "Show ticker and classification summary" }));
+  let i_wmPos = input.string("Bottom Right", "Position", ({ options: ["Top Right", "Top Left", "Bottom Right", "Bottom Left"], group: "Watermark" }));
+  let i_wmSize = input.string("Normal", "Size", ({ options: ["Small", "Normal", "Large"], group: "Watermark", tooltip: "Text size of watermark" }));
+  let i_dark = input.bool(true, "Dark Mode", ({ group: "Style", tooltip: "Optimize colors for dark charts" }));
+  let i_alerts = input.bool(false, "Alerts", ({ group: "Alerts", tooltip: "Trigger alerts on classification changes" }));
+  let cBull = (i_dark ? pinescript.color.hex("#22c55e") : pinescript.color.hex("#16a34a"));
+  let cBear = (i_dark ? pinescript.color.hex("#ef4444") : pinescript.color.hex("#dc2626"));
+  let cWeak = (i_dark ? pinescript.color.hex("#f59e0b") : pinescript.color.hex("#d97706"));
+  let cNeut = (i_dark ? pinescript.color.hex("#737373") : pinescript.color.hex("#525252"));
+  let cPrim = (i_dark ? pinescript.color.hex("#3b82f6") : pinescript.color.hex("#2563eb"));
+  let cText = (i_dark ? pinescript.color.hex("#fafafa") : pinescript.color.hex("#0a0a0a"));
+  let cTblBg = (i_dark ? pinescript.color.hex("#171717") : pinescript.color.hex("#f5f5f5"));
+  let cHdrBg = (i_dark ? pinescript.color.hex("#262626") : pinescript.color.hex("#e5e5e5"));
+  function f_pos(p) {
+    return ((p === "Top Right") ? pinescript.position.top_right : ((p === "Top Left") ? pinescript.position.top_left : ((p === "Bottom Right") ? pinescript.position.bottom_right : pinescript.position.bottom_left)));
   }
-  if (state.obArray === undefined) state.obArray = pinescript.arrayNew();
-  let volSMA = pinescript.sma(volume, 20);
-  let hi = ta.pivothigh(pivotLenInput, pivotLenInput);
-  let lo = ta.pivotlow(pivotLenInput, pivotLenInput);
-  if (state.lastHi === undefined) state.lastHi = null;
-  if (state.lastLo === undefined) state.lastLo = null;
-  if (state.lastHiIdx === undefined) state.lastHiIdx = null;
-  if (state.lastLoIdx === undefined) state.lastLoIdx = null;
-  if (!pinescript.na(hi)) {
-    state.lastHi = hi;
-    state.lastHiIdx = (bar_index - pivotLenInput);
+  function f_size(s) {
+    return ((s === "Tiny") ? pinescript.size.tiny : ((s === "Small") ? pinescript.size.small : ((s === "Normal") ? pinescript.size.normal : ((s === "Large") ? pinescript.size.large : pinescript.size.small))));
   }
-  if (!pinescript.na(lo)) {
-    state.lastLo = lo;
-    state.lastLoIdx = (bar_index - pivotLenInput);
-  }
-  let bullBOS = pinescript.cross(close, state.lastHi);
-  let bearBOS = pinescript.cross(close, state.lastLo);
-  if ((bullBOS || bearBOS)) {
-    let searchLen = (bar_index - (bullBOS ? state.lastHiIdx : state.lastLoIdx));
-    let obTop = null;
-    let obBtm = null;
-    let obIdx = null;
-    let obVol = null;
-    if (bullBOS) {
-      let minLow = null;
-      for (let i = 1; i <= searchLen; i++) {
-        if ((pinescript.offset(close, i) < pinescript.offset(open, i))) {
-          if ((pinescript.na(minLow) || (pinescript.offset(low, i) < minLow))) {
-            minLow = pinescript.offset(low, i);
-            obTop = pinescript.offset(high, i);
-            obBtm = pinescript.offset(low, i);
-            obIdx = i;
-            obVol = pinescript.offset(volume, i);
-          }
-        }
-      }
-      state.lastHi = null;
+  let dashSizeH = f_size(((i_dashSize === "Tiny") ? "Small" : i_dashSize));
+  let dashSizeD = f_size(i_dashSize);
+  let dashSizeF = f_size(((i_dashSize === "Normal") ? "Small" : "Tiny"));
+  let wmSizeT = f_size(((i_wmSize === "Small") ? "Normal" : ((i_wmSize === "Normal") ? "Large" : "Large")));
+  let wmSizeM = f_size(i_wmSize);
+  let wmSizeS = f_size(((i_wmSize === "Large") ? "Small" : "Tiny"));
+  function f_median(arr) {
+    let n = pinescript.arraySize(arr);
+    if ((n === 0)) {
+      0;
     } else {
-      let maxHigh = null;
-      for (let i = 1; i <= searchLen; i++) {
-        if ((pinescript.offset(close, i) > pinescript.offset(open, i))) {
-          if ((pinescript.na(maxHigh) || (pinescript.offset(high, i) > maxHigh))) {
-            maxHigh = pinescript.offset(high, i);
-            obTop = pinescript.offset(high, i);
-            obBtm = pinescript.offset(low, i);
-            obIdx = i;
-            obVol = pinescript.offset(volume, i);
-          }
-        }
-      }
-      state.lastLo = null;
-    }
-    if (!pinescript.na(obIdx)) {
-      let obHeight = (obTop - obBtm);
-      let breakoutDist = (bullBOS ? (close - obTop) : (obBtm - close));
-      let avgVol = pinescript.offset(volSMA, obIdx);
-      let strength = calculateStrength(obHeight, breakoutDist, (obVol / avgVol));
-      let newOB = OrderBlock.new(obTop, obBtm, pinescript.offset(time, obIdx), strength, bullBOS, null, null, false);
-      pinescript.arrayUnshift(state.obArray, newOB);
+      let s = array.copy(arr);
+      pinescript.arraySort(s);
+      let m = (n / 2);
+      (((n % 2) === 0) ? ((pinescript.arrayGet(s, (m - 1)) + pinescript.arrayGet(s, m)) / 2) : pinescript.arrayGet(s, m));
     }
   }
-  if ((pinescript.arraySize(state.obArray) > 0)) {
-    for (let i = 0; i <= (pinescript.arraySize(state.obArray) - 1); i++) {
-      let ob = pinescript.arrayGet(state.obArray, i);
-      if (!ob.mitigated) {
-        let isMitigated = (ob.isBullish ? (low < ob.bottom) : (high > ob.top));
-        if (isMitigated) {
-          ob.mitigated = true;
+  function f_collectAllReturns(src, horizon, maxBars) {
+    if (state.arr === undefined) state.arr = pinescript.arrayNew(0);
+    pinescript.arrayClear(state.arr);
+    let nPeriods = math.floor((maxBars / horizon));
+    for (let i = 0; i <= (nPeriods - 1); i++) {
+      let recentBar = (i * horizon);
+      let pastBar = ((i + 1) * horizon);
+      if ((pastBar <= maxBars)) {
+        let pRecent = pinescript.nz(pinescript.offset(src, recentBar), src);
+        let pPast = pinescript.nz(pinescript.offset(src, pastBar), src);
+        if (((pPast > 0) && (pRecent > 0))) {
+          pinescript.arrayPush(state.arr, math.log((pRecent / pPast)));
         }
       }
     }
+    return state.arr;
   }
-  let strongestTop = null;
-  let strongestBottom = null;
-  let strongestAvgPrice = null;
-  let strongestIsBullish = false;
-  let maxStrength = -1;
-  if ((pinescript.arraySize(state.obArray) > 0)) {
-    let checkedCount = 0;
-    for (let i = 0; i <= (pinescript.arraySize(state.obArray) - 1); i++) {
-      let ob = pinescript.arrayGet(state.obArray, i);
-      if (!ob.mitigated) {
-        if ((ob.strength > maxStrength)) {
-          maxStrength = ob.strength;
-          strongestTop = ob.top;
-          strongestBottom = ob.bottom;
-          strongestAvgPrice = ((ob.top + ob.bottom) / 2);
-          strongestIsBullish = ob.isBullish;
-        }
-        checkedCount += 1;
-        if ((checkedCount >= bufferSizeInput)) {
-          break;
+  function f_arrayStats(arr) {
+    n = pinescript.arraySize(state.arr);
+    if ((n < 3)) {
+      [0, 0, 0, 0, 0];
+    } else {
+      let mean = pinescript.arrayAvg(state.arr);
+      let med = f_median(state.arr);
+      let sumSq = 0;
+      let posCount = 0;
+      for (let i = 0; i <= (n - 1); i++) {
+        let v = pinescript.arrayGet(state.arr, i);
+        sumSq += ((v - mean) * (v - mean));
+        if ((v > 0)) {
+          posCount += 1;
         }
       }
+      let sd = pinescript.sqrt((sumSq / (n - 1)));
+      [mean, med, sd, n, posCount];
     }
   }
-  let plotCol = (pinescript.na(strongestAvgPrice) ? null : (strongestIsBullish ? bullColorInput : bearColorInput));
-  let hasChanged = (strongestAvgPrice !== pinescript.offset(strongestAvgPrice, 1));
-  let plotTop = pinescript.plot((showStrongestInput ? strongestTop : null), "Strongest OB Top", ({ color: (hasChanged ? null : pinescript.color.new(plotCol, 70)) }));
-  let plotBtm = pinescript.plot((showStrongestInput ? strongestBottom : null), "Strongest OB Bottom", ({ color: (hasChanged ? null : pinescript.color.new(plotCol, 70)) }));
-  pinescript.fill(plotTop, plotBtm, (hasChanged ? null : pinescript.color.new(plotCol, 90)), "Strongest OB Zone Fill");
-  pinescript.plot((showStrongestInput ? strongestAvgPrice : null), "Strongest OB Median", ({ color: (hasChanged ? null : pinescript.color.new(plotCol, 40)), linewidth: 2 }));
-  if (barstate.islast) {
-    let activeCount = 0;
-    if (state.occupiedTops === undefined) state.occupiedTops = pinescript.arrayNew(0);
-    if (state.occupiedBtms === undefined) state.occupiedBtms = pinescript.arrayNew(0);
-    pinescript.arrayClear(state.occupiedTops);
-    pinescript.arrayClear(state.occupiedBtms);
-    if ((pinescript.arraySize(state.obArray) > 0)) {
-      for (let i = 0; i <= (pinescript.arraySize(state.obArray) - 1); i++) {
-        let ob = pinescript.arrayGet(state.obArray, i);
-        let isOverlapped = false;
-        if (((!ob.mitigated && hideOverlappedInput) && (pinescript.arraySize(state.occupiedTops) > 0))) {
-          for (let j = 0; j <= (pinescript.arraySize(state.occupiedTops) - 1); j++) {
-            let otherTop = pinescript.arrayGet(state.occupiedTops, j);
-            let otherBtm = pinescript.arrayGet(state.occupiedBtms, j);
-            if (((((ob.top <= otherTop) && (ob.top >= otherBtm)) || ((ob.bottom <= otherTop) && (ob.bottom >= otherBtm))) || ((ob.top >= otherTop) && (ob.bottom <= otherBtm)))) {
-              isOverlapped = true;
-              break;
-            }
-          }
-        }
-        if (((!ob.mitigated && !isOverlapped) && (activeCount < maxOBsInput))) {
-          activeCount += 1;
-          pinescript.arrayPush(state.occupiedTops, ob.top);
-          pinescript.arrayPush(state.occupiedBtms, ob.bottom);
-          let obCol = (ob.isBullish ? bullColorInput : bearColorInput);
-          let labelCol = (ob.isBullish ? BULL_COLOR : BEAR_COLOR);
-          if (pinescript.na(ob.boxId)) {
-            ob.boxId = box.new(ob.startTime, ob.top, time, ob.bottom, ({ bgcolor: obCol, border_color: obCol, border_style: line.style_dashed, xloc: xloc.bar_time }));
-          }
-          if (showLabelsInput) {
-            if (pinescript.na(ob.labelId)) {
-              ob.labelId = pinescript.labelNew(time, ((ob.top + ob.bottom) / 2), ({ text: str.format("{0}%", ob.strength), style: label.style_label_left, textcolor: labelCol, color: pinescript.color.hex("#00000000"), size: pinescript.size.small, textalign: pinescript.text.align_center, xloc: xloc.bar_time }));
-            }
-          }
-        } else {
-          if (!pinescript.na(ob.boxId)) {
-            box.delete(ob.boxId);
-            ob.boxId = null;
-          }
-          if (!pinescript.na(ob.labelId)) {
-            pinescript.labelDelete(ob.labelId);
-            ob.labelId = null;
-          }
-        }
+  function f_hacSE(arr, mean) {
+    n = pinescript.arraySize(state.arr);
+    if ((n < 3)) {
+      0;
+    } else {
+      let g0 = 0;
+      for (let i = 0; i <= (n - 1); i++) {
+        let d = (pinescript.arrayGet(state.arr, i) - mean);
+        g0 += (d * d);
       }
+      g0 = (g0 / n);
+      let g1 = 0;
+      for (let i = 1; i <= (n - 1); i++) {
+        let di = (pinescript.arrayGet(state.arr, i) - mean);
+        let dj = (pinescript.arrayGet(state.arr, (i - 1)) - mean);
+        g1 += (di * dj);
+      }
+      g1 = (g1 / n);
+      let hV = (g0 + g1);
+      pinescript.sqrt(pinescript.max((hV / n), 1e-14));
     }
   }
-  if ((pinescript.arraySize(state.obArray) > 100)) {
-    for (let i = (pinescript.arraySize(state.obArray) - 1); i <= 0; i++) {
-      let ob = pinescript.arrayGet(state.obArray, i);
-      if ((ob.mitigated && (pinescript.arraySize(state.obArray) > 50))) {
-        pinescript.arrayRemove(state.obArray, i);
+  function f_splitArray(arr, isFirstHalf) {
+    n = pinescript.arraySize(state.arr);
+    if (state.result === undefined) state.result = pinescript.arrayNew(0);
+    pinescript.arrayClear(state.result);
+    if ((n < 2)) {
+      state.result;
+    } else {
+      let halfN = math.floor((n / 2));
+      if (isFirstHalf) {
+        for (let i = 0; i <= (halfN - 1); i++) {
+          pinescript.arrayPush(state.result, pinescript.arrayGet(state.arr, i));
+        }
       } else {
-        if ((pinescript.arraySize(state.obArray) > 100)) {
-          pinescript.arrayPop(state.obArray);
+        for (let i = halfN; i <= (n - 1); i++) {
+          pinescript.arrayPush(state.result, pinescript.arrayGet(state.arr, i));
+        }
+      }
+      state.result;
+    }
+  }
+  function f_vrTest(src, horizon, k, sampleBars) {
+    let arr1 = f_collectAllReturns(src, horizon, sampleBars);
+    let arrK = f_collectAllReturns(src, (horizon * k), sampleBars);
+    let [m1, md1, sd1, n1, pc1] = f_arrayStats(arr1);
+    let [mK, mdK, sdK, nK, pcK] = f_arrayStats(arrK);
+    if ((((sd1 < 1e-10) || (n1 < MIN_OBS_STRICT)) || (nK < 3))) {
+      [1, 0, false];
+    } else {
+      let var1 = (sd1 * sd1);
+      let varK = (sdK * sdK);
+      let vr = (varK / (k * var1));
+      let vrSE = pinescript.sqrt((((2 * ((2 * k) - 1)) * (k - 1)) / ((3 * k) * nK)));
+      let zVR = ((vrSE > 1e-10) ? (pinescript.abs((vr - 1)) / vrSE) : 0);
+      let vrSig = (zVR > T_CRIT_90);
+      [vr, zVR, vrSig];
+    }
+  }
+  function f_mde(sd, n, tCrit) {
+    return (((n < MIN_OBS_STRICT) || (sd <= 0)) ? null : (((sd / pinescript.sqrt(n)) * tCrit) * ANN_FACTOR));
+  }
+  function f_signTestZ(posCount, n) {
+    return ((n < MIN_OBS_STRICT) ? 0 : ((float(posCount) - (float(n) / 2)) / pinescript.sqrt((float(n) / 4))));
+  }
+  let allReturns = f_collectAllReturns(close, HORIZON, SAMPLE_TOTAL);
+  let [mF, mdF, sdF, nF, pcF] = f_arrayStats(allReturns);
+  let seF = f_hacSE(allReturns, mF);
+  let tF = ((seF > 1e-10) ? (mF / seF) : 0);
+  arr1 = f_splitArray(allReturns, true);
+  let arr2 = f_splitArray(allReturns, false);
+  [m1, md1, sd1, n1, pc1] = f_arrayStats(arr1);
+  let se1 = f_hacSE(arr1, m1);
+  let t1 = ((se1 > 1e-10) ? (m1 / se1) : 0);
+  let [m2, md2, sd2, n2, pc2] = f_arrayStats(arr2);
+  let se2 = f_hacSE(arr2, m2);
+  let t2 = ((se2 > 1e-10) ? (m2 / se2) : 0);
+  [vr, zVR, vrSig] = f_vrTest(close, HORIZON, 5, SAMPLE_TOTAL);
+  let mde95 = f_mde(sdF, nF, T_CRIT_95);
+  let annDrift = (mF * ANN_FACTOR);
+  let zSign = f_signTestZ(pcF, nF);
+  let hitRate = ((nF > 0) ? (float(pcF) / float(nF)) : 0.5);
+  let inferenceAllowed = (((nF >= MIN_OBS_STRICT) && (n1 >= math.floor((MIN_OBS_STRICT / 2)))) && (n2 >= math.floor((MIN_OBS_STRICT / 2))));
+  let isRobust = (nF >= MIN_OBS_ROBUST);
+  let statSig = (inferenceAllowed && (pinescript.abs(tF) > T_CRIT_95));
+  let econSig = (inferenceAllowed && (pinescript.abs(annDrift) >= MIN_DRIFT_ECON));
+  let powerOK = (inferenceAllowed && (pinescript.na(mde95) ? false : (pinescript.abs(annDrift) >= mde95)));
+  let medianSig = (inferenceAllowed && (pinescript.abs(zSign) > SIGN_Z_CRIT));
+  let medianDir = ((zSign > 0) ? 1 : ((zSign < 0) ? -1 : 0));
+  let meanDir = ((mF > 0) ? 1 : ((mF < 0) ? -1 : 0));
+  let signTestOK = (inferenceAllowed && (!medianSig || (medianDir === meanDir)));
+  let meanMedOK = (inferenceAllowed && ((((mF > 0) && (mdF > 0)) || ((mF < 0) && (mdF < 0))) || (pinescript.abs(mF) < 1e-10)));
+  let sameSignMean = (((m1 > 0) && (m2 > 0)) || ((m1 < 0) && (m2 < 0)));
+  let pooledSD = pinescript.sqrt((((sd1 * sd1) + (sd2 * sd2)) / 2));
+  let levelDevSD = ((pooledSD > 1e-10) ? (pinescript.abs((m1 - m2)) / pooledSD) : 0);
+  let levelOK = (levelDevSD <= MAX_DEV_SD);
+  let sameSignT = ((((t1 > 0) && (t2 > 0)) && (tF > 0)) || (((t1 < 0) && (t2 < 0)) && (tF < 0)));
+  let structOK = (((inferenceAllowed && sameSignMean) && levelOK) && sameSignT);
+  let isMeanRev = ((vr < 1) && vrSig);
+  let vrOK = (inferenceAllowed && !isMeanRev);
+  let direction = ((mF > 0) ? 1 : ((mF < 0) ? -1 : 0));
+  if (state.classReason === undefined) state.classReason = "";
+  if (state.classCode === undefined) state.classCode = 0;
+  if (!inferenceAllowed) {
+    state.classCode = 0;
+    state.classReason = ("n<" + pinescript.strToString(MIN_OBS_STRICT));
+  } else {
+    if (!powerOK) {
+      state.classCode = 0;
+      state.classReason = "power";
+    } else {
+      if (!statSig) {
+        state.classCode = 0;
+        state.classReason = ("t<" + pinescript.strToString(T_CRIT_95, "#.#"));
+      } else {
+        if (!signTestOK) {
+          state.classCode = 0;
+          state.classReason = "signtest";
+        } else {
+          if (!meanMedOK) {
+            state.classCode = 0;
+            state.classReason = "median";
+          } else {
+            if (!structOK) {
+              state.classCode = 0;
+              state.classReason = (!sameSignMean ? "sign(m)" : (!sameSignT ? "sign(t)" : "level"));
+            } else {
+              if (!vrOK) {
+                state.classCode = 0;
+                state.classReason = "mean-rev";
+              } else {
+                if (!econSig) {
+                  state.classCode = 1;
+                  state.classReason = (("<" + pinescript.strToString((MIN_DRIFT_ECON * 100), "#")) + "%");
+                } else {
+                  state.classCode = 2;
+                  state.classReason = "";
+                }
+              }
+            }
+          }
         }
       }
     }
   }
+  let strongEvidence = (state.classCode === 2);
+  let weakEvidence = (state.classCode === 1);
+  let classification = ((state.classCode === 2) ? (direction * 2) : ((state.classCode === 1) ? direction : 0));
+  let evidenceStr = (strongEvidence ? "STRONG" : (weakEvidence ? "WEAK" : "NONE"));
+  let biasStr = ((classification === 2) ? "Positive Drift" : ((classification === -2) ? "Negative Drift" : ((classification === 1) ? "Positive (weak)" : ((classification === -1) ? "Negative (weak)" : "No Drift"))));
+  let regimeStr = (isMeanRev ? "Mean-Rev" : "Neutral");
+  let bgClr = null;
+  if ((i_bgMode === "On")) {
+    bgClr = ((classification >= 2) ? cBull : ((classification <= -2) ? cBear : ((pinescript.abs(classification) === 1) ? cWeak : null)));
+  }
+  pinescript.bgcolor(((i_bgMode === "On") ? pinescript.color.new(bgClr, i_bgInt) : null));
+  let cBarLong = pinescript.color.hex("#22c55e");
+  let cBarShort = pinescript.color.hex("#ef4444");
+  let cBarNeut = pinescript.color.hex("#a3a3a3");
+  let barClr = null;
+  if (i_barColor) {
+    barClr = ((classification >= 2) ? cBarLong : ((classification <= -2) ? cBarShort : ((pinescript.abs(classification) === 1) ? ((direction > 0) ? cBarLong : cBarShort) : cBarNeut)));
+  }
+  barcolor(barClr);
+  if (state.wm === undefined) state.wm = pinescript.table.new(f_pos(i_wmPos), 1, 5, ({ bgcolor: pinescript.color.new(pinescript.color.black, 100) }));
+  if ((i_showWM && barstate.islast)) {
+    let evClr = (!inferenceAllowed ? cNeut : (strongEvidence ? cBull : (weakEvidence ? cWeak : cNeut)));
+    let wmClr = pinescript.color.new((i_dark ? pinescript.color.white : pinescript.color.black), 30);
+    pinescript.table.cell(state.wm, 0, 0, syminfo.ticker, ({ text_color: wmClr, text_size: wmSizeT, text_halign: pinescript.text.align_right }));
+    pinescript.table.cell(state.wm, 0, 1, (((inferenceAllowed ? ("t=" + pinescript.strToString(tF, "#.##")) : ("n<" + pinescript.strToString(MIN_OBS_STRICT))) + " | n=") + pinescript.strToString(nF)), ({ text_color: wmClr, text_size: wmSizeS, text_halign: pinescript.text.align_right }));
+    pinescript.table.cell(state.wm, 0, 2, (evidenceStr + ((state.classReason !== "") ? ((" (" + state.classReason) + ")") : "")), ({ text_color: evClr, text_size: wmSizeM, text_halign: pinescript.text.align_right }));
+    pinescript.table.cell(state.wm, 0, 3, biasStr, ({ text_color: evClr, text_size: wmSizeM, text_halign: pinescript.text.align_right }));
+    pinescript.table.cell(state.wm, 0, 4, (isRobust ? "" : "Heuristic (n<20)"), ({ text_color: pinescript.color.new(cWeak, 30), text_size: wmSizeS, text_halign: pinescript.text.align_right }));
+  }
+  if ((i_showDash && barstate.islast)) {
+    if (state.d === undefined) state.d = pinescript.table.new(f_pos(i_dashPos), 2, 18, ({ border_width: 1, bgcolor: pinescript.color.new(cTblBg, 80) }));
+    let hB = pinescript.color.new(cHdrBg, 20);
+    evClr = (!inferenceAllowed ? cNeut : (strongEvidence ? cBull : (weakEvidence ? cWeak : cNeut)));
+    pinescript.table.cell(state.d, 0, 0, "ADM", ({ text_color: cText, bgcolor: hB, text_size: dashSizeH }));
+    pinescript.table.cell(state.d, 1, 0, "Retrospective", ({ text_color: pinescript.color.new(cText, 50), bgcolor: hB, text_size: dashSizeF }));
+    pinescript.table.cell(state.d, 0, 1, "Classification", ({ text_color: cText, bgcolor: pinescript.color.new(evClr, 80), text_size: dashSizeH }));
+    pinescript.table.cell(state.d, 1, 1, biasStr, ({ text_color: evClr, bgcolor: pinescript.color.new(evClr, 80), text_size: dashSizeH }));
+    pinescript.table.cell(state.d, 0, 2, "Evidence", ({ text_color: cText, bgcolor: pinescript.color.new(evClr, 90), text_size: dashSizeD }));
+    pinescript.table.cell(state.d, 1, 2, (evidenceStr + ((state.classReason !== "") ? ((" (" + state.classReason) + ")") : "")), ({ text_color: evClr, bgcolor: pinescript.color.new(evClr, 90), text_size: dashSizeD }));
+    let infClr = (inferenceAllowed ? cBull : cBear);
+    pinescript.table.cell(state.d, 0, 3, "Inference", ({ text_color: cText, bgcolor: pinescript.color.new(infClr, 90), text_size: dashSizeD }));
+    pinescript.table.cell(state.d, 1, 3, (inferenceAllowed ? (isRobust ? "Allowed" : "Heuristic") : "Blocked"), ({ text_color: infClr, bgcolor: pinescript.color.new(infClr, 90), text_size: dashSizeD }));
+    let tClr = (statSig ? cBull : cNeut);
+    pinescript.table.cell(state.d, 0, 4, ("t(full) n=" + pinescript.strToString(nF)), ({ text_color: cText, bgcolor: pinescript.color.new(tClr, 90), text_size: dashSizeD }));
+    pinescript.table.cell(state.d, 1, 4, (pinescript.strToString(tF, "#.##") + (statSig ? "**" : "")), ({ text_color: tClr, bgcolor: pinescript.color.new(tClr, 90), text_size: dashSizeD }));
+    let t1Clr = ((t1 > 0) ? cBull : cBear);
+    pinescript.table.cell(state.d, 0, 5, ("t(H1) n=" + pinescript.strToString(n1)), ({ text_color: cText, bgcolor: pinescript.color.new(t1Clr, 90), text_size: dashSizeD }));
+    pinescript.table.cell(state.d, 1, 5, pinescript.strToString(t1, "#.##"), ({ text_color: t1Clr, bgcolor: pinescript.color.new(t1Clr, 90), text_size: dashSizeD }));
+    let t2Clr = ((t2 > 0) ? cBull : cBear);
+    pinescript.table.cell(state.d, 0, 6, ("t(H2) n=" + pinescript.strToString(n2)), ({ text_color: cText, bgcolor: pinescript.color.new(t2Clr, 90), text_size: dashSizeD }));
+    pinescript.table.cell(state.d, 1, 6, pinescript.strToString(t2, "#.##"), ({ text_color: t2Clr, bgcolor: pinescript.color.new(t2Clr, 90), text_size: dashSizeD }));
+    pinescript.table.cell(state.d, 0, 7, "Power", ({ text_color: cText, bgcolor: pinescript.color.new((powerOK ? cBull : cBear), 90), text_size: dashSizeD }));
+    pinescript.table.cell(state.d, 1, 7, (powerOK ? "OK" : ("MDE:" + (pinescript.na(mde95) ? "N/A" : (pinescript.strToString((mde95 * 100), "#") + "%")))), ({ text_color: (powerOK ? cBull : cBear), bgcolor: pinescript.color.new((powerOK ? cBull : cBear), 90), text_size: dashSizeD }));
+    pinescript.table.cell(state.d, 0, 8, "Sign Test", ({ text_color: cText, bgcolor: pinescript.color.new((signTestOK ? cBull : cBear), 90), text_size: dashSizeD }));
+    pinescript.table.cell(state.d, 1, 8, (("z=" + pinescript.strToString(zSign, "#.#")) + (medianSig ? "*" : "")), ({ text_color: (signTestOK ? cBull : cBear), bgcolor: pinescript.color.new((signTestOK ? cBull : cBear), 90), text_size: dashSizeD }));
+    pinescript.table.cell(state.d, 0, 9, "Mean=Median", ({ text_color: cText, bgcolor: pinescript.color.new((meanMedOK ? cBull : cBear), 90), text_size: dashSizeD }));
+    pinescript.table.cell(state.d, 1, 9, (meanMedOK ? "Yes" : "No"), ({ text_color: (meanMedOK ? cBull : cBear), bgcolor: pinescript.color.new((meanMedOK ? cBull : cBear), 90), text_size: dashSizeD }));
+    pinescript.table.cell(state.d, 0, 10, "Struct(m)", ({ text_color: cText, bgcolor: pinescript.color.new(((sameSignMean && levelOK) ? cBull : cBear), 90), text_size: dashSizeD }));
+    pinescript.table.cell(state.d, 1, 10, ((((sameSignMean ? "+" : "-") + " lv:") + pinescript.strToString(levelDevSD, "#.#")) + "sd"), ({ text_color: ((sameSignMean && levelOK) ? cBull : cBear), bgcolor: pinescript.color.new(((sameSignMean && levelOK) ? cBull : cBear), 90), text_size: dashSizeD }));
+    pinescript.table.cell(state.d, 0, 11, "Struct(t)", ({ text_color: cText, bgcolor: pinescript.color.new((sameSignT ? cBull : cBear), 90), text_size: dashSizeD }));
+    pinescript.table.cell(state.d, 1, 11, (sameSignT ? "Consistent" : "Conflict"), ({ text_color: (sameSignT ? cBull : cBear), bgcolor: pinescript.color.new((sameSignT ? cBull : cBear), 90), text_size: dashSizeD }));
+    pinescript.table.cell(state.d, 0, 12, "VR Test", ({ text_color: cText, bgcolor: pinescript.color.new((vrOK ? cBull : cBear), 90), text_size: dashSizeD }));
+    pinescript.table.cell(state.d, 1, 12, (((pinescript.strToString(vr, "#.##") + " z=") + pinescript.strToString(zVR, "#.#")) + (vrSig ? "*" : "")), ({ text_color: (vrOK ? cBull : cBear), bgcolor: pinescript.color.new((vrOK ? cBull : cBear), 90), text_size: dashSizeD }));
+    pinescript.table.cell(state.d, 0, 13, "Econ. Sig.", ({ text_color: cText, bgcolor: pinescript.color.new((econSig ? cBull : cWeak), 90), text_size: dashSizeD }));
+    pinescript.table.cell(state.d, 1, 13, (econSig ? "Yes" : (("<" + pinescript.strToString((MIN_DRIFT_ECON * 100), "#")) + "%")), ({ text_color: (econSig ? cBull : cWeak), bgcolor: pinescript.color.new((econSig ? cBull : cWeak), 90), text_size: dashSizeD }));
+    let dClr = ((annDrift > 0) ? cBull : cBear);
+    pinescript.table.cell(state.d, 0, 14, "Drift (ann.)", ({ text_color: cText, bgcolor: pinescript.color.new(dClr, 90), text_size: dashSizeD }));
+    pinescript.table.cell(state.d, 1, 14, (pinescript.strToString((annDrift * 100), "#.#") + "%"), ({ text_color: dClr, bgcolor: pinescript.color.new(dClr, 90), text_size: dashSizeD }));
+    pinescript.table.cell(state.d, 0, 15, "Regime", ({ text_color: cText, bgcolor: pinescript.color.new(cPrim, 90), text_size: dashSizeD }));
+    pinescript.table.cell(state.d, 1, 15, regimeStr, ({ text_color: cPrim, bgcolor: pinescript.color.new(cPrim, 90), text_size: dashSizeD }));
+    pinescript.table.cell(state.d, 0, 16, ("H=" + pinescript.strToString(HORIZON)), ({ text_color: pinescript.color.new(cText, 50), bgcolor: pinescript.color.new(cNeut, 95), text_size: dashSizeF }));
+    pinescript.table.cell(state.d, 1, 16, ("MinN=" + pinescript.strToString(MIN_OBS_STRICT)), ({ text_color: pinescript.color.new(cText, 50), bgcolor: pinescript.color.new(cNeut, 95), text_size: dashSizeF }));
+    pinescript.table.cell(state.d, 0, 17, "**p<.05 *p<.10", ({ text_color: pinescript.color.new(cText, 50), bgcolor: pinescript.color.new(cNeut, 95), text_size: dashSizeF }));
+    pinescript.table.cell(state.d, 1, 17, (isRobust ? "" : "Heuristic"), ({ text_color: pinescript.color.new(cWeak, 30), bgcolor: pinescript.color.new(cNeut, 95), text_size: dashSizeF }));
+  }
+  let changed = (classification !== pinescript.offset(classification, 1));
+  if ((changed && i_alerts)) {
+    pinescript.alert((((("ADM: " + biasStr) + " (") + evidenceStr) + ")"), alert.freq_once_per_bar);
+  }
+  alertcondition((strongEvidence && (direction > 0)), "Positive Drift", "Positive Drift detected");
+  alertcondition((strongEvidence && (direction < 0)), "Negative Drift", "Negative Drift detected");
+  alertcondition(weakEvidence, "Weak", "Weak evidence");
+  alertcondition(!inferenceAllowed, "Blocked", "Inference blocked");
 }
 
 

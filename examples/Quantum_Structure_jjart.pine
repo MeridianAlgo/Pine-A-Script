@@ -486,10 +486,7 @@ break_struct_live =
 
 // Live Trend Drift (priority 2)
 trend_drift_live =
-     idle_state and not break_struct_live and (
-         (last_trend_dir == 'bullish' and not na(last_swing_high) and close > (last_swing_high + live_buf)) or
-         (last_trend_dir == 'bearish' and not na(last_swing_low)  and close < (last_swing_low  - live_buf))
-     )
+     idle_state and not break_struct_live and (last_trend_dir == 'bullish' and not na(last_swing_high) and close > (last_swing_high + live_buf)) or (last_trend_dir == 'bearish' and not na(last_swing_low)  and close < (last_swing_low  - live_buf))
 
 // Single override string used by the table for both no_setup and consolidation
 string phase_display_override = na

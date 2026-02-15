@@ -905,8 +905,8 @@ const pinescript = {
     const info = { ticker: 'AAPL', tickerid: 'NASDAQ:AAPL', prefix: 'NASDAQ', root: 'AAPL', suffix: '' };
     return info[type] || '';
   },
-  time: 1771040741371,
-  timenow: 1771040741371,
+  time: 1771178053290,
+  timenow: 1771178053290,
   barstate: "LAST",
   dividends: {},
   splits: {},
@@ -1255,10 +1255,8 @@ function main() {
   let lowBase = 0;
   let isHigherLow = true;
   if (hasHistory) {
-    {
-      lowBase = pinescript.offset(pinescript.lowest(low, hlLookbackInput), lenShortInput);
-      isHigherLow = (lowRecent >= lowBase);
-    }
+    lowBase = pinescript.offset(pinescript.lowest(low, hlLookbackInput), lenShortInput);
+    isHigherLow = (lowRecent >= lowBase);
   }
   let s_atr = (pinescript.max(0, (1 - pinescript.nz(ratioATR, 1))) * sensitivity);
   let s_std = (pinescript.max(0, (1 - pinescript.nz(ratioStd, 1))) * sensitivity);

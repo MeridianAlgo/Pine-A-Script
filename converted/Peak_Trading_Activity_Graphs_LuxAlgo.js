@@ -905,8 +905,8 @@ const pinescript = {
     const info = { ticker: 'AAPL', tickerid: 'NASDAQ:AAPL', prefix: 'NASDAQ', root: 'AAPL', suffix: '' };
     return info[type] || '';
   },
-  time: 1771178051687,
-  timenow: 1771178051687,
+  time: 1771178052143,
+  timenow: 1771178052143,
   barstate: "LAST",
   dividends: {},
   splits: {},
@@ -1192,7 +1192,7 @@ pinescript.table = {
 
 // Input parameters
 
-const OrderBlock = { new: function(top, bottom, startTime, strength, isBullish, boxId, labelId, mitigated) { return { top: top, bottom: bottom, startTime: startTime, strength: strength, isBullish: isBullish, boxId: boxId, labelId: labelId, mitigated: mitigated }; } };
+const data = { new: function(values, tag) { return { values: values, tag: tag }; } };
 
 // Main script logic
 
@@ -1207,187 +1207,270 @@ function main() {
   volume = pinescript.asSeries(globalThis.volume);
   time = pinescript.asSeries(globalThis.time);
   null;
-  // Study: Institutional Order Flow Strength Classifier [LuxAlgo]
-  // Options: {"overlay":true,"max_boxes_count":100,"max_labels_count":100}
-  let BULL_COLOR = pinescript.color.hex("#089981");
-  let BEAR_COLOR = pinescript.color.hex("#f23645");
-  let TEXT_COLOR = chart.fg_color;
-  let OB_GROUP = "Order Block Settings";
-  let pivotLenInput = input.int(5, "Pivot Lookback", ({ minval: 2, group: OB_GROUP }));
-  let maxOBsInput = input.int(5, "Max Unmitigated OBs", ({ minval: 1, maxval: 50, group: OB_GROUP }));
-  let VIS_GROUP = "Visualization";
-  let bullColorInput = input.color(pinescript.color.new(BULL_COLOR, 80), "Bullish OB Color", ({ group: VIS_GROUP }));
-  let bearColorInput = input.color(pinescript.color.new(BEAR_COLOR, 80), "Bearish OB Color", ({ group: VIS_GROUP }));
-  let hideOverlappedInput = input.bool(true, "Hide Overlapped Zones", ({ group: VIS_GROUP }));
-  let showLabelsInput = input.bool(true, "Show Strength Labels", ({ group: VIS_GROUP }));
-  let showStrongestInput = input.bool(true, "Show Strongest OB Plot", ({ group: VIS_GROUP }));
-  let bufferSizeInput = input.int(5, "Strongest OB Buffer Size", ({ minval: 1, maxval: 100, group: VIS_GROUP }));
-  function calculateStrength(obRange, breakoutDist, relVol) {
-    let dispFactor = pinescript.min((breakoutDist / (obRange * 5)), 1);
-    let volFactor = pinescript.min((relVol / 2), 1);
-    let score = (((dispFactor * 0.6) + (volFactor * 0.4)) * 100);
-    return pinescript.round(score, 1);
+  // Study: Peak Trading Activity Graphs [LuxAlgo]
+  // Options: {"overlay":true}
+  let GREEN = pinescript.color.hex("#089981");
+  let RED = pinescript.color.hex("#F23645");
+  let YELLOW = pinescript.color.hex("#F2E805");
+  let DATA = pinescript.color.hex("#DBDBDB");
+  let BACKGROUND = pinescript.color.hex("#161616");
+  let BORDERS = pinescript.color.hex("#2E2E2E");
+  let ORANGE = pinescript.color.hex("#FF5D00");
+  let ORANGE_LIGHT = pinescript.color.hex("#FEF1E8");
+  let COLD_VIRIDIS = pinescript.color.hex("#400A53");
+  let LUKEWARM_VIRIDIS = pinescript.color.hex("#408E8B");
+  let HOT_VIRIDIS = pinescript.color.hex("#F8E650");
+  let COLD_PLASMA = pinescript.color.hex("#110A81");
+  let LUKEWARM_PLASMA = pinescript.color.hex("#B8487D");
+  let HOT_PLASMA = pinescript.color.hex("#F1F455");
+  let COLD_MAGMA = pinescript.color.hex("#000005");
+  let LUKEWARM_MAGMA = pinescript.color.hex("#9D3B7A");
+  let HOT_MAGMA = pinescript.color.hex("#FCF7BE");
+  let VIRIDIS = "Viridis";
+  let PLASMA = "Plasma";
+  let MAGMA = "Magma";
+  let CUSTOM = "Custom";
+  let TOP_RIGHT = "Top Right";
+  let BOTTOM_RIGHT = "Bottom Right";
+  let BOTTOM_LEFT = "Bottom Left";
+  let TINY = "Tiny";
+  let SMALL = "Small";
+  let NORMAL = "Normal";
+  let LARGE = "Large";
+  let HUGE = "Huge";
+  let VOLUME = "Volume";
+  let VOLATILITY = "Volatility";
+  let DAYOFWEEK = "Days of Week";
+  let DAYOFMONTH = "Days of Month";
+  let MONTH = "Months";
+  let HOURS = "Hours";
+  let DASHBOARD_GROUP = "Graph";
+  let STYLE_GROUP = "Style";
+  let deltaTooltip = "Display the difference between the medians as a percentage. The smaller median is 0, and the larger median is 100. Enabling this feature highlights the differences between values.";
+  let dashboardPositionTooltip = "Select the graph location.";
+  let dashboardSizeTooltip = "Select the graph text size.";
+  let dashboardWidthTooltip = "Select the graph width.";
+  let dashboardHeightTooltip = "Select the graph height.";
+  let baseDataInput = input.string(VOLUME, "Data", ({ options: [VOLATILITY, VOLUME] }));
+  let periodInput = input.string(DAYOFMONTH, "Period", ({ options: [MONTH, DAYOFMONTH, DAYOFWEEK, HOURS] }));
+  let deltaInput = input.bool(false, "Display Delta Between Medians", ({ tooltip: deltaTooltip }));
+  let dashboardPositionInput = input.string(TOP_RIGHT, "Position", ({ group: DASHBOARD_GROUP, tooltip: dashboardPositionTooltip, options: [TOP_RIGHT, BOTTOM_RIGHT, BOTTOM_LEFT] }));
+  let dashboardSizeInput = input.string(SMALL, "Size", ({ group: DASHBOARD_GROUP, tooltip: dashboardSizeTooltip, options: [TINY, SMALL, NORMAL, LARGE, HUGE] }));
+  let dashboardWidthInput = input.float(1, "Width", ({ group: DASHBOARD_GROUP, tooltip: dashboardWidthTooltip, minval: 1, step: 0.25 }));
+  let dashboardHeightInput = input.float(1, "Height", ({ group: DASHBOARD_GROUP, tooltip: dashboardHeightTooltip, minval: 1, step: 0.25 }));
+  let colormapInput = input.string(VIRIDIS, "Colors", ({ group: STYLE_GROUP, options: [VIRIDIS, PLASMA, MAGMA, CUSTOM] }));
+  let coldColorInput = input.color(RED, "Custom Cold", ({ group: STYLE_GROUP }));
+  let lukewarmColorInput = input.color(YELLOW, "Custom Lukewarm", ({ group: STYLE_GROUP }));
+  let hotColorInput = input.color(GREEN, "Custom Hot", ({ group: STYLE_GROUP }));
+  if (state.fullMonth === undefined) state.fullMonth = array.from(data.new(pinescript.arrayNew()), data.new(pinescript.arrayNew()), data.new(pinescript.arrayNew()), data.new(pinescript.arrayNew()), data.new(pinescript.arrayNew()), data.new(pinescript.arrayNew()), data.new(pinescript.arrayNew()), data.new(pinescript.arrayNew()), data.new(pinescript.arrayNew()), data.new(pinescript.arrayNew()), data.new(pinescript.arrayNew()), data.new(pinescript.arrayNew()), data.new(pinescript.arrayNew()), data.new(pinescript.arrayNew()), data.new(pinescript.arrayNew()), data.new(pinescript.arrayNew()), data.new(pinescript.arrayNew()), data.new(pinescript.arrayNew()), data.new(pinescript.arrayNew()), data.new(pinescript.arrayNew()), data.new(pinescript.arrayNew()), data.new(pinescript.arrayNew()), data.new(pinescript.arrayNew()), data.new(pinescript.arrayNew()), data.new(pinescript.arrayNew()), data.new(pinescript.arrayNew()), data.new(pinescript.arrayNew()), data.new(pinescript.arrayNew()), data.new(pinescript.arrayNew()), data.new(pinescript.arrayNew()), data.new(pinescript.arrayNew()));
+  if (state.fullWeek === undefined) state.fullWeek = ((syminfo.type === "crypto") ? array.from(data.new(pinescript.arrayNew(), "SUN"), data.new(pinescript.arrayNew(), "MON"), data.new(pinescript.arrayNew(), "TUE"), data.new(pinescript.arrayNew(), "WED"), data.new(pinescript.arrayNew(), "THU"), data.new(pinescript.arrayNew(), "FRI"), data.new(pinescript.arrayNew(), "SAT")) : array.from(data.new(pinescript.arrayNew(), "MON"), data.new(pinescript.arrayNew(), "TUE"), data.new(pinescript.arrayNew(), "WED"), data.new(pinescript.arrayNew(), "THU"), data.new(pinescript.arrayNew(), "FRI")));
+  if (state.fullYear === undefined) state.fullYear = array.from(data.new(pinescript.arrayNew(), "JAN"), data.new(pinescript.arrayNew(), "FEB"), data.new(pinescript.arrayNew(), "MAR"), data.new(pinescript.arrayNew(), "APR"), data.new(pinescript.arrayNew(), "MAY"), data.new(pinescript.arrayNew(), "JUN"), data.new(pinescript.arrayNew(), "JUL"), data.new(pinescript.arrayNew(), "AUG"), data.new(pinescript.arrayNew(), "SEP"), data.new(pinescript.arrayNew(), "OCT"), data.new(pinescript.arrayNew(), "NOV"), data.new(pinescript.arrayNew(), "DEC"));
+  if (state.fullDay === undefined) state.fullDay = array.from(data.new(pinescript.arrayNew(), "0"), data.new(pinescript.arrayNew(), "1"), data.new(pinescript.arrayNew(), "2"), data.new(pinescript.arrayNew(), "3"), data.new(pinescript.arrayNew(), "4"), data.new(pinescript.arrayNew(), "5"), data.new(pinescript.arrayNew(), "6"), data.new(pinescript.arrayNew(), "7"), data.new(pinescript.arrayNew(), "8"), data.new(pinescript.arrayNew(), "9"), data.new(pinescript.arrayNew(), "10"), data.new(pinescript.arrayNew(), "11"), data.new(pinescript.arrayNew(), "12"), data.new(pinescript.arrayNew(), "13"), data.new(pinescript.arrayNew(), "14"), data.new(pinescript.arrayNew(), "15"), data.new(pinescript.arrayNew(), "16"), data.new(pinescript.arrayNew(), "17"), data.new(pinescript.arrayNew(), "18"), data.new(pinescript.arrayNew(), "19"), data.new(pinescript.arrayNew(), "20"), data.new(pinescript.arrayNew(), "21"), data.new(pinescript.arrayNew(), "22"), data.new(pinescript.arrayNew(), "23"));
+  let parsedDayofweek = dayofweek(time_tradingday);
+  let parsedDayofmonth = ((syminfo.type === "crypto") ? dayofmonth : pinescript.dayofmonth(time_close));
+  let parsedMonth = ((syminfo.type === "crypto") ? month : pinescript.month(time_close));
+  pinescript.position.bottom_left;
+  pinescript.position.bottom_right;
+  pinescript.position.top_right;
+  if (state.parsedDashboardPosition === undefined) state.parsedDashboardPosition = ((dashboardPositionInput === TOP_RIGHT) ? undefined : ((dashboardPositionInput === BOTTOM_RIGHT) ? undefined : ((dashboardPositionInput === BOTTOM_LEFT) ? undefined : null)));
+  pinescript.size.huge;
+  pinescript.size.large;
+  pinescript.size.normal;
+  pinescript.size.small;
+  pinescript.size.tiny;
+  if (state.parsedDashboardSize === undefined) state.parsedDashboardSize = ((dashboardSizeInput === TINY) ? undefined : ((dashboardSizeInput === SMALL) ? undefined : ((dashboardSizeInput === NORMAL) ? undefined : ((dashboardSizeInput === LARGE) ? undefined : ((dashboardSizeInput === HUGE) ? undefined : null)))));
+  timeframe.in_seconds("60");
+  timeframe.in_seconds("1M");
+  timeframe.in_seconds("1D");
+  timeframe.in_seconds("1D");
+  if (state.optimalTimeframe === undefined) state.optimalTimeframe = ((periodInput === DAYOFWEEK) ? undefined : ((periodInput === DAYOFMONTH) ? undefined : ((periodInput === MONTH) ? undefined : ((periodInput === HOURS) ? undefined : null))));
+  [coldColorInput, lukewarmColorInput, hotColorInput];
+  [COLD_MAGMA, LUKEWARM_MAGMA, HOT_MAGMA];
+  [COLD_PLASMA, LUKEWARM_PLASMA, HOT_VIRIDIS];
+  [COLD_VIRIDIS, LUKEWARM_VIRIDIS, HOT_VIRIDIS];
+  let [cold, lukewarm, hot] = ((colormapInput === VIRIDIS) ? undefined : ((colormapInput === PLASMA) ? undefined : ((colormapInput === MAGMA) ? undefined : ((colormapInput === CUSTOM) ? undefined : null))));
+  function error() {
+    if (state.t_able === undefined) state.t_able = pinescript.table.new(pinescript.position.top_center, 1, 1, ({ bgcolor: ORANGE_LIGHT, border_color: ORANGE, border_width: 1, frame_color: ORANGE, frame_width: 1 }));
+    return t_able.cell(0, 0, "⚠ Warning: The tool will not display the dashboard on higher timeframes.nPlease select a chart timeframe that is equal to or lower than the period parameter in the settings panel.", ({ text_color: ORANGE, text_size: 0 }));
   }
-  if (state.obArray === undefined) state.obArray = pinescript.arrayNew();
-  let volSMA = pinescript.sma(volume, 20);
-  let hi = ta.pivothigh(pivotLenInput, pivotLenInput);
-  let lo = ta.pivotlow(pivotLenInput, pivotLenInput);
-  if (state.lastHi === undefined) state.lastHi = null;
-  if (state.lastLo === undefined) state.lastLo = null;
-  if (state.lastHiIdx === undefined) state.lastHiIdx = null;
-  if (state.lastLoIdx === undefined) state.lastLoIdx = null;
-  if (!pinescript.na(hi)) {
-    state.lastHi = hi;
-    state.lastHiIdx = (bar_index - pivotLenInput);
-  }
-  if (!pinescript.na(lo)) {
-    state.lastLo = lo;
-    state.lastLoIdx = (bar_index - pivotLenInput);
-  }
-  let bullBOS = pinescript.cross(close, state.lastHi);
-  let bearBOS = pinescript.cross(close, state.lastLo);
-  if ((bullBOS || bearBOS)) {
-    let searchLen = (bar_index - (bullBOS ? state.lastHiIdx : state.lastLoIdx));
-    let obTop = null;
-    let obBtm = null;
-    let obIdx = null;
-    let obVol = null;
-    if (bullBOS) {
-      let minLow = null;
-      for (let i = 1; i <= searchLen; i++) {
-        if ((pinescript.offset(close, i) < pinescript.offset(open, i))) {
-          if ((pinescript.na(minLow) || (pinescript.offset(low, i) < minLow))) {
-            minLow = pinescript.offset(low, i);
-            obTop = pinescript.offset(high, i);
-            obBtm = pinescript.offset(low, i);
-            obIdx = i;
-            obVol = pinescript.offset(volume, i);
-          }
-        }
-      }
-      state.lastHi = null;
-    } else {
-      let maxHigh = null;
-      for (let i = 1; i <= searchLen; i++) {
-        if ((pinescript.offset(close, i) > pinescript.offset(open, i))) {
-          if ((pinescript.na(maxHigh) || (pinescript.offset(high, i) > maxHigh))) {
-            maxHigh = pinescript.offset(high, i);
-            obTop = pinescript.offset(high, i);
-            obBtm = pinescript.offset(low, i);
-            obIdx = i;
-            obVol = pinescript.offset(volume, i);
-          }
-        }
-      }
-      state.lastLo = null;
-    }
-    if (!pinescript.na(obIdx)) {
-      let obHeight = (obTop - obBtm);
-      let breakoutDist = (bullBOS ? (close - obTop) : (obBtm - close));
-      let avgVol = pinescript.offset(volSMA, obIdx);
-      let strength = calculateStrength(obHeight, breakoutDist, (obVol / avgVol));
-      let newOB = OrderBlock.new(obTop, obBtm, pinescript.offset(time, obIdx), strength, bullBOS, null, null, false);
-      pinescript.arrayUnshift(state.obArray, newOB);
-    }
-  }
-  if ((pinescript.arraySize(state.obArray) > 0)) {
-    for (let i = 0; i <= (pinescript.arraySize(state.obArray) - 1); i++) {
-      let ob = pinescript.arrayGet(state.obArray, i);
-      if (!ob.mitigated) {
-        let isMitigated = (ob.isBullish ? (low < ob.bottom) : (high > ob.top));
-        if (isMitigated) {
-          ob.mitigated = true;
-        }
-      }
-    }
-  }
-  let strongestTop = null;
-  let strongestBottom = null;
-  let strongestAvgPrice = null;
-  let strongestIsBullish = false;
-  let maxStrength = -1;
-  if ((pinescript.arraySize(state.obArray) > 0)) {
-    let checkedCount = 0;
-    for (let i = 0; i <= (pinescript.arraySize(state.obArray) - 1); i++) {
-      let ob = pinescript.arrayGet(state.obArray, i);
-      if (!ob.mitigated) {
-        if ((ob.strength > maxStrength)) {
-          maxStrength = ob.strength;
-          strongestTop = ob.top;
-          strongestBottom = ob.bottom;
-          strongestAvgPrice = ((ob.top + ob.bottom) / 2);
-          strongestIsBullish = ob.isBullish;
-        }
-        checkedCount += 1;
-        if ((checkedCount >= bufferSizeInput)) {
-          break;
-        }
-      }
+  function gatherDaysOfWeek(output) {
+    let [dailyData, currentDay] = pinescript.requestSecurity(syminfo.tickerid, "1D", [output, parsedDayofweek]);
+    let current = fullWeek.get((currentDay - 1));
+    if (!pinescript.na(current)) {
+      current.values.push(pinescript.nz(dailyData));
     }
   }
-  let plotCol = (pinescript.na(strongestAvgPrice) ? null : (strongestIsBullish ? bullColorInput : bearColorInput));
-  let hasChanged = (strongestAvgPrice !== pinescript.offset(strongestAvgPrice, 1));
-  let plotTop = pinescript.plot((showStrongestInput ? strongestTop : null), "Strongest OB Top", ({ color: (hasChanged ? null : pinescript.color.new(plotCol, 70)) }));
-  let plotBtm = pinescript.plot((showStrongestInput ? strongestBottom : null), "Strongest OB Bottom", ({ color: (hasChanged ? null : pinescript.color.new(plotCol, 70)) }));
-  pinescript.fill(plotTop, plotBtm, (hasChanged ? null : pinescript.color.new(plotCol, 90)), "Strongest OB Zone Fill");
-  pinescript.plot((showStrongestInput ? strongestAvgPrice : null), "Strongest OB Median", ({ color: (hasChanged ? null : pinescript.color.new(plotCol, 40)), linewidth: 2 }));
-  if (barstate.islast) {
-    let activeCount = 0;
-    if (state.occupiedTops === undefined) state.occupiedTops = pinescript.arrayNew(0);
-    if (state.occupiedBtms === undefined) state.occupiedBtms = pinescript.arrayNew(0);
-    pinescript.arrayClear(state.occupiedTops);
-    pinescript.arrayClear(state.occupiedBtms);
-    if ((pinescript.arraySize(state.obArray) > 0)) {
-      for (let i = 0; i <= (pinescript.arraySize(state.obArray) - 1); i++) {
-        let ob = pinescript.arrayGet(state.obArray, i);
-        let isOverlapped = false;
-        if (((!ob.mitigated && hideOverlappedInput) && (pinescript.arraySize(state.occupiedTops) > 0))) {
-          for (let j = 0; j <= (pinescript.arraySize(state.occupiedTops) - 1); j++) {
-            let otherTop = pinescript.arrayGet(state.occupiedTops, j);
-            let otherBtm = pinescript.arrayGet(state.occupiedBtms, j);
-            if (((((ob.top <= otherTop) && (ob.top >= otherBtm)) || ((ob.bottom <= otherTop) && (ob.bottom >= otherBtm))) || ((ob.top >= otherTop) && (ob.bottom <= otherBtm)))) {
-              isOverlapped = true;
-              break;
-            }
-          }
-        }
-        if (((!ob.mitigated && !isOverlapped) && (activeCount < maxOBsInput))) {
-          activeCount += 1;
-          pinescript.arrayPush(state.occupiedTops, ob.top);
-          pinescript.arrayPush(state.occupiedBtms, ob.bottom);
-          let obCol = (ob.isBullish ? bullColorInput : bearColorInput);
-          let labelCol = (ob.isBullish ? BULL_COLOR : BEAR_COLOR);
-          if (pinescript.na(ob.boxId)) {
-            ob.boxId = box.new(ob.startTime, ob.top, time, ob.bottom, ({ bgcolor: obCol, border_color: obCol, border_style: line.style_dashed, xloc: xloc.bar_time }));
-          }
-          if (showLabelsInput) {
-            if (pinescript.na(ob.labelId)) {
-              ob.labelId = pinescript.labelNew(time, ((ob.top + ob.bottom) / 2), ({ text: str.format("{0}%", ob.strength), style: label.style_label_left, textcolor: labelCol, color: pinescript.color.hex("#00000000"), size: pinescript.size.small, textalign: pinescript.text.align_center, xloc: xloc.bar_time }));
-            }
-          }
-        } else {
-          if (!pinescript.na(ob.boxId)) {
-            box.delete(ob.boxId);
-            ob.boxId = null;
-          }
-          if (!pinescript.na(ob.labelId)) {
-            pinescript.labelDelete(ob.labelId);
-            ob.labelId = null;
-          }
-        }
+  function gatherMonths(output) {
+    let [montlhyData, currentMonth] = pinescript.requestSecurity(syminfo.tickerid, "1M", [output, parsedMonth]);
+    let current = fullYear.get((currentMonth - 1));
+    if (!pinescript.na(current)) {
+      current.values.push(pinescript.nz(montlhyData));
+    }
+  }
+  function gatherDayOfMonth(output) {
+    let [dailyData, dayOfMonth] = pinescript.requestSecurity(syminfo.tickerid, "1D", [output, parsedDayofmonth]);
+    let current = fullMonth.get((dayOfMonth - 1));
+    if (!pinescript.na(current)) {
+      current.values.push(pinescript.nz(dailyData));
+    }
+  }
+  function gatherHours(output) {
+    let [hourlyData, currentHour] = pinescript.requestSecurity(syminfo.tickerid, "60", [output, hour]);
+    let current = fullDay.get(currentHour);
+    if (!pinescript.na(current)) {
+      current.values.push(pinescript.nz(hourlyData));
+    }
+  }
+  function gatherData() {
+    let output = ((baseDataInput === VOLUME) ? volume : pinescript.ta.tr);
+    switch (periodInput) {
+      case DAYOFWEEK:
+      {
+        gatherDaysOfWeek(output);
+        break;
+      }
+      case DAYOFMONTH:
+      {
+        gatherDayOfMonth(output);
+        break;
+      }
+      case MONTH:
+      {
+        gatherMonths(output);
+        break;
+      }
+      case HOURS:
+      {
+        gatherHours(output);
+        break;
       }
     }
   }
-  if ((pinescript.arraySize(state.obArray) > 100)) {
-    for (let i = (pinescript.arraySize(state.obArray) - 1); i <= 0; i++) {
-      let ob = pinescript.arrayGet(state.obArray, i);
-      if ((ob.mitigated && (pinescript.arraySize(state.obArray) > 50))) {
-        pinescript.arrayRemove(state.obArray, i);
-      } else {
-        if ((pinescript.arraySize(state.obArray) > 100)) {
-          pinescript.arrayPop(state.obArray);
+  function cell(t_able, column, row, data, color = pinescript.color.hex("#FFFFFF"), align = pinescript.text.align_center, background = null, height = 0) {
+    return t_able.cell(column, row, data, ({ text_color: pinescript.color, text_size: state.parsedDashboardSize, text_halign: align, bgcolor: background, height: height }));
+  }
+  function divider(t_able, row, column) {
+    let rowDivider = "━━━━━━━━━━━";
+    t_able.merge_cells(0, row, column, row);
+    return cell(state.t_able, 0, row, rowDivider, ({ align: pinescript.text.align_center, height: (0.5 * dashboardHeightInput), color: DATA }));
+  }
+  function displayColumns(fullData) {
+    if (state.t_able === undefined) state.t_able = pinescript.table.new(state.parsedDashboardPosition, ((fullData.size() * 2) + 1), 104, ({ bgcolor: BACKGROUND, border_width: 0, frame_color: BORDERS, frame_width: 1, force_overlay: false }));
+    if (state.parsedData === undefined) state.parsedData = pinescript.arrayNew();
+    for (const [index, eachDataPoint] of fullData) {
+      parsedData.push(eachDataPoint.values.median());
+    }
+    t_able.merge_cells(0, 0, ((fullData.size() * 2) - 2), 0);
+    t_able.merge_cells(0, 1, ((fullData.size() * 2) - 2), 1);
+    let min = pinescript.strToString(parsedData.min(), ((baseDataInput === VOLATILITY) ? format.mintick : format.volume));
+    let max = pinescript.strToString(parsedData.max(), ((baseDataInput === VOLATILITY) ? format.mintick : format.volume));
+    "Daily";
+    "Hourly";
+    "Monthly";
+    let periodTag = ((periodInput === MONTH) ? undefined : ((periodInput === HOURS) ? undefined : undefined));
+    let header = (deltaInput ? "(Delta)" : "");
+    cell(state.t_able, 0, 0, str.format("{0} Median {1} {2}nMin: {3}  Max: {4}", periodTag, baseDataInput, header, min, max), ({ align: pinescript.text.align_center, color: DATA }));
+    let column = 0;
+    for (const [index, eachDataPoint] of state.parsedData) {
+      if ((index > 0)) {
+        column += 2;
+      }
+      t_able.merge_cells(column, 2, column, 103);
+      t_able.cell_set_height(column, 2, (0.2 * dashboardHeightInput));
+      let scale = (deltaInput ? ((eachDataPoint - parsedData.min()) / parsedData.range()) : (eachDataPoint / parsedData.max()));
+      let value = pinescript.max(1, math.floor((100 * scale)));
+      let customColor = ((value >= 50) ? pinescript.color.from_gradient(value, 50, 100, pinescript.color.new(lukewarm, 0), pinescript.color.new(hot, 0)) : pinescript.color.from_gradient(value, 1, 50, pinescript.color.new(cold, 0), pinescript.color.new(lukewarm, 0)));
+      let topRow = (101 - value);
+      for (let row = 1; row <= 100; row++) {
+        t_able.cell((column + 1), (row + 1), ({ height: (0.1 * dashboardHeightInput) }));
+        if ((row >= topRow)) {
+          t_able.cell_set_bgcolor((column + 1), (row + 1), customColor);
         }
       }
+      t_able.cell((column + 1), 103, fullData.get(index).tag, ({ width: dashboardWidthInput, text_color: DATA, text_size: state.parsedDashboardSize }));
+      if ((index === (parsedData.size() - 1))) {
+        t_able.merge_cells((column + 2), 2, (column + 2), 103);
+        t_able.cell_set_height((column + 2), 2, (0.2 * dashboardHeightInput));
+      }
+    }
+  }
+  function displayMonth() {
+    if (state.t_able === undefined) state.t_able = pinescript.table.new(state.parsedDashboardPosition, 9, 7, ({ bgcolor: BACKGROUND, border_width: 0, frame_color: BORDERS, frame_width: 1, force_overlay: false }));
+    if (state.parsedData === undefined) state.parsedData = pinescript.arrayNew();
+    for (const [index, eachDataPoint] of state.fullMonth) {
+      parsedData.push(eachDataPoint.values.median());
+    }
+    t_able.merge_cells(0, 0, 6, 0);
+    let min = pinescript.strToString(parsedData.min(), ((baseDataInput === VOLATILITY) ? format.mintick : format.volume));
+    let max = pinescript.strToString(parsedData.max(), ((baseDataInput === VOLATILITY) ? format.mintick : format.volume));
+    "Daily";
+    "Hourly";
+    "Monthly";
+    let periodTag = ((periodInput === MONTH) ? undefined : ((periodInput === HOURS) ? undefined : undefined));
+    let header = (deltaInput ? "(Delta)" : "");
+    cell(state.t_able, 0, 0, str.format("{0} Median {1} {2}nMax: {3}nMin: {4}", periodTag, baseDataInput, header, max, min), ({ align: pinescript.text.align_center, color: DATA }));
+    divider(state.t_able, 1, 6);
+    let row = 2;
+    let column0 = array.from(1, 8, 15, 22, 29);
+    let column1 = array.from(2, 9, 16, 23, 30);
+    let column2 = array.from(3, 10, 17, 24, 31);
+    let column3 = array.from(4, 11, 18, 25);
+    let column4 = array.from(5, 12, 19, 26);
+    let column5 = array.from(6, 13, 20, 27);
+    let column6 = array.from(7, 14, 21, 28);
+    let nextRow = false;
+    for (const [index, eachDataPoint] of state.parsedData) {
+      6;
+      5;
+      4;
+      3;
+      2;
+      1;
+      0;
+      let column = ((column0.includes((index + 1))) ? undefined : ((column1.includes((index + 1))) ? undefined : ((column2.includes((index + 1))) ? undefined : ((column3.includes((index + 1))) ? undefined : ((column4.includes((index + 1))) ? undefined : ((column5.includes((index + 1))) ? undefined : ((column6.includes((index + 1))) ? undefined : null)))))));
+      if (nextRow) {
+        row += 1;
+        nextRow = false;
+      }
+      if (((((index + 1) % 7) === 0) && !nextRow)) {
+        nextRow = true;
+      }
+      let scale = (deltaInput ? ((eachDataPoint - parsedData.min()) / parsedData.range()) : (eachDataPoint / parsedData.max()));
+      let value = pinescript.max(1, math.floor((100 * scale)));
+      let customColor = ((value >= 50) ? pinescript.color.from_gradient(value, 50, 100, pinescript.color.new(lukewarm, 0), pinescript.color.new(hot, 0)) : pinescript.color.from_gradient(value, 1, 50, pinescript.color.new(cold, 0), pinescript.color.new(lukewarm, 0)));
+      cell(state.t_able, column, row, pinescript.strToString((index + 1)), ({ background: customColor }));
+    }
+  }
+  function displayData() {
+    switch (periodInput) {
+      case DAYOFWEEK:
+      {
+        displayColumns(state.fullWeek);
+        break;
+      }
+      case DAYOFMONTH:
+      {
+        displayMonth();
+        break;
+      }
+      case MONTH:
+      {
+        displayColumns(state.fullYear);
+        break;
+      }
+      case HOURS:
+      {
+        displayColumns(state.fullDay);
+        break;
+      }
+    }
+  }
+  if ((timeframe.in_seconds() > state.optimalTimeframe)) {
+    error();
+  } else {
+    gatherData();
+    if (barstate.islastconfirmedhistory) {
+      displayData();
     }
   }
 }
