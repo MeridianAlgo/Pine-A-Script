@@ -1,310 +1,365 @@
-# PineScript Converter (Pine-to-JS)
+# PineScript to JavaScript Compiler
 
-This repository contains a PineScript (v5/v6-ish) to JavaScript transpiler, plus a small runtime shim so converted indicators can execute in Node.js.
+A production-grade transpiler that converts TradingView PineScript (v5/v6) into clean, runnable JavaScript. Built for developers who need to take their Pine indicators, strategies, and analysis tools and run them outside of TradingView -- in Node.js, in a browser, or anywhere JavaScript runs.
 
-## Features
+This is not a toy converter. It handles real-world PineScript with 240+ function mappings, full series semantics, state persistence across bars, multi-timeframe support, and a post-conversion reviewer that catches problems before they hit you at runtime.
 
-- Transpile PineScript to runnable JavaScript (ESM).
-- Supports a large subset of Pine v5/v6 syntax used by common public scripts.
-- Runtime shims for common namespaces:
-  - `ta`, `math`, `array`, `str`, `color`, `table`, `request`, `timeframe`, `barmerge`
-- Series semantics:
-  - History indexing transpiles to `pinescript.offset(x, n)`.
-  - Generated runtime wraps OHLCV/time arrays as a `SeriesArray` so arithmetic uses the current bar value.
-- Stateful execution:
-  - `var` / `varip` are persisted across bars via a `state` object.
-- Multi-timeframe baseline:
-  - `request.security()` resamples/aligned series using `time[]` when available.
+## What It Does
 
-## Project layout
+- Converts PineScript v5/v6 into standard JavaScript (ESM modules)
+- Ships with a complete runtime that implements 100+ PineScript built-in functions
+- Handles series semantics properly -- history indexing, current-bar arithmetic, the whole thing
+- Persists `var` / `varip` state across bar executions, just like TradingView does
+- Supports multi-timeframe data via `request.security()` with timeframe resampling
+- Runs a multi-stage post-conversion reviewer that catches syntax errors, missing functions, and conversion artifacts
+- Optional local AI review using a lightweight code model (no server or API key needed)
 
-- `src/`:
-  - `lexer.js` - Tokenization for PineScript syntax (keywords, operators, indentation)
-  - `parser.js` - AST generation supporting Pine v5/v6 constructs
-  - `generator.js` - JavaScript code emission with runtime shims
-  - `builtins.js` - JavaScript implementations of Pine built-in functions
-  - `transpiler.js` - Main entry point (lexer → parser → generator)
-  - `cli.js` - Command-line interface for transpilation
-- `test/indicator_tests.js` - Bar-by-bar runtime smoke tests
+## Project Layout
 
-## Quick start
+```
+src/
+  lexer.js        Breaks PineScript source into tokens
+  parser.js       Builds an abstract syntax tree from those tokens
+  generator.js    Turns the AST into JavaScript with all runtime scaffolding
+  builtins.js     JavaScript implementations of every PineScript built-in function
+  transpiler.js   Main entry point that ties lexer, parser, and generator together
+  cli.js          Command-line interface for converting files
+  reviewer.js     Post-conversion quality checks and validation
 
-### Install
+ai_reviewer/      Optional local AI review (Python, runs on your machine)
+test/             Test suite including bar-by-bar runtime smoke tests
+tools/            Batch conversion utilities and status tracking
+examples/         Sample PineScript files for testing
+converted/        Output directory for batch conversions
+```
+
+## Getting Started
+
+### Install dependencies
 
 ```bash
 npm install
 ```
 
-### Convert a Pine script
+### Convert a single script
 
 ```bash
 node src/cli.js path/to/script.pine path/to/output.js
 ```
 
-### Batch convert all PineScript files
+The CLI will transpile your script and automatically run the reviewer to check for problems. You will see a review result with a confidence score telling you how clean the conversion was.
 
-You can batch convert all `.pine` files in the `examples/` directory to JavaScript:
+### Batch convert everything
+
+Drop your `.pine` files into the `examples/` directory, then:
 
 ```bash
 npm run convert:all
 ```
 
-This will:
-- Convert all `examples/*.pine` files to `converted/*.js`
-- Generate error logs (`.err.txt`) for any failed conversions
-- Output a summary showing pass/fail counts
-- Write a status report to `converted/status.json`
+This converts every file, writes the JavaScript output to `converted/`, logs errors for any failures, and generates a status report at `converted/status.json`.
 
 ### Check conversion status
-
-View the current conversion status across all files:
 
 ```bash
 npm run convert:status
 ```
 
-This displays a summary table of all conversions with their current status.
+Shows a summary table of all conversions and their current status.
 
-### Post-conversion reviewer (recommended)
+## Post-Conversion Reviewer
 
-By default, the CLI runs a lightweight reviewer after conversion.
+The reviewer runs automatically after every conversion and performs several checks to make sure the output is actually usable.
 
-- **Syntax check**: best-effort parse check for the generated JS.
-- **Optional smoke import**: tries to `import()` the generated module to catch obvious runtime errors.
+### What it checks
 
-Disable it if you only want the raw output:
+- **Syntax validation**: Parses the generated JavaScript to catch syntax errors before you try to run it
+- **Import smoke test**: Attempts to dynamically import the generated module to catch obvious runtime failures
+- **Built-in verification**: Scans for `pinescript.*` function calls and verifies they all exist in the runtime
+- **Completeness analysis**: Looks for raw PineScript syntax that may have leaked through unconverted
+- **Series safety**: Flags patterns where series arrays might be accessed unsafely
+- **Confidence scoring**: Gives you a 0-100 score based on how clean the conversion looks
+
+### Controlling the reviewer
+
+Disable the reviewer entirely if you just want raw output:
 
 ```bash
-node src/cli.js path/to/script.pine path/to/output.js --no-review
+node src/cli.js script.pine output.js --no-review
 ```
 
-Disable only the runtime `import()` smoke test:
+Disable only the runtime import test (useful if the script has external dependencies):
 
 ```bash
-node src/cli.js path/to/script.pine path/to/output.js --no-review-import
+node src/cli.js script.pine output.js --no-review-import
 ```
 
-Environment variables:
+Environment variables for fine-grained control:
 
-- `PINE_REVIEW=0` disables the reviewer
-- `PINE_REVIEW_IMPORT=0` disables the import smoke test
+| Variable | Effect |
+|----------|--------|
+| `PINE_REVIEW=0` | Disables the reviewer completely |
+| `PINE_REVIEW_IMPORT=0` | Skips the import smoke test |
+| `PINE_REVIEW_AI=1` | Enables the optional AI review |
+| `PINE_REVIEWER_MODEL` | Sets the HuggingFace model for AI review |
+| `PINE_REVIEWER_PYTHON` | Path to your Python interpreter |
+| `PINE_REVIEWER_USE_CUDA=1` | Enables GPU acceleration for AI review |
 
-#### Optional AI review hook (local HuggingFace model)
+### Optional AI review
 
-This repo includes a fully local optional reviewer (no server) that runs a laptop-friendly code model via Python.
+The repo includes a fully local AI reviewer that runs a small code model on your machine. No server, no API key, no data leaves your laptop.
 
-- **Default model**: `Qwen/Qwen2.5-Coder-0.5B-Instruct`
-- **Optional larger model** (slower / more RAM): `Qwen/Qwen2.5-Coder-1.5B-Instruct`
+Default model: `Qwen/Qwen2.5-Coder-0.5B-Instruct` (fast, low RAM)
+Larger model: `Qwen/Qwen2.5-Coder-1.5B-Instruct` (better results, slower)
 
-Note: small models may produce low-quality or repetitive text. The reviewer will sanitize unusable outputs and suggest switching models via `PINE_REVIEWER_MODEL`.
-
-Setup and run (Python):
+Setup:
 
 ```bash
 pip install -r ai_reviewer/requirements.txt
 ```
 
-Then enable AI review in the CLI:
+Run with AI review enabled:
 
 ```bash
-set PINE_REVIEW_AI=1
-node src/cli.js path/to/script.pine path/to/output.js --review-ai
+PINE_REVIEW_AI=1 node src/cli.js script.pine output.js --review-ai
 ```
 
-Model selection:
-
-- `PINE_REVIEWER_MODEL=Qwen/Qwen2.5-Coder-0.5B-Instruct`
-- `PINE_REVIEWER_PYTHON=python` (optional)
-- `PINE_REVIEWER_SCRIPT=ai_reviewer/review.py` (optional)
-- `PINE_REVIEWER_USE_CUDA=1` (optional)
-
-### Run the indicator runtime tests
-
-```bash
-npm run test:indicators
-```
+Note: Small models can produce repetitive or low-quality output. The reviewer sanitizes bad responses and will suggest switching models if needed.
 
 ## Supported PineScript Features
 
 ### Language Constructs
 
-| Feature | Status | Notes |
-|---------|--------|-------|
-| Variable declarations (`var`, `varip`) | ✅ Supported | Persisted across bars via `state` object |
-| Typed declarations (`float x`, `int y`) | ✅ Supported | Generates `let` for mutability |
-| Generic types (`array<float>`, `matrix<float>`) | ✅ Supported | Basic parsing for `<type>` annotations |
-| Type blocks (`type MyType`) | ✅ Supported | Generates lightweight JS object factories |
-| Function declarations | ✅ Supported | Supports typed parameters and default values |
-| Arrow functions (`=>`) | ✅ Supported | Implicit return for expression bodies |
-| If/else statements | ✅ Supported | Full boolean expression conditions |
-| For loops (`for i = 0 to n`) | ✅ Supported | Transpiled to JS for-loops |
-| For-in loops (`for x in array`) | ✅ Supported | Transpiled to JS for-of loops |
-| While loops | ✅ Supported | Parses full expressions as conditions |
-| Switch statements | ✅ Supported | Generates chained ternary expressions |
-| Ternary operators (`a ? b : c`) | ✅ Supported | Full expression support |
-| Destructuring (`[a, b] = tuple`) | ✅ Supported | Also supports `:=` reassignment |
-| Multi-declarations (`var float a=na, var float b=na`) | ✅ Supported | Comma-separated on one line |
-| Semicolons in blocks | ✅ Supported | Statement separators inside `{...}` |
-| Import statements | ✅ Supported | Parsed but not emitted (stubbed) |
+| Feature | Notes |
+|---------|-------|
+| `var` / `varip` declarations | State persists across bars via a runtime state object |
+| Typed declarations (`float x`, `int y`) | Generates `let` with proper scoping |
+| Generic types (`array<float>`, `matrix<float>`) | Parses type annotations correctly |
+| Type blocks (`type MyType`) | Generates lightweight JavaScript object factories |
+| Function declarations | Supports typed parameters, default values, and implicit returns |
+| Arrow functions (`=>`) | Works just like you would expect |
+| `if` / `else` statements | Full boolean expression support |
+| `for i = 0 to n by step` | Transpiles to standard JavaScript for-loops |
+| `for x in array` | Transpiles to JavaScript for-of loops |
+| `while` loops | Full expression conditions |
+| `switch` statements | Generates chained ternaries or if/else chains depending on form |
+| Ternary operators | Full expression support |
+| Destructuring (`[a, b] = tuple`) | Supports both `=` and `:=` forms |
+| Multi-declarations | Comma-separated declarations on one line |
+| Semicolons as separators | Handles `{ a; b; c }` style blocks |
+| Import statements | Parsed and recognized, but not emitted (library imports are stubbed) |
 
-### Built-in Functions & Namespaces
+### Built-in Functions and Namespaces
 
-#### Technical Analysis (`ta`)
+#### Technical Analysis (ta)
 
-| Function | Status | Notes |
-|----------|--------|-------|
-| `ta.sma`, `ta.ema`, `ta.wma`, `ta.rma`, `ta.hma`, `ta.vwma` | ✅ Supported | Standard moving averages |
-| `ta.atr`, `ta.tr` | ✅ Supported | ATR with `ta.tr(true)` signature support |
-| `ta.rsi`, `ta.stoch` | ✅ Supported | RSI and Stochastic implementations |
-| `ta.cci`, `ta.crossover`, `ta.crossunder` | ✅ Supported | CCI with dual signature support |
-| `ta.pivothigh`, `ta.pivotlow` | ✅ Supported | Returns `null` (no future reference) |
-| `ta.highest`, `ta.lowest`, `ta.barssince` | ✅ Supported | Hardened for scalar inputs |
-| `ta.change`, `ta.roc`, `ta.percentrank` | ✅ Supported | Rate of change and percent rank |
-| `ta.change`, `ta.valuewhen`, `ta.iff` | ✅ Supported | Core series manipulation |
-| `ta.lowest`, `ta.highest`, `ta.median` | ✅ Supported | Array-based implementations |
+| Function | Notes |
+|----------|-------|
+| `ta.sma`, `ta.ema`, `ta.wma`, `ta.rma`, `ta.hma`, `ta.vwma`, `ta.alma`, `ta.swma` | All standard moving averages |
+| `ta.atr`, `ta.tr` | Average True Range with `ta.tr(true)` signature |
+| `ta.rsi`, `ta.stoch`, `ta.cci`, `ta.mfi` | Momentum oscillators |
+| `ta.macd` | Returns object with macd, signal, and histogram |
+| `ta.bb`, `ta.kc` | Bollinger Bands and Keltner Channels |
+| `ta.supertrend` | Returns [value, direction] tuple |
+| `ta.dmi`, `ta.adx` | Directional Movement Index |
+| `ta.crossover`, `ta.crossunder` | Properly separated (not the same function) |
+| `ta.pivothigh`, `ta.pivotlow` | Pivot detection |
+| `ta.highest`, `ta.lowest`, `ta.highestbars`, `ta.lowestbars` | Windowed extremes |
+| `ta.change`, `ta.roc`, `ta.percentrank` | Rate of change and ranking |
+| `ta.valuewhen`, `ta.barssince` | Conditional series lookback |
+| `ta.rising`, `ta.falling` | Trend detection |
+| `ta.median` | Median value over a window |
+| `ta.linreg`, `ta.correlation`, `ta.variance`, `ta.stdev` | Statistical functions |
+| `ta.cum` | Cumulative sum |
+| `ta.obv`, `ta.ad`, `ta.adosc`, `ta.cmf`, `ta.vwap` | Volume-based indicators |
 
-#### Math (`math`)
+#### Math
 
-| Function | Status | Notes |
-|----------|--------|-------|
-| `math.abs`, `math.max`, `math.min`, `math.round` | ✅ Supported | Standard math helpers |
-| `math.sqrt`, `math.pow`, `math.log`, `math.exp` | ✅ Supported | Exposes `Math.*` |
-| `math.avg`, `math.sum` | ✅ Supported | Custom implementations |
-| `math.pi`, `math.e` | ✅ Supported | Constants |
+| Function | Notes |
+|----------|-------|
+| `math.abs`, `math.max`, `math.min`, `math.round` | Standard operations |
+| `math.sqrt`, `math.pow`, `math.log`, `math.log10`, `math.exp` | Exponential and logarithmic |
+| `math.sin`, `math.cos`, `math.tan`, `math.asin`, `math.acos`, `math.atan` | Trigonometry |
+| `math.floor`, `math.ceil`, `math.sign` | Rounding and sign |
+| `math.avg`, `math.sum` | Aggregation |
+| `math.random` | Random number generation |
+| `math.todegrees`, `math.toradians` | Angle conversion |
+| `math.pi`, `math.e` | Constants |
 
-#### Array Operations (`array`)
+#### Arrays
 
-| Function | Status | Notes |
-|----------|--------|-------|
-| `array.new_float`, `array.new_int`, `array.new_bool`, `array.new_string` | ✅ Supported | Creates typed arrays |
-| `array.new_label`, `array.new_line`, `array.new_box`, `array.new_polyline` | ✅ Supported | Pine v6 object arrays |
-| `array.size`, `array.get`, `array.set` | ✅ Supported | Core array operations |
-| `array.push`, `array.pop`, `array.unshift`, `array.shift` | ✅ Supported | Mutating operations |
-| `array.clear`, `array.remove`, `array.insert` | ✅ Supported | Modification operations |
-| `array.from` | ✅ Supported | Variadic array creation |
-| `array.sort`, `array.reverse`, `array.min`, `array.max` | ✅ Supported | Utility functions |
+| Function | Notes |
+|----------|-------|
+| `array.new_float`, `array.new_int`, `array.new_bool`, `array.new_string` | Typed array creation |
+| `array.new_label`, `array.new_line`, `array.new_box`, `array.new_polyline` | Drawing object arrays |
+| `array.from` | Create from variadic arguments |
+| `array.size`, `array.get`, `array.set` | Core access |
+| `array.push`, `array.pop`, `array.unshift`, `array.shift` | Stack/queue operations |
+| `array.insert`, `array.remove`, `array.clear`, `array.fill` | Modification |
+| `array.sort`, `array.reverse`, `array.slice` | Transformation |
+| `array.contains`, `array.indexof`, `array.lastindexof` | Search |
+| `array.sum`, `array.avg`, `array.min`, `array.max` | Aggregation |
+| `array.stdev`, `array.variance`, `array.covariance` | Statistics |
 
-#### String Operations (`str`)
+#### Strings
 
-| Function | Status | Notes |
-|----------|--------|-------|
-| `str.tostring`, `str.tonumber` | ✅ Supported | Type conversion |
-| `str.concat`, `str.substring`, `str.len` | ✅ Supported | String manipulation |
-| `str.contains`, `str.startswith`, `str.endswith` | ✅ Supported | Pattern matching |
-| `str.replace`, `str.replaceall`, `str.lower`, `str.upper` | ✅ Supported | Transformations |
-| `str.split`, `str.match` | ✅ Supported | Advanced parsing |
+| Function | Notes |
+|----------|-------|
+| `str.tostring`, `str.tonumber` | Type conversion |
+| `str.concat`, `str.substring`, `str.len` | Basic operations |
+| `str.contains`, `str.startswith`, `str.endswith` | Pattern matching |
+| `str.replace`, `str.replaceall`, `str.lower`, `str.upper` | Transformations |
+| `str.split`, `str.match`, `str.format` | Parsing and formatting |
+| `str.pos`, `str.rpos`, `str.remove`, `str.reverse` | Position and manipulation |
 
-#### Color (`color`)
+#### Colors
 
-| Function | Status | Notes |
-|----------|--------|-------|
-| `color.rgb`, `color.new`, `color.from_gradient` | ✅ Supported | Color construction |
-| `color.hex`, `color.t`, `color.r`, `color.g`, `color.b` | ✅ Supported | Color decomposition |
-| Predefined colors (`color.red`, `color.green`, etc.) | ✅ Supported | Named color constants |
+| Function | Notes |
+|----------|-------|
+| `color.rgb`, `color.new`, `color.from_gradient` | Color construction |
+| `color.hex`, `color.r`, `color.g`, `color.b`, `color.t` | Color decomposition |
+| Named colors (`color.red`, `color.green`, etc.) | Standard color constants |
 
-#### Table (`table`)
+#### Input
 
-| Function | Status | Notes |
-|----------|--------|-------|
-| `table.new`, `table.cell`, `table.merge_cells` | ✅ Supported | Table construction |
-| `table.cell_set_text`, `table.cell_set_bgcolor` | ✅ Supported | Cell manipulation |
+| Function | Notes |
+|----------|-------|
+| `input.int`, `input.float`, `input.bool`, `input.string` | Typed input parameters |
+| `input.source`, `input.color`, `input.time`, `input.timeframe` | Special input types |
 
-#### Drawing (`line`, `label`, `box`, `polyline`)
+#### Tables
 
-| Function | Status | Notes |
-|----------|--------|-------|
-| `line.new`, `line.delete`, `line.setxy` | ✅ Supported | Line primitives |
-| `label.new`, `label.delete`, `label.settext` | ✅ Supported | Label primitives |
-| `box.new`, `box.delete` | ✅ Supported | Box primitives |
-| `polyline.new`, `polyline.delete` | ✅ Supported | Polyline primitives |
+| Function | Notes |
+|----------|-------|
+| `table.new`, `table.cell`, `table.merge_cells` | Table construction |
+| `table.cell_set_text`, `table.cell_set_bgcolor` | Cell manipulation |
+| `table.delete`, `table.clear` | Cleanup |
 
-#### Multi-Timeframe (`request`, `timeframe`, `barmerge`)
+#### Drawing
 
-| Function | Status | Notes |
-|----------|--------|-------|
-| `request.security(symbol, tf, series, opts)` | ✅ Baseline | Resamples using `time[]` alignment |
-| `request.financial(...)` | ✅ Stub | Returns `null` |
-| `input.timeframe(defval)` | ✅ Supported | Returns input value |
-| `barmerge.gaps_off`, `barmerge.gaps_on` | ✅ Supported | Constants |
-| `barmerge.lookahead_off`, `barmerge.lookahead_on` | ✅ Supported | Constants |
+| Function | Notes |
+|----------|-------|
+| `line.new`, `line.delete`, `line.set_xy1`, `line.set_xy2` | Line primitives |
+| `line.getx`, `line.gety` | Line queries |
+| `label.new`, `label.delete`, `label.set_text`, `label.get_text` | Label primitives |
+| `box.new`, `box.delete` | Box primitives |
+| `polyline.new`, `polyline.delete` | Polyline primitives |
 
-#### Other
+#### Multi-Timeframe
 
-| Function | Status | Notes |
-|----------|--------|-------|
-| `na(x)`, `nz(x, def)` | ✅ Supported | Null handling |
-| `input.int/float/bool/string/time/source/color` | ✅ Supported | Input declarations |
-| `plot`, `plotshape`, `plotbar`, `plotcandle` | ✅ Supported | Charting output |
-| `bgcolor`, `hline`, `fill` | ✅ Supported | Visual output |
-| `alertcondition` | ✅ Supported | Alert registration |
-| `barstate.islast`, `barstate.islastconfirmedhistory` | ✅ Supported | Bar state checks |
+| Function | Notes |
+|----------|-------|
+| `request.security(symbol, tf, series, opts)` | Resamples using time array alignment |
+| `request.financial(...)` | Returns null (stub) |
+| `barmerge.gaps_off/on`, `barmerge.lookahead_off/on` | Merge behavior constants |
 
-### Series Semantics
+#### Plotting and Output
 
-The transpiler implements PineScript's series semantics:
+| Function | Notes |
+|----------|-------|
+| `plot`, `plotshape`, `plotbar`, `plotcandle` | Chart output |
+| `bgcolor`, `hline`, `fill` | Visual elements |
+| `alertcondition`, `alert` | Alert registration |
 
-- **History indexing**: `x[1]`, `x[n]` transpiled to `pinescript.offset(x, n)`
-- **Current bar value**: Arithmetic (`high / low`, `close + open`) uses the last array element via `SeriesArray.valueOf()`
-- **Implicit casting**: OHLCV arrays wrapped in `SeriesArray` at runtime for seamless arithmetic
+#### Strategy (stubs)
 
-### State Persistence
+| Function | Notes |
+|----------|-------|
+| `strategy.entry`, `strategy.close`, `strategy.exit`, `strategy.order` | Logged but not backtested |
+| `strategy.long`, `strategy.short` | Direction constants |
 
-Variables declared with `var` or `varip` are persisted across bar executions:
+### How Series Semantics Work
+
+PineScript treats data as series -- arrays where the last element is the current bar. This transpiler preserves that behavior:
+
+- **History indexing**: `x[1]` in Pine becomes `pinescript.offset(x, 1)` in JavaScript. This safely grabs the value from one bar ago.
+- **Current bar arithmetic**: When you write `close + open` in Pine, both operands use the most recent bar value. The runtime wraps OHLCV arrays in a `SeriesArray` class whose `valueOf()` returns the last element, so arithmetic just works.
+- **Null safety**: `na(x)` checks for null/undefined/NaN. `nz(x, default)` replaces bad values. These work exactly like their Pine counterparts.
+
+### How State Persistence Works
+
+Variables declared with `var` or `varip` keep their values across bar executions:
 
 ```javascript
-// Generated code pattern:
-if (state.myVar === undefined) state.myVar = initialValue;
-// ... reads become state.myVar
-// ... writes become state.myVar = newValue;
+// What the transpiler generates for: var float lastCross = na
+if (state.lastCross === undefined) state.lastCross = null;
+// Reads become: state.lastCross
+// Writes become: state.lastCross = newValue;
 ```
 
-### Multi-Timeframe Baseline
+The `state` object is stored in `globalThis.__pineState` so it survives across calls to `main()`.
 
-`request.security()` implements basic resampling:
+### How Multi-Timeframe Works
 
-1. Parses timeframe strings (`"60"`, `"1H"`, `"D"`, `"W"`, `"M"`)
-2. Buckets `time[]` into periods based on timeframe milliseconds
-3. Aligns series to base timeframe with optional lookahead/gaps
+`request.security()` implements timeframe resampling:
 
-**Limitations**:
+1. Parses timeframe strings like `"60"`, `"1H"`, `"D"`, `"W"`, `"M"` into milliseconds
+2. Buckets the `time[]` array into periods based on the target timeframe
+3. Aligns the data series to the base timeframe with optional lookahead and gap handling
+
+**Current limitations** (contributions welcome):
 - No session calendar handling
-- No partial bar alignment
-- No `barmerge` repainting rules beyond basic options
+- No partial/incomplete bar alignment
+- No full barmerge repainting rules beyond the basic constants
 
-## Known Gaps / Future Work
+## Known Gaps
 
-The following PineScript features are not yet implemented or are partially supported. Contributions are welcome.
+These PineScript features are not yet fully implemented. The transpiler will handle scripts that use them, but the runtime behavior may not match TradingView exactly.
 
-### Core Language Features
+### Not yet implemented
+- **Strategy backtesting**: Entry/exit functions log actions but do not simulate trades or generate equity curves
+- **Pine v6 maps**: `map.new`, `map.get`, `map.set` have basic Map-backed implementations but are not battle-tested
+- **User-defined type methods**: `type Foo` with `method` blocks has limited support
+- **Library imports**: `import` statements are parsed but the imported functions are not resolved
+- **Session calendars**: `timeframe.session` and session-based resampling
+- **Polyline animations**: `polyline.set_*` methods
+- **Line fills**: `linefill.new` and related functions
+- **Tooltip formatting**: `format.*` options for `plot`
+- **Plot/CSV export**: No built-in way to export plotted values
 
-- **Strategy functions**: `strategy.entry`, `strategy.close`, `strategy.long`, `strategy.short`, `strategy.order` are not implemented.
-- **Matrix operations**: `matrix.new`, `matrix.mult`, `matrix.inv`, `matrix.transpose` are stubbed with basic placeholder implementations.
-- **Chart point objects**: `chart.point.from_index`, `chart.point.new` are stubbed.
-- **Map data type**: Pine v6 `map` type declarations and operations (`map.new`, `map.get`, `map.set`) are not implemented.
-- **User-defined types with methods**: `type Foo` with `method` blocks have limited support.
-- **Library imports**: `@version` semantics beyond v5/v6 detection are not enforced.
+## CLI Reference
 
-### Multi-Timeframe / Security
+```
+Usage: node src/cli.js [options] <input-file> [output-file]
 
-- **Session calendars**: `timeframe.session` and session-based resampling are not handled.
-- **Partial bar alignment**: `request.security()` does not align to incomplete current bars.
-- **Full barmerge repainting**: `barmerge.lookahead_on` and `barmerge.gaps_on` behavior is not fully TV-accurate.
-- **Security on non-standard timeframes**: Very small intervals (< 1m) or irregular intervals may not resample correctly.
+Options:
+  -h, --help          Show help
+  -v, --verbose       Detailed output with file stats and timing
+  -s, --source        Include source code in output
+  --no-comments       Strip comments from generated code
+  --ast               Output the AST instead of JavaScript
+  --tokens            Output the token stream instead of JavaScript
+  --no-review         Skip post-conversion review
+  --no-review-import  Skip the runtime import test only
+  --review-ai         Enable local AI review (needs Python deps)
+```
 
-### Drawing / Visualization
+### Example workflow
 
-- **Polyline animations**: `polyline.set_*` methods are not implemented.
-- **Line fill**: `linefill.new` and related functions are not implemented.
-- **Tooltip formatting**: `format.*` options for `plot` are not fully mapped.
+```bash
+# Convert a script with full review
+node src/cli.js my_indicator.pine my_indicator.js
 
-### Testing / Verification
+# See what the parser produces
+node src/cli.js my_indicator.pine --ast
 
-- **Backtest engine**: No built-in backtest output or equity curve generation.
-- **Plot export**: No CSV/JSON export of plotted values.
+# Convert without any review (fastest)
+node src/cli.js my_indicator.pine my_indicator.js --no-review
 
-## Example PineScript for Testing
+# Convert with AI review for deeper analysis
+PINE_REVIEW_AI=1 node src/cli.js my_indicator.pine my_indicator.js --review-ai
+```
 
-Copy the following PineScript code into a file (e.g., `test_script.pine`) and run:
+## Running Tests
+
+```bash
+npm test                  # Run the main test suite
+npm run test:indicators   # Run bar-by-bar indicator smoke tests
+```
+
+## Example PineScript
+
+Here is a script that exercises most of the transpiler's capabilities. Save it as `test_script.pine` and convert it:
 
 ```pine
 //@version=5
@@ -315,57 +370,55 @@ fastLen = input.int(10, "Fast Length")
 slowLen = input.int(20, "Slow Length")
 src = input.source(close, "Source")
 
-// Calculations
+// Moving average calculations
 fastMA = ta.sma(src, fastLen)
 slowMA = ta.sma(src, slowLen)
 
-// State persistence example
+// Track the last crossover bar using persistent state
 var float lastCross = na
 if ta.crossover(fastMA, slowMA)
     lastCross := bar_index
 else if ta.crossunder(fastMA, slowMA)
     lastCross := bar_index
 
-// Multi-timeframe example
+// Pull in higher timeframe data
 higherTF = input.timeframe("60", "Higher TF")
 [st, dir] = request.security(syminfo.tickerid, higherTF, ta.supertrend(3, 10))
 
-// Plots
+// Plot the moving averages
 plot(fastMA, "Fast MA", color=color.blue)
 plot(slowMA, "Slow MA", color=color.orange)
 plotshape(ta.crossover(fastMA, slowMA), "Crossover", style=shape.triangleup, location=location.belowbar, color=color.lime)
 plotshape(ta.crossunder(fastMA, slowMA), "Crossunder", style=shape.triangledown, location=location.abovebar, color=color.red)
 
-// Table output
-var table testTable = table.new(position.top_right, 2, 2, bgcolor=color.new(color.black, 80))
+// Display current values in a table
+var table infoTable = table.new(position.top_right, 2, 2, bgcolor=color.new(color.black, 80))
 if barstate.islastconfirmedhistory
-    table.cell(testTable, 0, 0, "Fast MA", text_color=color.white)
-    table.cell(testTable, 0, 1, "Slow MA", text_color=color.white)
-    table.cell(testTable, 1, 0, str.tostring(fastMA, "#.##"), text_color=color.aqua)
-    table.cell(testTable, 1, 1, str.tostring(slowMA, "#.##"), text_color=color.fuchsia)
+    table.cell(infoTable, 0, 0, "Fast MA", text_color=color.white)
+    table.cell(infoTable, 0, 1, "Slow MA", text_color=color.white)
+    table.cell(infoTable, 1, 0, str.tostring(fastMA, "#.##"), text_color=color.aqua)
+    table.cell(infoTable, 1, 1, str.tostring(slowMA, "#.##"), text_color=color.fuchsia)
 
-// Alerts
+// Set up alerts
 alertcondition(ta.crossover(fastMA, slowMA), "MA Crossover", "Fast crossed above slow")
 alertcondition(ta.crossunder(fastMA, slowMA), "MA Crossunder", "Fast crossed below slow")
 ```
 
-### Convert and run:
+Convert and run:
 
 ```bash
 node src/cli.js test_script.pine test_script.js
-node test_script.js   # Requires synthetic OHLCV data setup
+node test_script.js   # Needs OHLCV data loaded into globalThis
 ```
 
 ## Contributing
 
-See `CONTRIBUTING.md`.
+See `CONTRIBUTING.md` for guidelines.
 
 ## License
 
-See `LICENSE`.
+MIT. See `LICENSE`.
 
 ---
 
-**Made with love by MeridianAlgo**
-
-Documentation and test suite created with AI assistance.
+Built by MeridianAlgo. Documentation and test suite created with AI assistance.

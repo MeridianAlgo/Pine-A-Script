@@ -1,9 +1,11 @@
 /**
  * PineScript Built-in Functions - JavaScript implementations
+ * This module provides a comprehensive mapping of PineScript built-in functions
+ * to their JavaScript equivalents, enabling converted scripts to run correctly.
  */
 
 export const builtins = new Map([
-  // Moving Averages
+  // Moving average calculations used for trend smoothing and noise reduction
   ['sma', function(series, length) {
     if (series === null || series === undefined) return null;
     if (!Array.isArray(series)) series = [series];
@@ -88,7 +90,16 @@ export const builtins = new Map([
     return weightSum > 0 ? sum / weightSum : null;
   }],
 
-  // Volatility
+  // Symmetrically Weighted Moving Average, which applies weights [1/6, 2/6, 2/6, 1/6] over four bars
+  ['swma', function(series) {
+    if (series === null || series === undefined) return null;
+    if (!Array.isArray(series)) series = [series];
+    if (series.length < 4) return null;
+    const s = series.slice(-4);
+    return (s[0] * 1 + s[1] * 2 + s[2] * 2 + s[3] * 1) / 6;
+  }],
+
+  // Volatility measurements like ATR and Bollinger Bands, used to gauge market uncertainty
   ['atr', function(high, low, close, length = 14) {
     if (!Array.isArray(high) || !Array.isArray(low) || !Array.isArray(close)) return null;
     if (high.length < length + 1 || low.length < length + 1 || close.length < length + 1) return null;
@@ -122,7 +133,61 @@ export const builtins = new Map([
     return { middle: sma, upper: sma + mult * atr, lower: sma - mult * atr };
   }],
 
-  // Oscillators
+  // Supertrend indicator, a popular trend-following overlay based on ATR bands
+  ['supertrend', function(factor, atrPeriod, high, low, close) {
+    if (!Array.isArray(high) || !Array.isArray(low) || !Array.isArray(close)) return [null, null];
+    if (high.length < atrPeriod + 1) return [null, null];
+    const atrVal = builtins.get('atr')(high, low, close, atrPeriod);
+    if (atrVal === null) return [null, null];
+    const lastIdx = close.length - 1;
+    const hl2 = (high[lastIdx] + low[lastIdx]) / 2;
+    const upperBand = hl2 + factor * atrVal;
+    const lowerBand = hl2 - factor * atrVal;
+    // Determine direction: 1 means downtrend (price below band), -1 means uptrend
+    const direction = close[lastIdx] > upperBand ? -1 : close[lastIdx] < lowerBand ? 1 : -1;
+    const supertrendValue = direction === -1 ? lowerBand : upperBand;
+    return [supertrendValue, direction];
+  }],
+
+  // Alias that mirrors the TradingView ta.supertrend signature
+  ['ta_supertrend', function(factor, atrPeriod) {
+    const H = globalThis.high;
+    const L = globalThis.low;
+    const C = globalThis.close;
+    return builtins.get('supertrend')(factor, atrPeriod, H, L, C);
+  }],
+
+  // Directional Movement Index and Average Directional Index for measuring trend strength
+  ['dmi', function(diLength, adxSmoothing, high, low, close) {
+    if (!Array.isArray(high) || !Array.isArray(low) || !Array.isArray(close)) return { plusDI: null, minusDI: null, adx: null };
+    if (high.length < diLength + 1) return { plusDI: null, minusDI: null, adx: null };
+    let plusDMSum = 0, minusDMSum = 0, trSum = 0;
+    for (let i = 1; i <= diLength; i++) {
+      const idx = high.length - 1 - diLength + i;
+      const upMove = high[idx] - high[idx - 1];
+      const downMove = low[idx - 1] - low[idx];
+      plusDMSum += (upMove > downMove && upMove > 0) ? upMove : 0;
+      minusDMSum += (downMove > upMove && downMove > 0) ? downMove : 0;
+      const tr = Math.max(
+        high[idx] - low[idx],
+        Math.abs(high[idx] - close[idx - 1]),
+        Math.abs(low[idx] - close[idx - 1])
+      );
+      trSum += tr;
+    }
+    const plusDI = trSum > 0 ? (plusDMSum / trSum) * 100 : 0;
+    const minusDI = trSum > 0 ? (minusDMSum / trSum) * 100 : 0;
+    const diSum = plusDI + minusDI;
+    const dx = diSum > 0 ? Math.abs(plusDI - minusDI) / diSum * 100 : 0;
+    return { plusDI, minusDI, adx: dx };
+  }],
+
+  ['adx', function(diLength, adxSmoothing, high, low, close) {
+    const result = builtins.get('dmi')(diLength, adxSmoothing, high, low, close);
+    return result ? result.adx : null;
+  }],
+
+  // Oscillator indicators that measure momentum and overbought/oversold conditions
   ['rsi', function(close, length = 14) {
     if (close === null || close === undefined) return null;
     if (!Array.isArray(close)) close = [close];
@@ -185,9 +250,7 @@ export const builtins = new Map([
   }],
 
   ['cci', function(a, b, c, d) {
-    // Pine signatures:
-    // - ta.cci(source, length)
-    // - ta.cci(high, low, close, length)
+    // Supports both ta.cci(source, length) and ta.cci(high, low, close, length) signatures
     let source;
     let length;
     if (Array.isArray(a) && typeof b === 'number' && c === undefined) {
@@ -234,7 +297,7 @@ export const builtins = new Map([
     return 100 - (100 / (1 + ratio));
   }],
 
-  // Volume
+  // Volume-based indicators that combine price movement with trading activity
   ['obv', function(close, volume) {
     if (!close || close.length < 2) return null;
     let result = 0;
@@ -287,7 +350,7 @@ export const builtins = new Map([
     return volSum > 0 ? priceVolSum / volSum : null;
   }],
 
-  // Statistical
+  // Statistical functions for regression, correlation, and distribution analysis
   ['linreg', function(source, length, offset = 0) {
     if (!source || source.length < length) return null;
     const slice = source.slice(-length - offset).slice(offset);
@@ -332,7 +395,20 @@ export const builtins = new Map([
     return Math.sqrt(builtins.get('variance')(source, length));
   }],
 
-  // Price Functions
+  // Median returns the middle value of the last N bars when sorted
+  ['median', function(source, length) {
+    if (!source || source.length < length) return null;
+    const sorted = [...source.slice(-length)].sort((a, b) => a - b);
+    const mid = Math.floor(sorted.length / 2);
+    return sorted.length % 2 !== 0 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2;
+  }],
+
+  // Alias for ta.median in TradingView's namespaced API
+  ['ta_median', function(source, length) {
+    return builtins.get('median')(source, length);
+  }],
+
+  // Price combination helpers that produce typical or weighted close values
   ['hl2', function(high, low) {
     return high && low ? (high[high.length - 1] + low[low.length - 1]) / 2 : null;
   }],
@@ -345,7 +421,7 @@ export const builtins = new Map([
     return open && high && low && close ? (open[open.length - 1] + high[high.length - 1] + low[low.length - 1] + close[close.length - 1]) / 4 : null;
   }],
 
-  // Utility Functions
+  // General-purpose utility functions for arithmetic, comparison, and rounding
   ['avg', function(...args) {
     return args.reduce((a, b) => a + b, 0) / args.length;
   }],
@@ -469,6 +545,7 @@ export const builtins = new Map([
     return true;
   }],
 
+  // Crossover and crossunder detect when two series cross each other in a specific direction
   ['cross', function(series1, series2) {
     if (series1 === null || series1 === undefined) return false;
     if (series2 === null || series2 === undefined) return false;
@@ -478,6 +555,28 @@ export const builtins = new Map([
     const i = series1.length - 1;
     return (series1[i - 1] < series2[i - 1] && series1[i] >= series2[i]) ||
            (series1[i - 1] > series2[i - 1] && series1[i] <= series2[i]);
+  }],
+
+  // Returns true when series1 was below series2 on the previous bar and is now above or equal
+  ['crossover', function(series1, series2) {
+    if (series1 === null || series1 === undefined) return false;
+    if (series2 === null || series2 === undefined) return false;
+    if (!Array.isArray(series1)) series1 = [series1];
+    if (!Array.isArray(series2)) series2 = [series2];
+    if (series1.length < 2 || series2.length < 2) return false;
+    const i = series1.length - 1;
+    return series1[i - 1] < series2[i - 1] && series1[i] >= series2[i];
+  }],
+
+  // Returns true when series1 was above series2 on the previous bar and is now below or equal
+  ['crossunder', function(series1, series2) {
+    if (series1 === null || series1 === undefined) return false;
+    if (series2 === null || series2 === undefined) return false;
+    if (!Array.isArray(series1)) series1 = [series1];
+    if (!Array.isArray(series2)) series2 = [series2];
+    if (series1.length < 2 || series2.length < 2) return false;
+    const i = series1.length - 1;
+    return series1[i - 1] > series2[i - 1] && series1[i] <= series2[i];
   }],
 
   ['offset', function(series, offset) {
@@ -512,7 +611,7 @@ export const builtins = new Map([
     return null;
   }],
 
-  // Time Functions
+  // Time and date functions for extracting calendar components from timestamps
   ['year', function(timestamp) {
     const date = timestamp ? new Date(timestamp) : new Date();
     return date.getFullYear();
@@ -556,7 +655,7 @@ export const builtins = new Map([
     return Date.UTC(year, month - 1, day, hour, minute, second);
   }],
 
-  // Type Conversion
+  // Type checking and null-coalescing helpers for handling missing or invalid values
   ['na', function(value) {
     return value === null || value === undefined || (typeof value === 'number' && isNaN(value));
   }],
@@ -577,7 +676,7 @@ export const builtins = new Map([
     return builtins.get('nz')(value, replacement);
   }],
 
-  // Plotting Functions (stub implementations)
+  // Plotting and visual output stubs that record drawing instructions for the runtime
   ['plot', function(series, title = '', color = null, linewidth = 1) {
     globalThis.__pineRuntime.plots.push({
       series,
@@ -596,11 +695,73 @@ export const builtins = new Map([
     return null;
   }],
 
+  // Functions to update or read individual coordinates on an existing line object
+  ['lineSetXY', function(line, point, x, y) {
+    if (!line) return null;
+    if (point === 0 || point === 'x1') { line.x1 = x; line.y1 = y; }
+    else { line.x2 = x; line.y2 = y; }
+    return line;
+  }],
+
+  ['lineGetX', function(line, point) {
+    if (!line) return null;
+    return point === 0 || point === 'x1' ? line.x1 : line.x2;
+  }],
+
+  ['lineGetY', function(line, point) {
+    if (!line) return null;
+    return point === 0 || point === 'y1' ? line.y1 : line.y2;
+  }],
+
   ['labelNew', function(x, y, text = '', opts = {}) {
     return { x, y, text, opts, _type: 'label' };
   }],
 
   ['labelDelete', function(l) {
+    return null;
+  }],
+
+  // Update or retrieve the text content of a label object
+  ['labelSetText', function(label, text) {
+    if (!label) return null;
+    label.text = text;
+    return label;
+  }],
+
+  ['labelGetText', function(label) {
+    if (!label) return '';
+    return label.text || '';
+  }],
+
+  // Box drawing functions for creating rectangular shapes on the chart
+  ['boxNew', function(left, top, right, bottom, opts = {}) {
+    return { left, top, right, bottom, opts, _type: 'box' };
+  }],
+
+  ['boxDelete', function(box) {
+    return null;
+  }],
+
+  ['boxSetLeftTop', function(box, left, top) {
+    if (!box) return null;
+    box.left = left;
+    box.top = top;
+    return box;
+  }],
+
+  ['boxSetRightBottom', function(box, right, bottom) {
+    if (!box) return null;
+    box.right = right;
+    box.bottom = bottom;
+    return box;
+  }],
+
+  // Polyline drawing functions for multi-point paths on the chart
+  ['polylineNew', function(points, opts = {}) {
+    return { points: points || [], opts, _type: 'polyline' };
+  }],
+
+  ['polylineDelete', function(poly) {
     return null;
   }],
 
@@ -644,15 +805,7 @@ export const builtins = new Map([
     return null;
   }],
 
-  // Drawing/annotation (stubs)
-  ['labelNew', function(...args) {
-    if (globalThis.__pineRuntime) {
-      globalThis.__pineRuntime.labels = globalThis.__pineRuntime.labels || [];
-      globalThis.__pineRuntime.labels.push({ args });
-    }
-    return { args };
-  }],
-
+  // Background color and fill stubs for visual styling of chart regions
   ['bgcolor', function(color, title, editable, showLast) {
     return null;
   }],
@@ -661,13 +814,13 @@ export const builtins = new Map([
     return null;
   }],
 
-  // Alert Functions
+  // Alert functions for triggering notifications based on conditions
   ['alert', function(condition, message, frequency) {
     console.log('Alert:', condition ? message : 'Condition not met');
     return condition;
   }],
 
-  // Strategy Functions
+  // Strategy order management functions for backtesting trade entries, exits, and position sizing
   ['strategyEntry', function(id, direction, qty, limit, stop, ocaName, ocaType, comment) {
     console.log(`Strategy Entry: ${id} ${direction}`);
     return true;
@@ -696,6 +849,7 @@ export const builtins = new Map([
     return 'short';
   }],
 
+  // Chart point constructors for positioning drawings by bar index or timestamp
   ['chartPointFromIndex', function(_index, _price) {
     return { index: _index ?? null, price: _price ?? null };
   }],
@@ -704,6 +858,7 @@ export const builtins = new Map([
     return { time: _time ?? null, price: _price ?? null };
   }],
 
+  // Map data structure functions for key-value storage within scripts
   ['mapNew', function() {
     return new Map();
   }],
@@ -744,6 +899,7 @@ export const builtins = new Map([
     return m.has(key);
   }],
 
+  // Matrix operations for linear algebra computations within scripts
   ['matrixNew', function(rows, cols, initialValue = 0) {
     const r = Math.max(0, rows ?? 0);
     const c = Math.max(0, cols ?? 0);
@@ -884,12 +1040,12 @@ export const builtins = new Map([
     return null;
   }],
 
-  // Security / Data Functions
+  // External data request stub that passes through the expression in single-security mode
   ['requestSecurity', function(symbol, timeframe, expression) {
     return expression;
   }],
 
-  // Array Functions
+  // Array manipulation functions that mirror PineScript's array namespace
   ['arrayNew', function(initialSize = 0, initialValue = 0) {
     return Array(initialSize).fill(initialValue);
   }],
@@ -978,6 +1134,11 @@ export const builtins = new Map([
     return arr ? arr.indexOf(value) : -1;
   }],
 
+  // Searches from the end of the array and returns the last index where the value is found
+  ['arrayLastIndexOf', function(arr, value) {
+    return arr ? arr.lastIndexOf(value) : -1;
+  }],
+
   ['arraySum', function(arr) {
     return arr ? arr.reduce((a, b) => a + b, 0) : 0;
   }],
@@ -994,7 +1155,51 @@ export const builtins = new Map([
     return arr && arr.length > 0 ? Math.max(...arr) : null;
   }],
 
-  // String Functions
+  // Computes the standard deviation of all elements in the array
+  ['arrayStdev', function(arr) {
+    if (!arr || arr.length === 0) return null;
+    const mean = arr.reduce((a, b) => a + b, 0) / arr.length;
+    const variance = arr.reduce((sum, val) => sum + Math.pow(val - mean, 2), 0) / arr.length;
+    return Math.sqrt(variance);
+  }],
+
+  // Computes the variance of all elements in the array
+  ['arrayVariance', function(arr) {
+    if (!arr || arr.length === 0) return null;
+    const mean = arr.reduce((a, b) => a + b, 0) / arr.length;
+    return arr.reduce((sum, val) => sum + Math.pow(val - mean, 2), 0) / arr.length;
+  }],
+
+  // Computes the covariance between two arrays of equal length
+  ['arrayCovariance', function(arr1, arr2) {
+    if (!arr1 || !arr2 || arr1.length === 0 || arr1.length !== arr2.length) return null;
+    const mean1 = arr1.reduce((a, b) => a + b, 0) / arr1.length;
+    const mean2 = arr2.reduce((a, b) => a + b, 0) / arr2.length;
+    let cov = 0;
+    for (let i = 0; i < arr1.length; i++) {
+      cov += (arr1[i] - mean1) * (arr2[i] - mean2);
+    }
+    return cov / arr1.length;
+  }],
+
+  // Returns the most frequently occurring value in an array
+  ['mode', function(arr) {
+    if (!arr || arr.length === 0) return null;
+    const counts = new Map();
+    let maxCount = 0;
+    let modeVal = arr[0];
+    for (const val of arr) {
+      const c = (counts.get(val) || 0) + 1;
+      counts.set(val, c);
+      if (c > maxCount) {
+        maxCount = c;
+        modeVal = val;
+      }
+    }
+    return modeVal;
+  }],
+
+  // String manipulation functions for working with text values
   ['strLength', function(str) {
     return str ? str.length : 0;
   }],
@@ -1068,7 +1273,118 @@ export const builtins = new Map([
     return str ? str.split('').reverse().join('') : '';
   }],
 
-  // Math Constants
+  // Formats a string by replacing placeholders like {0}, {1} with the corresponding arguments
+  ['strFormat', function(formatStr, ...args) {
+    if (!formatStr) return '';
+    return formatStr.replace(/\{(\d+)\}/g, (match, idx) => {
+      const i = parseInt(idx, 10);
+      return i < args.length ? String(args[i]) : match;
+    });
+  }],
+
+  // Input functions that provide default values when scripts are run outside TradingView
+  ['input', function(defval, title, tooltip, inline, group) {
+    return defval;
+  }],
+
+  ['inputInt', function(defval = 0, title, minval, maxval, step, tooltip, inline, group) {
+    return defval;
+  }],
+
+  ['inputFloat', function(defval = 0.0, title, minval, maxval, step, tooltip, inline, group) {
+    return defval;
+  }],
+
+  ['inputBool', function(defval = false, title, tooltip, inline, group) {
+    return defval;
+  }],
+
+  ['inputString', function(defval = '', title, options, tooltip, inline, group) {
+    return defval;
+  }],
+
+  ['inputSource', function(defval = null, title, tooltip, inline, group) {
+    return defval;
+  }],
+
+  ['inputColor', function(defval = '#000000', title, tooltip, inline, group) {
+    return defval;
+  }],
+
+  ['inputTime', function(defval = 0, title, tooltip, inline, group) {
+    return defval;
+  }],
+
+  // Additional math functions that complement the basic arithmetic operations
+  ['mathSign', function(value) {
+    return Math.sign(value);
+  }],
+
+  // Variadic average that accepts any number of numeric arguments
+  ['mathAvg', function(...args) {
+    const valid = args.filter(v => v !== null && v !== undefined && !isNaN(v));
+    return valid.length > 0 ? valid.reduce((a, b) => a + b, 0) / valid.length : null;
+  }],
+
+  // Windowed sum over the last N elements of a series, similar to ta.sum in PineScript
+  ['mathSum', function(series, length) {
+    if (!series || series.length < length) return null;
+    return series.slice(-length).reduce((a, b) => a + b, 0);
+  }],
+
+  // Returns a pseudo-random number between 0 (inclusive) and 1 (exclusive)
+  ['mathRandom', function(min = 0, max = 1) {
+    return min + Math.random() * (max - min);
+  }],
+
+  // Converts radians to degrees
+  ['mathTodegrees', function(radians) {
+    return radians * (180 / Math.PI);
+  }],
+
+  // Converts degrees to radians
+  ['mathToradians', function(degrees) {
+    return degrees * (Math.PI / 180);
+  }],
+
+  // Returns the transparency component of a color, or sets it if a value is provided
+  ['colorT', function(color, transparency) {
+    if (transparency !== undefined) {
+      return { color, transparency };
+    }
+    if (color && typeof color === 'object' && 'transparency' in color) {
+      return color.transparency;
+    }
+    return 0;
+  }],
+
+  // Table cell and management stubs for scripts that create tabular displays on the chart
+  ['tableCellSetText', function(table, column, row, text) {
+    return null;
+  }],
+
+  ['tableCellSetBgcolor', function(table, column, row, bgcolor) {
+    return null;
+  }],
+
+  ['tableMergeCells', function(table, startColumn, startRow, endColumn, endRow) {
+    return null;
+  }],
+
+  ['tableDelete', function(table) {
+    return null;
+  }],
+
+  ['tableClear', function(table, startColumn, startRow, endColumn, endRow) {
+    return null;
+  }],
+
+  // Stub that tells the runtime to allocate historical buffer depth; has no effect in JavaScript
+  ['maxBarsBack', function(series, length) {
+    return null;
+  }],
+
+  // Mathematical and market data constants
   ['pi', Math.PI],
   ['e', Math.E],
   ['true', true],
@@ -1097,7 +1413,7 @@ export const builtins = new Map([
     return null;
   }],
   ['tr', function(high, low, close) {
-    // Pine signature: ta.tr(true)
+    // Handles both the boolean shorthand ta.tr(true) and explicit high/low/close arguments
     if (typeof high === 'boolean') {
       const H = globalThis.high;
       const L = globalThis.low;
@@ -1108,7 +1424,7 @@ export const builtins = new Map([
       return Math.max(H[i] - L[i], Math.abs(H[i] - prevClose), Math.abs(L[i] - prevClose));
     }
 
-    // Fallback: treat inputs as scalars for current bar
+    // When arrays are passed, compute true range from the last bar using the previous close
     if (Array.isArray(close)) {
       const prevClose = close[close.length - 2] || close[0];
       const currHigh = Array.isArray(high) ? high[high.length - 1] : high;
@@ -1118,6 +1434,108 @@ export const builtins = new Map([
     }
 
     return Math.max(high - low, Math.abs(high - close), Math.abs(low - close));
+  }],
+
+  ['arrayFirst', function(arr) {
+    if (!arr || arr.length === 0) return null;
+    return arr[0];
+  }],
+
+  ['arrayLast', function(arr) {
+    if (!arr || arr.length === 0) return null;
+    return arr[arr.length - 1];
+  }],
+
+  ['arrayJoin', function(arr, separator = ',') {
+    if (!arr) return '';
+    return arr.join(separator);
+  }],
+
+  ['arrayConcat', function(arr1, arr2) {
+    if (!arr1) return arr2 || [];
+    if (!arr2) return arr1;
+    return arr1.concat(arr2);
+  }],
+
+  ['arrayCopy', function(arr) {
+    if (!arr) return [];
+    return [...arr];
+  }],
+
+  ['arrayBinarySearch', function(arr, value) {
+    if (!arr || arr.length === 0) return -1;
+    let lo = 0, hi = arr.length - 1;
+    while (lo <= hi) {
+      const mid = (lo + hi) >>> 1;
+      if (arr[mid] === value) return mid;
+      if (arr[mid] < value) lo = mid + 1;
+      else hi = mid - 1;
+    }
+    return -1;
+  }],
+
+  ['arrayRange', function(arr) {
+    if (!arr || arr.length === 0) return 0;
+    return Math.max(...arr) - Math.min(...arr);
+  }],
+
+  ['arrayMedian', function(arr) {
+    if (!arr || arr.length === 0) return null;
+    const sorted = [...arr].sort((a, b) => a - b);
+    const mid = Math.floor(sorted.length / 2);
+    return sorted.length % 2 !== 0 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2;
+  }],
+
+  ['arrayMode', function(arr) {
+    if (!arr || arr.length === 0) return null;
+    const freq = {};
+    let maxCount = 0;
+    let mode = arr[0];
+    for (const v of arr) {
+      freq[v] = (freq[v] || 0) + 1;
+      if (freq[v] > maxCount) { maxCount = freq[v]; mode = v; }
+    }
+    return mode;
+  }],
+
+  ['arrayPercentile', function(arr, percentile) {
+    if (!arr || arr.length === 0) return null;
+    const sorted = [...arr].sort((a, b) => a - b);
+    const idx = (percentile / 100) * (sorted.length - 1);
+    const lo = Math.floor(idx);
+    const hi = Math.ceil(idx);
+    if (lo === hi) return sorted[lo];
+    return sorted[lo] + (sorted[hi] - sorted[lo]) * (idx - lo);
+  }],
+
+  ['arrayPercentileLinearInterpolation', function(arr, percentile) {
+    return builtins.get('arrayPercentile')(arr, percentile);
+  }],
+
+  ['arrayPercentileNearestRank', function(arr, percentile) {
+    if (!arr || arr.length === 0) return null;
+    const sorted = [...arr].sort((a, b) => a - b);
+    const idx = Math.ceil((percentile / 100) * sorted.length) - 1;
+    return sorted[Math.max(0, idx)];
+  }],
+
+  ['arrayAbs', function(arr) {
+    if (!arr) return [];
+    return arr.map(v => Math.abs(v));
+  }],
+
+  ['arrayEvery', function(arr, callback) {
+    if (!arr) return false;
+    return arr.every(callback);
+  }],
+
+  ['arraySome', function(arr, callback) {
+    if (!arr) return false;
+    return arr.some(callback);
+  }],
+
+  ['requestFinancial', function() {
+    return null;
   }],
 ]);
 

@@ -8,12 +8,12 @@ const tests = [
   {
     name: 'Simple variable declaration',
     input: `fastLength = 10`,
-    check: (result) => result.success && result.code.includes('const fastLength = 10')
+    check: (result) => result.success && (result.code.includes('const fastLength = 10') || result.code.includes('let fastLength = 10'))
   },
   {
     name: 'Input declaration',
     input: `length = input.int(14, "Period")`,
-    check: (result) => result.success && result.code.includes('const length')
+    check: (result) => result.success && (result.code.includes('const length') || result.code.includes('let length'))
   },
   {
     name: 'SMA function call',

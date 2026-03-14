@@ -1,5 +1,5 @@
 /**
- * CLI for PineScript to JavaScript Transpiler
+ * Command-line interface that lets you convert PineScript files to JavaScript from your terminal.
  */
 
 import { transpile } from './transpiler.js';

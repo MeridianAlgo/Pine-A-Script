@@ -1,9 +1,9 @@
 /**
- * PineScript Lexer - Tokenizes PineScript source code
+ * Breaks PineScript source code into individual tokens that the parser can work with.
  */
 
 const TokenType = {
-  // Keywords
+  // Reserved words in the PineScript language
   STUDY: 'STUDY',
   STRATEGY: 'STRATEGY',
   INDICATOR: 'INDICATOR',
@@ -33,16 +33,17 @@ const TokenType = {
   AND: 'AND',
   OR: 'OR',
   NOT: 'NOT',
+  METHOD: 'METHOD',
 
-  // Identifiers
+  // Variable and function names
   IDENTIFIER: 'IDENTIFIER',
 
-  // Literals
+  // Literal values like numbers, strings, and colors
   NUMBER: 'NUMBER',
   STRING: 'STRING',
   COLOR_HEX: 'COLOR_HEX',
 
-  // Operators
+  // Mathematical, logical, and comparison operators
   PLUS: '+',
   MINUS: '-',
   MULTIPLY: '*',
@@ -68,7 +69,7 @@ const TokenType = {
   COLON: ':',
   COLON_EQUAL: ':=',
 
-  // Delimiters
+  // Brackets, parentheses, and other punctuation
   LPAREN: '(',
   RPAREN: ')',
   LBRACKET: '[',
@@ -79,13 +80,13 @@ const TokenType = {
   DOT: '.',
   ARROW: '=>',
 
-  // Comments and Newlines
+  // Whitespace, comments, and indentation tracking
   COMMENT: 'COMMENT',
   NEWLINE: 'NEWLINE',
   INDENT: 'INDENT',
   DEDENT: 'DEDENT',
 
-  // EOF
+  // Signals that we have reached the end of the source code
   EOF: 'EOF'
 };
 
@@ -95,7 +96,7 @@ const KEYWORDS = new Set([
   'type', 'import', 'as',
   'break', 'continue', 'return', 'true', 'false', 'na',
   'and', 'or', 'not',
-  'by'
+  'by', 'method'
 ]);
 
 class Token {
@@ -113,8 +114,7 @@ class Token {
 
 class Lexer {
   constructor(source) {
-    // Normalize Windows and old-Mac line endings to LF so indentation/newline logic
-    // doesn't mis-handle '\r' as whitespace at start of line.
+    // Normalize all line endings to plain newlines so the indentation logic works consistently
     this.source = source.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
     this.pos = 0;
     this.line = 1;
@@ -123,7 +123,7 @@ class Lexer {
     this.indentStack = [0];
     this.pendingIndents = [];
     this.groupDepth = 0;
-    this.sawDirectivePrefix = false; // Track if we just saw //@
+    this.sawDirectivePrefix = false; // Tracks whether we just consumed a //@ prefix
   }
 
   readColorHex() {
@@ -178,10 +178,9 @@ class Lexer {
   }
 
   skipComments() {
-    // Check for directive-style comments like //@version=5
-    // These are not regular comments - they are directives
+    // Directive-style comments like //@version=5 carry meaning and should not be skipped
     if (this.currentChar === '/' && this.peek(1) === '/' && this.peek(2) === '@') {
-      // Don't skip - let it be tokenized as a directive
+      // Leave it alone so the tokenizer can process it as a directive
       return false;
     }
     if (this.currentChar === '/' && this.peek(1) === '/') {
@@ -202,11 +201,11 @@ class Lexer {
       this.advance();
     }
 
-    // Handle scientific notation (e.g., 1e-10, 1e6, 1.5e+3)
+    // Also handle scientific notation like 1e-10, 1e6, or 1.5e+3
     if (this.currentChar && (this.currentChar === 'e' || this.currentChar === 'E')) {
       const nextChar = this.peek(1);
       if (nextChar && (/\d/.test(nextChar) || nextChar === '+' || nextChar === '-')) {
-        value += this.currentChar; // add 'e' or 'E'
+        value += this.currentChar; // include the 'e' or 'E'
         this.advance();
         if (this.currentChar === '+' || this.currentChar === '-') {
           value += this.currentChar;
@@ -254,43 +253,41 @@ class Lexer {
 
     const lowerValue = value.toLowerCase();
 
-    // `na` can be used as a function `na(x)`; do not tokenize it as the NA literal in that case.
+    // When na is followed by a parenthesis it is being called as a function, not used as the NA literal
     const nextChar = this.currentChar;
     if (lowerValue === 'na' && nextChar === '(') {
       return new Token(TokenType.IDENTIFIER, value, this.line, startColumn);
     }
 
-    // If this identifier is a property name (immediately follows '.'), do not treat it as a keyword.
+    // Property names that come right after a dot should stay as identifiers, not become keywords
     const prevChar = startPos > 0 ? this.source[startPos - 1] : null;
     if (prevChar === '.') {
       return new Token(TokenType.IDENTIFIER, value, this.line, startColumn);
     }
 
-    // Pine allows identifiers named `type` (e.g. function params). Only treat `type` as keyword at line start.
+    // Pine lets you use "type" as a regular identifier (like a function param), so only treat it as a keyword at the start of a line
     if (lowerValue === 'type' && startColumn !== 0) {
       return new Token(TokenType.IDENTIFIER, value, this.line, startColumn);
     }
 
     if (KEYWORDS.has(lowerValue)) {
-      // Allow variables/constants named VERSION/version in normal code.
-      // Only treat `version` as a keyword when it appears directive-like at column 0
-      // OR when it immediately follows a //@ directive prefix.
+      // People use "version" as a variable name all the time, so only treat it as a keyword
+      // when it appears at column 0 or right after a //@ directive prefix
       if (lowerValue === 'version' && startColumn !== 0 && !this.sawDirectivePrefix) {
         return new Token(TokenType.IDENTIFIER, value, this.line, startColumn);
       }
-      // Reset the directive flag after reading any identifier
+      // We have consumed the identifier after a directive prefix, so reset the flag
       this.sawDirectivePrefix = false;
-      // Some words like `strategy`/`indicator` are both:
-      // - statement starters: `strategy(...)`, `indicator(...)`
-      // - namespaces in expressions: `strategy.percent_of_equity`
-      // Only treat them as keywords at statement start.
+      // Words like "strategy" and "indicator" serve double duty as both statement starters
+      // and namespace prefixes (e.g. strategy.percent_of_equity), so only treat them as
+      // keywords when they appear at the start of a statement
       if ((lowerValue === 'strategy' || lowerValue === 'indicator') && startColumn !== 0) {
         return new Token(TokenType.IDENTIFIER, value, this.line, startColumn);
       }
 
       const keywordType = lowerValue.toUpperCase();
       const tt = TokenType[keywordType];
-      // Only treat as keyword if we have an explicit TokenType for it.
+      // Only promote to keyword if there is a matching TokenType defined for it
       if (tt) return new Token(tt, value, this.line, startColumn);
     }
 
@@ -301,15 +298,14 @@ class Lexer {
     const startColumn = this.column;
     const char = this.currentChar;
 
-    // Normalize some Unicode variants seen in copy/pasted scripts.
-    // Treat common dash characters as '-'.
+    // Copy-pasted scripts sometimes contain fancy Unicode dashes, so normalize them to a plain minus
     if (char === '–' || char === '—' || char === '−') {
       this.currentChar = '-';
     }
 
     switch (char) {
       case ';':
-        // Pine allows semicolons as statement separators (often inside `{ ... }` blocks).
+        // Pine treats semicolons as statement separators, especially inside curly-brace blocks
         this.advance();
         return new Token(TokenType.NEWLINE, '\n', this.line, startColumn);
       case '+':
@@ -498,9 +494,8 @@ class Lexer {
         continue;
       }
 
-      // Handle directive-style comments like //@version=5
+      // When we see a //@ directive like //@version=5, strip the prefix and let the rest get tokenized normally
       if (this.currentChar === '/' && this.peek(1) === '/' && this.peek(2) === '@') {
-        // Skip the //@ prefix and tokenize the rest as normal
         this.advance();
         this.advance();
         this.advance();
@@ -521,7 +516,7 @@ class Lexer {
 
           if (isLineContinuation()) {
             this.advance();
-            // consume indentation spaces/tabs but do not emit INDENT/DEDENT
+            // Eat the leading whitespace on the continuation line without emitting indentation tokens
             while (this.currentChar === ' ' || this.currentChar === '\t') {
               this.advance();
             }
@@ -540,7 +535,7 @@ class Lexer {
           const indent = this.countIndent();
           const currentIndent = this.indentStack[this.indentStack.length - 1];
 
-          // Ignore indentation changes on blank lines and comment-only lines
+          // Blank lines and comment-only lines should not affect indentation tracking
           if (this.currentChar === '\n' || (this.currentChar === '/' && this.peek(1) === '/')) {
             continue;
           }

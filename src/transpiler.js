@@ -1,5 +1,6 @@
 /**
- * PineScript to JavaScript Transpiler - Main Entry Point
+ * The main entry point that ties together lexing, parsing, and code generation
+ * to convert PineScript into JavaScript.
  */
 
 import { Lexer } from './lexer.js';

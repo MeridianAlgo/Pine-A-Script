@@ -1,6 +1,4 @@
-/**
- * PineScript Code Generator - Generates JavaScript code from AST
- */
+// Converts a PineScript AST into runnable JavaScript with all the necessary runtime scaffolding.
 
 import { builtins } from './builtins.js';
 
@@ -32,6 +30,8 @@ class CodeGenerator {
     ]);
   }
 
+  // Renames user-declared variables that collide with reserved Pine namespaces
+  // (like "ta" or "strategy") so they don't shadow the runtime objects.
   getSafeName(name) {
     if (this.reservedNamespaces.has(name)) {
       const existing = this.renameMap.get(name);
@@ -68,6 +68,7 @@ class CodeGenerator {
     this.level--;
   }
 
+  // Main dispatch: walks each AST node and calls the appropriate generator method.
   generate(node) {
     if (!node) return '';
 
@@ -112,6 +113,8 @@ class CodeGenerator {
     }
   }
 
+  // Handles Pine's tuple unpacking syntax, e.g. [a, b] = someFunction().
+  // Underscores are treated as placeholders for values the script doesn't need.
   generateDestructuringAssignment(node) {
     const targets = (node.targets || []).filter(t => t !== '_');
     const lhs = `[${(node.targets || []).map(t => t === '_' ? '' : t).join(', ')}]`;
@@ -128,6 +131,8 @@ class CodeGenerator {
     this.writeln(`${lhs} = ${this.generate(node.value)};`);
   }
 
+  // Pine's switch-as-expression becomes a chain of ternary operators in JavaScript,
+  // since JS switch statements can't be used as values.
   generateSwitchExpression(node) {
     const subject = node.subject ? this.generate(node.subject) : null;
     let expr = 'null';
@@ -144,11 +149,13 @@ class CodeGenerator {
     return expr;
   }
 
+  // Emits the entire JavaScript program: runtime helpers, built-in function table,
+  // global shims for Pine namespaces, and the user's script wrapped in a main() function.
   generateProgram(node) {
-    this.write('// PineScript to JavaScript Transpiled Code\n');
-    this.write('// Generated automatically\n\n');
+    this.write('// Auto-generated JavaScript from PineScript source\n');
+    this.write('// Do not edit by hand -- re-run the converter instead\n\n');
 
-    this.write('// Built-in PineScript functions\n');
+    this.write('// All the built-in PineScript functions that scripts depend on at runtime\n');
     this.write('const pinescript = {\n');
     this.pushIndent();
     for (const [name, func] of builtins) {
@@ -158,8 +165,8 @@ class CodeGenerator {
     this.popIndent();
     this.write('};\n\n');
 
-    // Some built-in implementations reference `builtins.get(...)`.
-    // Create a local Map so these functions can resolve dependencies at runtime.
+    // Some built-in implementations reference `builtins.get(...)` internally.
+    // This Map lets those functions resolve their dependencies at runtime.
     this.write('const builtins = new Map(Object.entries(pinescript));\n\n');
 
     this.write('globalThis.__pineRuntime = globalThis.__pineRuntime || { plots: [], plotshapes: [], alerts: [] };\n');
@@ -168,10 +175,12 @@ class CodeGenerator {
     this.write('pinescript.strategy.long = pinescript.strategyLong();\n');
     this.write('pinescript.strategy.short = pinescript.strategyShort();\n\n');
 
-    // Provide `input.timeframe()` for scripts that declare timeframe inputs.
+    // Scripts that call input.timeframe() need this shim so it resolves
+    // even when we're not running inside a full charting environment.
     this.write('globalThis.input = globalThis.input || {};\n');
     this.write('globalThis.input.timeframe = globalThis.input.timeframe || ((defval) => defval);\n\n');
 
+    // Shim for Pine's array namespace -- delegates to the pinescript runtime functions.
     this.write('globalThis.array = globalThis.array || {\n');
     this.write('  from: (...items) => items,\n');
     this.write('  size: (arr) => pinescript.arraySize(arr),\n');
@@ -187,6 +196,8 @@ class CodeGenerator {
 
     this.write('globalThis.hline = globalThis.hline || { style_dotted: "style_dotted", style_solid: "style_solid" };\n\n');
 
+    // SeriesArray lets Pine series values participate in arithmetic via valueOf(),
+    // so expressions like `close + 1` work naturally in the generated JS.
     this.write('class SeriesArray extends Array {\n');
     this.write('  valueOf() { return this.length ? this[this.length - 1] : NaN; }\n');
     this.write('  toString() { return String(this.valueOf()); }\n');
@@ -199,6 +210,9 @@ class CodeGenerator {
     this.write('};\n\n');
 
     this.write('globalThis.timeframe = globalThis.timeframe || { period: "D" };\n');
+
+    // Parses Pine timeframe strings ("5", "60", "D", "W", etc.) into milliseconds
+    // so that request.security can bucket bars into higher-timeframe groups.
     this.write('pinescript._parseTimeframeMs = function(tf) {\n');
     this.write('  if (tf === null || tf === undefined) return null;\n');
     this.write('  const s = String(tf).trim().toUpperCase();\n');
@@ -211,6 +225,8 @@ class CodeGenerator {
     this.write('  return null;\n');
     this.write('};\n\n');
 
+    // Simulates Pine's request.security() by re-sampling a series into
+    // higher-timeframe buckets based on the bar timestamps.
     this.write('pinescript.requestSecurity = function(symbol, tf, series, opts) {\n');
     this.write('  const timeSeries = globalThis.time;\n');
     this.write('  if (!Array.isArray(timeSeries) || !Array.isArray(series)) return series;\n');
@@ -236,6 +252,8 @@ class CodeGenerator {
     this.write('  financial: function() { return null; }\n');
     this.write('};\n\n');
 
+    // Constants that Pine scripts use when calling request.security with
+    // gap-filling or lookahead options.
     this.write('globalThis.barmerge = globalThis.barmerge || {\n');
     this.write('  gaps_off: false,\n');
     this.write('  gaps_on: true,\n');
@@ -243,6 +261,8 @@ class CodeGenerator {
     this.write('  lookahead_on: true,\n');
     this.write('};\n\n');
 
+    // Minimal color namespace -- provides hex parsing, gradient interpolation,
+    // rgb construction, and a handful of named color constants.
     this.write('pinescript.color = {\n');
     this.write('  hex: function(s) {\n');
     this.write('    if (typeof s !== "string" || s[0] !== "#") return { r: 0, g: 0, b: 0, a: 255 };\n');
@@ -274,12 +294,15 @@ class CodeGenerator {
     this.write('  gray: { r: 128, g: 128, b: 128, a: 255 },\n');
     this.write('};\n\n');
 
+    // Shape, size, location, and position constants that Pine plotting functions expect.
     this.write('pinescript.size = { small: "small", normal: "normal", large: "large" };\n');
     this.write('pinescript.shape = { triangleup: "triangleup", triangledown: "triangledown", circle: "circle", square: "square" };\n');
     this.write('pinescript.location = { belowbar: "belowbar", abovebar: "abovebar" };\n');
     this.write('pinescript.position = { top_right: "top_right", top_left: "top_left", bottom_right: "bottom_right", bottom_left: "bottom_left" };\n');
     this.write('pinescript.text = { align_center: "center" };\n\n');
 
+    // Table namespace -- enough to let scripts create tables and populate cells
+    // without crashing, even though we don't render them visually.
     this.write('pinescript.table = {\n');
     this.write('  new: function(position, columns, rows, opts) { return { position, columns, rows, opts: opts || {}, cells: [] }; },\n');
     this.write('  cell: function(table, column, row, text, opts) {\n');
@@ -289,12 +312,14 @@ class CodeGenerator {
     this.write('  }\n');
     this.write('};\n\n');
 
-    this.write('// Input parameters\n');
+    // Declare each input parameter as a constant with its default value.
+    this.write('// Script input parameters and their defaults\n');
     for (const input of node.inputs || []) {
       this.writeln(`const ${input.name} = ${JSON.stringify(input.defaultValue)}; // ${input.inputType}`);
     }
 
-    // Emit stubs for Pine `type` declarations so code like `Settings.new(...)` doesn't crash.
+    // Emit constructor stubs for user-defined Pine types so that
+    // calls like MyType.new(field1, field2) produce plain JS objects.
     for (const stmt of node.body || []) {
       if (stmt && stmt.type === 'TypeDeclaration') {
         const typeName = stmt.name;
@@ -306,7 +331,9 @@ class CodeGenerator {
       }
     }
 
-    this.write('\n// Main script logic\n');
+    // Wrap the user's script body in a main() function that sets up
+    // per-bar state and wraps OHLCV globals as series arrays.
+    this.write('\n// The transpiled script logic, called once per bar\n');
     this.write('function main() {\n');
     this.pushIndent();
 
@@ -331,7 +358,8 @@ class CodeGenerator {
     this.popIndent();
     this.write('}\n\n');
 
-    this.write('// Export for use\n');
+    // Export the main entry point along with any input parameters
+    // so the host environment can inspect and override them.
     this.write('export { main');
     for (const input of node.inputs || []) {
       this.write(`, ${input.name}`);
@@ -356,7 +384,7 @@ class CodeGenerator {
     if (value) {
       this.writeln(`${declPrefix}${name} = ${this.generate(value)};`);
     } else {
-      // Default values based on type
+      // Use a sensible zero-value based on the Pine type annotation.
       const defaultValue = this.getDefaultValueForType(type);
       this.writeln(`${declPrefix}${name} = ${defaultValue};`);
     }
@@ -366,7 +394,8 @@ class CodeGenerator {
     const name = this.getSafeName(node.name);
     const prefix = (node.isVarip || node.isVar || node.declaredType) ? 'let' : 'const';
     if (node.isVar || node.isVarip) {
-      // Persistent variable stored in state
+      // var/varip declarations persist across bars, so we store them in the state object
+      // and only initialize on the very first bar.
       this.context.stateVars.add(name);
       this.writeln(`if (state.${name} === undefined) state.${name} = ${this.generate(node.value)};`);
       return;
@@ -377,7 +406,8 @@ class CodeGenerator {
   }
 
   generateAssignment(node) {
-    // Pine allows implicit declaration on first assignment.
+    // Pine lets you assign to a variable without declaring it first.
+    // We detect the first assignment and emit a `let` declaration automatically.
     if (node.target && node.target.type === 'Identifier') {
       const name = this.getSafeName(node.target.name);
       if (this.context.stateVars.has(name)) {
@@ -401,6 +431,7 @@ class CodeGenerator {
     }
   }
 
+  // Inline assignment expression -- Pine's := inside an expression context.
   generateAssignmentExpression(node) {
     const op = node.operator === ':=' ? '=' : node.operator;
     return `(${this.generate(node.target)} ${op} ${this.generate(node.value)})`;
@@ -410,7 +441,6 @@ class CodeGenerator {
     this.writeln(`if (${this.generate(node.condition)}) {`);
     this.pushIndent();
     if (node.thenBranch && node.thenBranch.type === 'Block') {
-      // Don't wrap in extra block - generate statements directly
       for (const statement of node.thenBranch.statements) {
         this.generate(statement);
       }
@@ -460,9 +490,9 @@ class CodeGenerator {
     this.writeln('}');
   }
 
+  // Pine's switch statement. When there is no subject expression, each case
+  // is really a boolean guard, so we emit an if/else-if chain instead.
   generateSwitchStatement(node) {
-    // Pine supports bare `switch` (no subject). In that form, each case value is a boolean condition.
-    // JS requires a subject for `switch`, so emit an if/else-if chain.
     if (node.expression == null) {
       let first = true;
       for (const caseNode of node.cases) {
@@ -493,7 +523,8 @@ class CodeGenerator {
       } else {
         this.writeln(`case ${this.generate(caseNode.value)}:`);
       }
-      // Wrap case bodies in a block so `let` declarations inside different cases don't collide.
+      // Each case body gets its own block so that let/const declarations
+      // in different cases don't collide with each other.
       this.writeln('{');
       this.pushIndent();
       for (const stmt of caseNode.body) {
@@ -526,6 +557,9 @@ class CodeGenerator {
     this.writeln(`// Options: ${JSON.stringify(node.options)}`);
   }
 
+  // Transpiles a Pine function declaration into a plain JS function.
+  // If the function is a Pine method, we rewrite `this` to `_this` to
+  // avoid clashing with JavaScript's own `this` keyword.
   generateFunctionDeclaration(node) {
     if (node.isMethod) {
       this.methodFunctions.add(node.name);
@@ -571,8 +605,6 @@ class CodeGenerator {
   }
 
   generateBlock(node) {
-    // Only add braces if this is a top-level block, not a nested one
-    // For nested blocks (like loop bodies), just generate statements directly
     const isTopLevel = this.indentLevel === 0;
     if (isTopLevel) {
       this.writeln('{');
@@ -636,8 +668,9 @@ class CodeGenerator {
     return String(node.value);
   }
 
+  // Resolves an identifier to its JavaScript equivalent, taking into account
+  // local renames, reserved-namespace guards, and persistent state variables.
   generateIdentifier(node) {
-    // Apply local renames (e.g. method receiver param `this` -> `_this`).
     if (this.localRenameStack.length > 0) {
       const top = this.localRenameStack[this.localRenameStack.length - 1];
       const renamed = top?.get(node.name);
@@ -655,9 +688,9 @@ class CodeGenerator {
     return node.name;
   }
 
+  // Generates a function call. Pine methods (declared with `method`) are rewritten
+  // from obj.methodName(args) to methodName(obj, args) so the receiver is passed explicitly.
   generateFunctionCall(node) {
-    // Pine `method` calls look like `obj.methodName(...)`.
-    // We transpile methods to plain functions and rewrite the call to pass the receiver explicitly.
     if (node.callee && node.callee.type === 'PropertyAccess') {
       const prop = node.callee.property;
       if (this.methodFunctions.has(prop)) {
@@ -692,9 +725,9 @@ class CodeGenerator {
     return `${calleeName}(${args.join(', ')})`;
   }
 
+  // Pine's `x[n]` is historical series look-back, not array indexing.
+  // We translate it to a runtime helper that handles the offset safely.
   generateArrayAccess(node) {
-    // Pine `x[n]` is historical series indexing, not JS array indexing.
-    // For Pine arrays, the language uses `array.get(x, n)` instead.
     return `pinescript.offset(${this.generate(node.array)}, ${this.generate(node.index)})`;
   }
 
@@ -737,44 +770,119 @@ class CodeGenerator {
     return null;
   }
 
+  // Maps a PineScript function name (like "ta.sma" or "math.abs") to its
+  // JavaScript runtime equivalent (like "pinescript.sma" or "pinescript.abs").
+  // The lookup is case-insensitive so that both "str.tostring" and "str.toString"
+  // resolve correctly, but we also check the original casing first to allow
+  // case-sensitive overrides when needed.
   mapFunctionName(name) {
     const mapping = {
+      // Core utilities
       'na': 'pinescript.na',
-      'hline': 'pinescript.hline',
+      'nz': 'pinescript.nz',
+      'fixnan': 'pinescript.fixnan',
+      'isna': 'pinescript.isna',
+      'isempty': 'pinescript.isempty',
+      'max_bars_back': 'pinescript.maxBarsBack',
+
+      // Color functions
       'color.rgb': 'pinescript.color.rgb',
       'color.new': 'pinescript.color.new',
       'color.hex': 'pinescript.color.hex',
       'color.from_gradient': 'pinescript.color.from_gradient',
       'color.b': 'pinescript.color.b',
+      'color.t': 'pinescript.colorT',
 
+      // Table functions
       'table.new': 'pinescript.table.new',
       'table.cell': 'pinescript.table.cell',
+      'table.delete': 'pinescript.tableDelete',
+      'table.clear': 'pinescript.tableClear',
+      'table.cell_set_text': 'pinescript.tableCellSetText',
+      'table.cell_set_bgcolor': 'pinescript.tableCellSetBgcolor',
+      'table.merge_cells': 'pinescript.tableMergeCells',
 
+      // Script declaration
       'indicator': 'pinescript.indicator',
       'strategy': 'pinescript.strategy',
+      'hline': 'pinescript.hline',
 
+      // Technical analysis -- moving averages and regression
       'ta.sma': 'pinescript.sma',
       'ta.ema': 'pinescript.ema',
       'ta.wma': 'pinescript.wma',
       'ta.vwma': 'pinescript.vwma',
       'ta.rma': 'pinescript.rma',
       'ta.hma': 'pinescript.hma',
+      'ta.swma': 'pinescript.swma',
       'ta.linreg': 'pinescript.linreg',
       'ta.alma': 'pinescript.alma',
+
+      // Technical analysis -- extremes and crossing
       'ta.lowest': 'pinescript.lowest',
       'ta.highest': 'pinescript.highest',
-      'ta.crossover': 'pinescript.cross',
-      'ta.crossunder': 'pinescript.cross',
+      'ta.crossover': 'pinescript.crossover',
+      'ta.crossunder': 'pinescript.crossunder',
+      'ta.change': 'pinescript.change',
+      'ta.valuewhen': 'pinescript.valuewhen',
+      'ta.barssince': 'pinescript.barssince',
+      'ta.cum': 'pinescript.cum',
+      'ta.median': 'pinescript.median',
 
+      // Technical analysis -- volatility and momentum indicators
+      'ta.supertrend': 'pinescript.supertrend',
+      'ta.dmi': 'pinescript.dmi',
+      'ta.adx': 'pinescript.adx',
+      'ta.bb': 'pinescript.bb',
+      'ta.kc': 'pinescript.kc',
+      'ta.macd': 'pinescript.macd',
+      'ta.rsi': 'pinescript.rsi',
+      'ta.stoch': 'pinescript.stoch',
+      'ta.cci': 'pinescript.cci',
+      'ta.mfi': 'pinescript.mfi',
+      'ta.obv': 'pinescript.obv',
+      'ta.roc': 'pinescript.roc',
+      'ta.percentrank': 'pinescript.percentrank',
+      'ta.tr': 'pinescript.tr',
+      'ta.atr': 'pinescript.atr',
+
+      // Math namespace
       'math.round': 'pinescript.round',
       'math.pow': 'pinescript.pow',
       'math.sqrt': 'pinescript.sqrt',
       'math.abs': 'pinescript.abs',
       'math.max': 'pinescript.max',
       'math.min': 'pinescript.min',
+      'math.sign': 'pinescript.sign',
+      'math.avg': 'pinescript.avg',
+      'math.sum': 'pinescript.sum',
+      'math.random': 'pinescript.random',
+      'math.log': 'pinescript.log',
+      'math.log10': 'pinescript.log10',
+      'math.exp': 'pinescript.exp',
+      'math.floor': 'pinescript.floor',
+      'math.ceil': 'pinescript.ceil',
+      'math.sin': 'pinescript.sin',
+      'math.cos': 'pinescript.cos',
+      'math.tan': 'pinescript.tan',
+      'math.asin': 'pinescript.asin',
+      'math.acos': 'pinescript.acos',
+      'math.atan': 'pinescript.atan',
+      'math.todegrees': 'pinescript.todegrees',
+      'math.toradians': 'pinescript.toradians',
 
-      'array.set': 'pinescript.arraySet',
-      'array.get': 'pinescript.arrayGet',
+      // Input functions
+      'input': 'pinescript.input',
+      'input.int': 'pinescript.inputInt',
+      'input.float': 'pinescript.inputFloat',
+      'input.bool': 'pinescript.inputBool',
+      'input.string': 'pinescript.inputString',
+      'input.source': 'pinescript.inputSource',
+      'input.color': 'pinescript.inputColor',
+      'input.time': 'pinescript.inputTime',
+
+      // Array namespace
+      'array.new': 'pinescript.arrayNew',
       'array.new_float': 'pinescript.arrayNew',
       'array.new_int': 'pinescript.arrayNew',
       'array.new_bool': 'pinescript.arrayNew',
@@ -783,151 +891,6 @@ class CodeGenerator {
       'array.new_line': 'pinescript.arrayNew',
       'array.new_box': 'pinescript.arrayNew',
       'array.new_polyline': 'pinescript.arrayNew',
-      'array.max': 'pinescript.arrayMax',
-      'array.min': 'pinescript.arrayMin',
-      'array.indexof': 'pinescript.arrayIndexOf',
-
-      'str.tostring': 'pinescript.strToString',
-      'sma': 'pinescript.sma',
-      'ema': 'pinescript.ema',
-      'wma': 'pinescript.wma',
-      'vwma': 'pinescript.vwma',
-      'rma': 'pinescript.rma',
-      'wvwma': 'pinescript.wvwma',
-      'stoch': 'pinescript.stoch',
-      'stochk': 'pinescript.stochk',
-      'stochd': 'pinescript.stochd',
-      'bb': 'pinescript.bb',
-      'bbands': 'pinescript.bbands',
-      'kc': 'pinescript.kc',
-      'kcbands': 'pinescript.kcbands',
-      'atr': 'pinescript.atr',
-      'rsi': 'pinescript.rsi',
-      'macd': 'pinescript.macd',
-      'cci': 'pinescript.cci',
-      'mfi': 'pinescript.mfi',
-      'obv': 'pinescript.obv',
-      'ad': 'pinescript.ad',
-      'adosc': 'pinescript.adosc',
-      'cmf': 'pinescript.cmf',
-      'vwap': 'pinescript.vwap',
-      'vwap': 'pinescript.vwap',
-      'heikinashi': 'pinescript.heikinashi',
-      'renko': 'pinescript.renko',
-      'kagi': 'pinescript.kagi',
-      'pointfigure': 'pinescript.pointfigure',
-      'plot': 'pinescript.plot',
-      'plotshape': 'pinescript.plotshape',
-      'plotbar': 'pinescript.plotbar',
-      'plotcandle': 'pinescript.plotcandle',
-      'hline': 'pinescript.hline',
-      'bgcolor': 'pinescript.bgcolor',
-      'fill': 'pinescript.fill',
-      'line.new': 'pinescript.lineNew',
-      'line.delete': 'pinescript.lineDelete',
-      'line.setxy': 'pinescript.lineSetXY',
-      'line.getx': 'pinescript.lineGetX',
-      'line.gety': 'pinescript.lineGetY',
-      'label.new': 'pinescript.labelNew',
-      'label.delete': 'pinescript.labelDelete',
-      'label.settext': 'pinescript.labelSetText',
-      'label.gettext': 'pinescript.labelGetText',
-      'alert': 'pinescript.alert',
-      'strategy.entry': 'pinescript.strategyEntry',
-      'strategy.close': 'pinescript.strategyClose',
-      'strategy.exit': 'pinescript.strategyExit',
-      'strategy.order': 'pinescript.strategyOrder',
-      'strategy.long': 'pinescript.strategyLong',
-      'strategy.short': 'pinescript.strategyShort',
-      'chart.point.from_index': 'pinescript.chartPointFromIndex',
-      'chart.point.new': 'pinescript.chartPointNew',
-      'request.security': 'pinescript.requestSecurity',
-      'year': 'pinescript.year',
-      'month': 'pinescript.month',
-      'weekofyear': 'pinescript.weekofyear',
-      'dayofmonth': 'pinescript.dayofmonth',
-      'hour': 'pinescript.hour',
-      'minute': 'pinescript.minute',
-      'second': 'pinescript.second',
-      'timestamp': 'pinescript.timestamp',
-      'ticker': 'pinescript.ticker',
-      'tickerid': 'pinescript.tickerID',
-      'syminfo': 'pinescript.syminfo',
-      'time': 'pinescript.time',
-      'timenow': 'pinescript.timenow',
-      'barstate': 'pinescript.barstate',
-      'dividends': 'pinescript.dividends',
-      'splits': 'pinescript.splits',
-      'earnings': 'pinescript.earnings',
-      'volume': 'pinescript.volume',
-      'open': 'pinescript.open',
-      'high': 'pinescript.high',
-      'low': 'pinescript.low',
-      'close': 'pinescript.close',
-      'hl2': 'pinescript.hl2',
-      'hlc3': 'pinescript.hlc3',
-      'ohlc4': 'pinescript.ohlc4',
-      'ema': 'pinescript.ema',
-      'sma': 'pinescript.sma',
-      'rma': 'pinescript.rma',
-      'wma': 'pinescript.wma',
-      'vwma': 'pinescript.vwma',
-      'cum': 'pinescript.cum',
-      'max': 'pinescript.max',
-      'min': 'pinescript.min',
-      'abs': 'pinescript.abs',
-      'sqrt': 'pinescript.sqrt',
-      'log': 'pinescript.log',
-      'log10': 'pinescript.log10',
-      'pow': 'pinescript.pow',
-      'exp': 'pinescript.exp',
-      'sin': 'pinescript.sin',
-      'cos': 'pinescript.cos',
-      'tan': 'pinescript.tan',
-      'asin': 'pinescript.asin',
-      'acos': 'pinescript.acos',
-      'atan': 'pinescript.atan',
-      'floor': 'pinescript.floor',
-      'ceil': 'pinescript.ceil',
-      'round': 'pinescript.round',
-      'avg': 'pinescript.avg',
-      'alma': 'pinescript.alma',
-      'hma': 'pinescript.hma',
-      'vwap': 'pinescript.vwap',
-      'vwma': 'pinescript.vwma',
-      'wss': 'pinescript.wss',
-      'tr': 'pinescript.tr',
-      'atr': 'pinescript.atr',
-      'rising': 'pinescript.rising',
-      'falling': 'pinescript.falling',
-      'cross': 'pinescript.cross',
-      'offset': 'pinescript.offset',
-      'highest': 'pinescript.highest',
-      'lowest': 'pinescript.lowest',
-      'highestbars': 'pinescript.highestbars',
-      'lowestbars': 'pinescript.lowestbars',
-      'sum': 'pinescript.sum',
-      'cumsum': 'pinescript.cumsum',
-      'pivot': 'pinescript.pivot',
-      'pivothigh': 'pinescript.pivothigh',
-      'pivotlow': 'pinescript.pivotlow',
-      'ta': 'pinescript.ta',
-      'valuewhen': 'pinescript.valuewhen',
-      'barssince': 'pinescript.barssince',
-      'barssince': 'pinescript.barssince',
-      'updatetime': 'pinescript.updatetime',
-      'isempty': 'pinescript.isempty',
-      'isna': 'pinescript.isna',
-      'nz': 'pinescript.nz',
-      'fixnan': 'pinescript.fixnan',
-      'max_bars_back': 'pinescript.maxBarsBack',
-      'linreg': 'pinescript.linreg',
-      'correlation': 'pinescript.correlation',
-      'variance': 'pinescript.variance',
-      'stdev': 'pinescript.stdev',
-      'pseudorandom': 'pinescript.pseudorandom',
-      'seed': 'pinescript.seed',
-      'array.new': 'pinescript.arrayNew',
       'array.size': 'pinescript.arraySize',
       'array.get': 'pinescript.arrayGet',
       'array.set': 'pinescript.arraySet',
@@ -952,6 +915,44 @@ class CodeGenerator {
       'array.stdev': 'pinescript.arrayStdev',
       'array.variance': 'pinescript.arrayVariance',
       'array.covariance': 'pinescript.arrayCovariance',
+      'array.first': 'pinescript.arrayFirst',
+      'array.last': 'pinescript.arrayLast',
+      'array.join': 'pinescript.arrayJoin',
+      'array.concat': 'pinescript.arrayConcat',
+      'array.copy': 'pinescript.arrayCopy',
+      'array.binary_search': 'pinescript.arrayBinarySearch',
+      'array.range': 'pinescript.arrayRange',
+      'array.median': 'pinescript.arrayMedian',
+      'array.mode': 'pinescript.arrayMode',
+      'array.percentile_linear_interpolation': 'pinescript.arrayPercentileLinearInterpolation',
+      'array.percentile_nearest_rank': 'pinescript.arrayPercentileNearestRank',
+      'array.abs': 'pinescript.arrayAbs',
+      'array.every': 'pinescript.arrayEvery',
+      'array.some': 'pinescript.arraySome',
+
+      // String namespace
+      'str.length': 'pinescript.strLength',
+      'str.len': 'pinescript.strLength',
+      'str.substring': 'pinescript.strSubstring',
+      'str.concat': 'pinescript.strConcat',
+      'str.contains': 'pinescript.strContains',
+      'str.startswith': 'pinescript.strStartsWith',
+      'str.endswith': 'pinescript.strEndsWith',
+      'str.replace': 'pinescript.strReplace',
+      'str.replaceall': 'pinescript.strReplaceAll',
+      'str.lower': 'pinescript.strLower',
+      'str.upper': 'pinescript.strUpper',
+      'str.tonumber': 'pinescript.strToNumber',
+      'str.tostring': 'pinescript.strToString',
+      'str.split': 'pinescript.strSplit',
+      'str.match': 'pinescript.strMatch',
+      'str.pos': 'pinescript.strPos',
+      'str.rpos': 'pinescript.strRPos',
+      'str.remove': 'pinescript.strRemove',
+      'str.reverse': 'pinescript.strReverse',
+      'str.format': 'pinescript.strFormat',
+
+      // Matrix namespace
       'matrix.new': 'pinescript.matrixNew',
       'matrix.rows': 'pinescript.matrixRows',
       'matrix.cols': 'pinescript.matrixCols',
@@ -965,6 +966,8 @@ class CodeGenerator {
       'matrix.transpose': 'pinescript.matrixTranspose',
       'matrix.mult': 'pinescript.matrixMult',
       'matrix.inv': 'pinescript.matrixInv',
+
+      // Map namespace
       'map.new': 'pinescript.mapNew',
       'map.size': 'pinescript.mapSize',
       'map.get': 'pinescript.mapGet',
@@ -973,32 +976,169 @@ class CodeGenerator {
       'map.keys': 'pinescript.mapKeys',
       'map.values': 'pinescript.mapValues',
       'map.contains': 'pinescript.mapContains',
-      'str.length': 'pinescript.strLength',
-      'str.substring': 'pinescript.strSubstring',
-      'str.concat': 'pinescript.strConcat',
-      'str.contains': 'pinescript.strContains',
-      'str.startswith': 'pinescript.strStartsWith',
-      'str.endswith': 'pinescript.strEndsWith',
-      'str.replace': 'pinescript.strReplace',
-      'str.replaceall': 'pinescript.strReplaceAll',
-      'str.lower': 'pinescript.strLower',
-      'str.upper': 'pinescript.strUpper',
-      'str.tonumber': 'pinescript.strToNumber',
-      'str.tostring': 'pinescript.strToString',
-      'str.split': 'pinescript.strSplit',
-      'str.substring': 'pinescript.strSubstring',
-      'str.match': 'pinescript.strMatch',
-      'str.pos': 'pinescript.strPos',
-      'str.rpos': 'pinescript.strRPos',
-      'str.remove': 'pinescript.strRemove',
-      'str.reverse': 'pinescript.strReverse',
-      'datetime': 'pinescript.datetime',
+
+      // Drawing -- lines, labels, boxes, polylines
+      'line.new': 'pinescript.lineNew',
+      'line.delete': 'pinescript.lineDelete',
+      'line.setxy': 'pinescript.lineSetXY',
+      'line.set_xy1': 'pinescript.lineSetXY',
+      'line.set_xy2': 'pinescript.lineSetXY',
+      'line.getx': 'pinescript.lineGetX',
+      'line.gety': 'pinescript.lineGetY',
+      'label.new': 'pinescript.labelNew',
+      'label.delete': 'pinescript.labelDelete',
+      'label.settext': 'pinescript.labelSetText',
+      'label.set_text': 'pinescript.labelSetText',
+      'label.gettext': 'pinescript.labelGetText',
+      'label.get_text': 'pinescript.labelGetText',
+      'box.new': 'pinescript.boxNew',
+      'box.delete': 'pinescript.boxDelete',
+      'polyline.new': 'pinescript.polylineNew',
+      'polyline.delete': 'pinescript.polylineDelete',
+
+      // Chart points
+      'chart.point.from_index': 'pinescript.chartPointFromIndex',
+      'chart.point.new': 'pinescript.chartPointNew',
+
+      // Data requests
+      'request.security': 'pinescript.requestSecurity',
+      'request.financial': 'pinescript.requestFinancial',
+
+      // Plotting and visual output
+      'plot': 'pinescript.plot',
+      'plotshape': 'pinescript.plotshape',
+      'plotbar': 'pinescript.plotbar',
+      'plotcandle': 'pinescript.plotcandle',
+      'bgcolor': 'pinescript.bgcolor',
+      'fill': 'pinescript.fill',
+      'alert': 'pinescript.alert',
+
+      // Strategy order functions
+      'strategy.entry': 'pinescript.strategyEntry',
+      'strategy.close': 'pinescript.strategyClose',
+      'strategy.exit': 'pinescript.strategyExit',
+      'strategy.order': 'pinescript.strategyOrder',
+      'strategy.long': 'pinescript.strategyLong',
+      'strategy.short': 'pinescript.strategyShort',
+
+      // Date and time functions
+      'year': 'pinescript.year',
+      'month': 'pinescript.month',
+      'weekofyear': 'pinescript.weekofyear',
+      'dayofmonth': 'pinescript.dayofmonth',
+      'hour': 'pinescript.hour',
+      'minute': 'pinescript.minute',
+      'second': 'pinescript.second',
       'timestamp': 'pinescript.timestamp',
+      'datetime': 'pinescript.datetime',
+
+      // Symbol and session info
+      'ticker': 'pinescript.ticker',
+      'tickerid': 'pinescript.tickerID',
+      'syminfo': 'pinescript.syminfo',
+      'time': 'pinescript.time',
+      'timenow': 'pinescript.timenow',
+      'barstate': 'pinescript.barstate',
+      'dividends': 'pinescript.dividends',
+      'splits': 'pinescript.splits',
+      'earnings': 'pinescript.earnings',
+
+      // Price series
+      'volume': 'pinescript.volume',
+      'open': 'pinescript.open',
+      'high': 'pinescript.high',
+      'low': 'pinescript.low',
+      'close': 'pinescript.close',
+      'hl2': 'pinescript.hl2',
+      'hlc3': 'pinescript.hlc3',
+      'ohlc4': 'pinescript.ohlc4',
+
+      // Bare (non-namespaced) function names for backward compatibility
+      // with older PineScript versions that didn't require the ta./math. prefix.
+      'sma': 'pinescript.sma',
+      'ema': 'pinescript.ema',
+      'wma': 'pinescript.wma',
+      'vwma': 'pinescript.vwma',
+      'rma': 'pinescript.rma',
+      'wvwma': 'pinescript.wvwma',
+      'stoch': 'pinescript.stoch',
+      'stochk': 'pinescript.stochk',
+      'stochd': 'pinescript.stochd',
+      'bb': 'pinescript.bb',
+      'bbands': 'pinescript.bbands',
+      'kc': 'pinescript.kc',
+      'kcbands': 'pinescript.kcbands',
+      'atr': 'pinescript.atr',
+      'rsi': 'pinescript.rsi',
+      'macd': 'pinescript.macd',
+      'cci': 'pinescript.cci',
+      'mfi': 'pinescript.mfi',
+      'obv': 'pinescript.obv',
+      'ad': 'pinescript.ad',
+      'adosc': 'pinescript.adosc',
+      'cmf': 'pinescript.cmf',
+      'vwap': 'pinescript.vwap',
+      'heikinashi': 'pinescript.heikinashi',
+      'renko': 'pinescript.renko',
+      'kagi': 'pinescript.kagi',
+      'pointfigure': 'pinescript.pointfigure',
+      'alma': 'pinescript.alma',
+      'hma': 'pinescript.hma',
+      'wss': 'pinescript.wss',
+      'tr': 'pinescript.tr',
+      'rising': 'pinescript.rising',
+      'falling': 'pinescript.falling',
+      'cross': 'pinescript.cross',
+      'crossover': 'pinescript.crossover',
+      'crossunder': 'pinescript.crossunder',
+      'offset': 'pinescript.offset',
+      'highest': 'pinescript.highest',
+      'lowest': 'pinescript.lowest',
+      'highestbars': 'pinescript.highestbars',
+      'lowestbars': 'pinescript.lowestbars',
+      'sum': 'pinescript.sum',
+      'cumsum': 'pinescript.cumsum',
+      'cum': 'pinescript.cum',
+      'pivot': 'pinescript.pivot',
+      'pivothigh': 'pinescript.pivothigh',
+      'pivotlow': 'pinescript.pivotlow',
+      'ta': 'pinescript.ta',
+      'valuewhen': 'pinescript.valuewhen',
+      'barssince': 'pinescript.barssince',
+      'updatetime': 'pinescript.updatetime',
+      'max': 'pinescript.max',
+      'min': 'pinescript.min',
+      'abs': 'pinescript.abs',
+      'sqrt': 'pinescript.sqrt',
+      'log': 'pinescript.log',
+      'log10': 'pinescript.log10',
+      'pow': 'pinescript.pow',
+      'exp': 'pinescript.exp',
+      'sin': 'pinescript.sin',
+      'cos': 'pinescript.cos',
+      'tan': 'pinescript.tan',
+      'asin': 'pinescript.asin',
+      'acos': 'pinescript.acos',
+      'atan': 'pinescript.atan',
+      'floor': 'pinescript.floor',
+      'ceil': 'pinescript.ceil',
+      'round': 'pinescript.round',
+      'avg': 'pinescript.avg',
+      'linreg': 'pinescript.linreg',
+      'correlation': 'pinescript.correlation',
+      'variance': 'pinescript.variance',
+      'stdev': 'pinescript.stdev',
+      'pseudorandom': 'pinescript.pseudorandom',
+      'seed': 'pinescript.seed',
     };
 
-    return mapping[name.toLowerCase()] || name;
+    // Try the original name first (preserves case-sensitive matches like
+    // "chart.point.from_index"), then fall back to lowercase for functions
+    // where Pine scripts mix casing (e.g. "str.toString" vs "str.tostring").
+    return mapping[name] || mapping[name.toLowerCase()] || name;
   }
 
+  // Translates Pine logical and comparison operators to their JavaScript equivalents.
   mapOperator(operator) {
     const mapping = {
       'and': '&&',

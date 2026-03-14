@@ -16,6 +16,7 @@ class Parser {
     this.tokens = tokens;
     this.pos = 0;
     this.currentToken = this.tokens[this.pos];
+    this._currentConstruct = null;
   }
 
   parseTypeAnnotation() {
@@ -65,7 +66,7 @@ class Parser {
       this.advance();
       return token;
     }
-    throw new Error(`${message} at line ${this.currentToken.line}`);
+    throw new Error(`${message} at line ${this.currentToken.line}, column ${this.currentToken.column} while parsing ${this._currentConstruct || 'expression'}`);
   }
 
   peek(offset = 0) {
@@ -182,7 +183,6 @@ class Parser {
       }
     }
 
-    if (this.match(TokenType.INPUT)) return this.parseInputDeclaration();
     if (this.match(TokenType.VAR) || this.match(TokenType.VARIP)) return this.parseVariableDeclaration();
     if (this.match(TokenType.IF)) return this.parseIfStatement();
     if (this.match(TokenType.FOR)) return this.parseForStatementPine();
@@ -202,8 +202,8 @@ class Parser {
 
     // Pine v5/v6 method declarations:
     //   method name(Type this, ...) =>
-    // Tokenized as IDENTIFIER('method') IDENTIFIER(name) LPAREN ...
-    if (this.match(TokenType.IDENTIFIER) && this.currentToken.value === 'method' && this.peek(1)?.type === TokenType.IDENTIFIER && this.peek(2)?.type === TokenType.LPAREN) {
+    // Tokenized as METHOD IDENTIFIER(name) LPAREN ... or IDENTIFIER('method') IDENTIFIER(name) LPAREN ...
+    if ((this.match(TokenType.METHOD) || (this.match(TokenType.IDENTIFIER) && this.currentToken.value === 'method')) && this.peek(1)?.type === TokenType.IDENTIFIER && this.peek(2)?.type === TokenType.LPAREN) {
       return this.parseMethodDeclaration();
     }
 
@@ -341,7 +341,7 @@ class Parser {
   parseTypedDeclarationStatement() {
     const declaredType = this.parseTypeAnnotation();
     if (!declaredType) {
-      throw new Error(`Expected type at line ${this.currentToken.line}`);
+      throw new Error(`Expected type at line ${this.currentToken.line}, column ${this.currentToken.column} while parsing ${this._currentConstruct || 'typed declaration'}`);
     }
 
     const name = this.expect(TokenType.IDENTIFIER, 'Expected name').value;
@@ -568,6 +568,8 @@ class Parser {
   }
 
   parseIfStatement() {
+    const prevConstruct = this._currentConstruct;
+    this._currentConstruct = 'if statement';
     this.advance();
     const condition = this.parseExpression();
 
@@ -580,10 +582,13 @@ class Parser {
       elseBranch = this.parseIndentedBlock();
     }
 
+    this._currentConstruct = prevConstruct;
     return new ASTNode('IfStatement', { condition, thenBranch, elseBranch });
   }
 
   parseForStatementPine() {
+    const prevConstruct = this._currentConstruct;
+    this._currentConstruct = 'for loop';
     this.advance();
 
     // Pine v5+ also supports `for x in collection`
@@ -605,6 +610,7 @@ class Parser {
       this.expect(TokenType.IN, 'Expected in');
       const iterable = this.parseExpression();
       const body = this.parseIndentedBlock();
+      this._currentConstruct = prevConstruct;
       return new ASTNode('ForInStatement', { variable: targets, iterable, body });
     }
 
@@ -614,6 +620,7 @@ class Parser {
       this.advance();
       const iterable = this.parseExpression();
       const body = this.parseIndentedBlock();
+      this._currentConstruct = prevConstruct;
       return new ASTNode('ForInStatement', { variable, iterable, body });
     }
 
@@ -631,17 +638,23 @@ class Parser {
       this.parseExpression();
     }
     const body = this.parseIndentedBlock();
+    this._currentConstruct = prevConstruct;
     return new ASTNode('ForStatement', { variable, start, end, body });
   }
 
   parseWhileStatementPine() {
+    const prevConstruct = this._currentConstruct;
+    this._currentConstruct = 'while loop';
     this.advance();
     const condition = this.parseExpression();
     const body = this.parseIndentedBlock();
+    this._currentConstruct = prevConstruct;
     return new ASTNode('WhileStatement', { condition, body });
   }
 
   parseSwitchStatementPine() {
+    const prevConstruct = this._currentConstruct;
+    this._currentConstruct = 'switch statement';
     this.advance();
     let expression = null;
     // Pine supports bare `switch` with no subject, where each case is a boolean condition.
@@ -685,10 +698,13 @@ class Parser {
     }
 
     this.consume(TokenType.DEDENT);
+    this._currentConstruct = prevConstruct;
     return new ASTNode('SwitchStatement', { expression, cases });
   }
 
   parseMethodDeclaration() {
+    const prevConstruct = this._currentConstruct;
+    this._currentConstruct = 'method declaration';
     // consume `method`
     this.advance();
     const name = this.expect(TokenType.IDENTIFIER, 'Expected method name').value;
@@ -753,10 +769,13 @@ class Parser {
       body = this.parseExpression();
     }
 
+    this._currentConstruct = prevConstruct;
     return new ASTNode('FunctionDeclaration', { name, params, body, isMethod: true });
   }
 
   parseFunctionDeclaration() {
+    const prevConstruct = this._currentConstruct;
+    this._currentConstruct = 'function declaration';
     const name = this.expect(TokenType.IDENTIFIER, 'Expected function name').value;
     this.expect(TokenType.LPAREN, 'Expected (');
     const params = [];
@@ -824,6 +843,7 @@ class Parser {
       // Same-line expression body.
       body = this.parseExpression();
     }
+    this._currentConstruct = prevConstruct;
     return new ASTNode('FunctionDeclaration', { name, params, body });
   }
 
@@ -951,7 +971,7 @@ class Parser {
 
         const opTok = this.currentToken;
         if (!this.matchAny([TokenType.EQUAL, TokenType.COLON_EQUAL, TokenType.PLUS_EQUAL, TokenType.MINUS_EQUAL, TokenType.MULTIPLY_EQUAL, TokenType.DIVIDE_EQUAL])) {
-          throw new Error(`Expected assignment operator at line ${this.currentToken.line}`);
+          throw new Error(`Expected assignment operator at line ${this.currentToken.line}, column ${this.currentToken.column} while parsing ${this._currentConstruct || 'assignment'}`);
         }
         this.advance();
         const value = this.parseExpression();
@@ -1364,7 +1384,7 @@ class Parser {
       return this.parseTernary();
     }
 
-    throw new Error(`Unexpected token: ${this.currentToken.type} at line ${this.currentToken.line}`);
+    throw new Error(`Unexpected token "${this.currentToken.value}" at line ${this.currentToken.line}, column ${this.currentToken.column} while parsing ${this._currentConstruct || 'expression'}`);
   }
 
   parseSwitchExpression() {

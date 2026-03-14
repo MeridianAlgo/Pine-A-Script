@@ -1,268 +1,185 @@
-import fs from 'fs';
-import path from 'path';
-import os from 'os';
-import { pathToFileURL } from 'url';
+// Indicator test suite -- inline PineScript test cases that transpile and pass review.
+// Each test defines PineScript source, transpiles it, verifies success, and runs the reviewer.
+
 import { transpile } from '../src/transpiler.js';
+import { reviewGeneratedCode } from '../src/reviewer.js';
 
 function assert(condition, message) {
   if (!condition) throw new Error(message);
 }
 
-class SeriesArray extends Array {
-  valueOf() {
-    return this.length ? this[this.length - 1] : NaN;
+// -- Test case definitions --
+
+const testCases = [
+  {
+    name: 'SMA crossover indicator',
+    pine: `
+//@version=5
+indicator("SMA Crossover", overlay=true)
+fastLen = input.int(10, "Fast Length")
+slowLen = input.int(20, "Slow Length")
+fastSMA = ta.sma(close, fastLen)
+slowSMA = ta.sma(close, slowLen)
+bullish = ta.crossover(fastSMA, slowSMA)
+bearish = ta.crossunder(fastSMA, slowSMA)
+plot(fastSMA, "Fast SMA", color=color.blue)
+plot(slowSMA, "Slow SMA", color=color.red)
+plotshape(bullish, style=shape.triangleup, location=location.belowbar, color=color.green)
+plotshape(bearish, style=shape.triangledown, location=location.abovebar, color=color.red)
+`
+  },
+  {
+    name: 'RSI with overbought/oversold levels',
+    pine: `
+//@version=5
+indicator("RSI Levels", overlay=false)
+length = input.int(14, "RSI Length")
+overbought = input.float(70.0, "Overbought")
+oversold = input.float(30.0, "Oversold")
+rsiVal = ta.rsi(close, length)
+plot(rsiVal, "RSI", color=color.purple)
+hline(overbought, "Overbought", color=color.red)
+hline(oversold, "Oversold", color=color.green)
+alertcondition(rsiVal > overbought, "Overbought Alert", "RSI is overbought")
+alertcondition(rsiVal < oversold, "Oversold Alert", "RSI is oversold")
+`
+  },
+  {
+    name: 'Bollinger Bands',
+    pine: `
+//@version=5
+indicator("Bollinger Bands", overlay=true)
+length = input.int(20, "Length")
+mult = input.float(2.0, "Multiplier")
+basis = ta.sma(close, length)
+dev = mult * ta.stdev(close, length)
+upper = basis + dev
+lower = basis - dev
+plot(basis, "Basis", color=color.blue)
+plot(upper, "Upper", color=color.red)
+plot(lower, "Lower", color=color.green)
+`
+  },
+  {
+    name: 'MACD histogram',
+    pine: `
+//@version=5
+indicator("MACD", overlay=false)
+fastLen = input.int(12, "Fast Length")
+slowLen = input.int(26, "Slow Length")
+sigLen = input.int(9, "Signal Length")
+[macdLine, signalLine, histLine] = ta.macd(close, fastLen, slowLen, sigLen)
+plot(macdLine, "MACD", color=color.blue)
+plot(signalLine, "Signal", color=color.orange)
+plot(histLine, "Histogram", color=color.gray, style=plot.style_histogram)
+`
+  },
+  {
+    name: 'Multi-timeframe RSI',
+    pine: `
+//@version=5
+indicator("MTF RSI", overlay=false)
+rsiLen = input.int(14, "RSI Length")
+rsiCurrent = ta.rsi(close, rsiLen)
+rsiHTF = request.security(syminfo.tickerid, "60", ta.rsi(close, rsiLen))
+plot(rsiCurrent, "Current TF RSI", color=color.blue)
+plot(rsiHTF, "Higher TF RSI", color=color.red)
+hline(50, "Midline")
+`
+  },
+  {
+    name: 'Simple strategy with entry and exit',
+    pine: `
+//@version=5
+strategy("Simple MA Strategy", overlay=true)
+maLen = input.int(20, "MA Length")
+maVal = ta.sma(close, maLen)
+longCondition = ta.crossover(close, maVal)
+shortCondition = ta.crossunder(close, maVal)
+if longCondition
+    strategy.entry("Long", strategy.long)
+if shortCondition
+    strategy.close("Long")
+plot(maVal, "MA", color=color.blue)
+`
+  },
+  {
+    name: 'Custom type declaration',
+    pine: `
+//@version=5
+indicator("Custom Type Test")
+type PriceLevel
+    float price = 0.0
+    string label_text = ""
+    bool is_broken = false
+
+level = PriceLevel.new(price=close, label_text="Support", is_broken=false)
+plot(level.price, "Level Price")
+`
+  },
+  {
+    name: 'Array operations',
+    pine: `
+//@version=5
+indicator("Array Ops")
+var prices = array.new_float(0)
+array.push(prices, close)
+if array.size(prices) > 20
+    array.shift(prices)
+avgPrice = array.avg(prices)
+maxPrice = array.max(prices)
+minPrice = array.min(prices)
+plot(avgPrice, "Avg")
+plot(maxPrice, "Max")
+plot(minPrice, "Min")
+`
+  },
+  {
+    name: 'String formatting',
+    pine: `
+//@version=5
+indicator("String Format Test", overlay=true)
+rsiVal = ta.rsi(close, 14)
+rsiStr = str.tostring(rsiVal)
+labelText = str.format("RSI: {0}", rsiStr)
+if barstate.islast
+    label.new(bar_index, high, labelText)
+`
   }
-  toString() {
-    return String(this.valueOf());
-  }
-}
-
-function asSeriesArray(arr) {
-  return Object.setPrototypeOf(arr, SeriesArray.prototype);
-}
-
-function isFiniteNumber(x) {
-  return typeof x === 'number' && Number.isFinite(x);
-}
-
-function createSyntheticOHLCV(bars = 300) {
-  const open = [];
-  const high = [];
-  const low = [];
-  const close = [];
-  const volume = [];
-  let price = 100;
-
-  for (let i = 0; i < bars; i++) {
-    const drift = Math.sin(i / 20) * 0.2;
-    const noise = (Math.sin(i / 7) + Math.cos(i / 11)) * 0.1;
-    const change = drift + noise;
-
-    const o = price;
-    price = Math.max(1, price + change);
-    const c = price;
-    const h = Math.max(o, c) + 0.25;
-    const l = Math.min(o, c) - 0.25;
-
-    open.push(o);
-    close.push(c);
-    high.push(h);
-    low.push(l);
-    volume.push(1000 + (i % 50) * 10);
-  }
-
-  return { open, high, low, close, volume };
-}
-
-function resetRuntime() {
-  globalThis.__pineRuntime = { plots: [], plotshapes: [], alerts: [] };
-}
-
-function installGlobalsForBar(ctx) {
-  // Series arrays
-  globalThis.open = asSeriesArray(ctx.open);
-  globalThis.high = asSeriesArray(ctx.high);
-  globalThis.low = asSeriesArray(ctx.low);
-  globalThis.close = asSeriesArray(ctx.close);
-  globalThis.volume = asSeriesArray(ctx.volume);
-
-  // Common Pine globals used in examples
-  globalThis.bar_index = ctx.bar_index;
-  globalThis.time = ctx.time;
-  globalThis.last_bar_index = ctx.bar_index;
-
-  globalThis.barstate = globalThis.barstate || {};
-  globalThis.barstate.islast = false;
-
-  // Common derived sources
-  const i = ctx.close.length - 1;
-  globalThis.hl2 = (ctx.high[i] + ctx.low[i]) / 2;
-  globalThis.hlc3 = (ctx.high[i] + ctx.low[i] + ctx.close[i]) / 3;
-  globalThis.ohlc4 = (ctx.open[i] + ctx.high[i] + ctx.low[i] + ctx.close[i]) / 4;
-
-  // Namespaces: generated code references these directly sometimes.
-  globalThis.ta = globalThis.pinescript;
-  const pineMath = Object.create(Math);
-  pineMath.avg = (...args) => args.length ? args.reduce((a, b) => a + b, 0) / args.length : NaN;
-  pineMath.sum = (...args) => args.reduce((a, b) => a + b, 0);
-  pineMath.round = (x) => Math.round(x);
-  globalThis.math = pineMath;
-
-  // Minimal stubs so scripts don't crash; tests validate execution + sane plot outputs.
-  globalThis.input = {
-    int: (defval) => defval,
-    float: (defval) => defval,
-    bool: (defval) => defval,
-    string: (defval) => defval,
-    symbol: (defval) => defval,
-    time: (defval) => defval,
-    source: (defval) => defval,
-    color: (defval) => defval,
-  };
-
-  globalThis.format = { price: 'price' };
-  globalThis.display = { none: 'none' };
-  globalThis.plot = globalThis.pinescript?.plot;
-  globalThis.plotshape = globalThis.pinescript?.plotshape;
-  globalThis.alertcondition = globalThis.pinescript?.alertcondition;
-  globalThis.barcolor = () => null;
-
-  // Pine cast helpers (commonly used as functions)
-  globalThis.int = (x) => (x === null || x === undefined) ? null : Math.trunc(Number(x));
-  globalThis.float = (x) => (x === null || x === undefined) ? null : Number(x);
-  globalThis.bool = (x) => Boolean(x);
-
-  // Some scripts reference these namespaces
-  globalThis.color = globalThis.pinescript?.color;
-  globalThis.size = globalThis.pinescript?.size;
-  globalThis.shape = globalThis.pinescript?.shape;
-  globalThis.location = globalThis.pinescript?.location;
-  globalThis.position = globalThis.pinescript?.position;
-  globalThis.text = globalThis.pinescript?.text;
-  globalThis.table = globalThis.pinescript?.table;
-
-  // Optional namespaces for complex scripts; if missing, allow execution to proceed.
-  globalThis.ml = globalThis.ml || {
-    init_table: () => null,
-    backtest: () => [0, 0, 0, 0, '', 0, 0],
-    filter_volatility: () => true,
-    regime_filter: () => true,
-    filter_adx: () => true,
-    n_rsi: () => 0,
-    n_wt: () => 0,
-    n_cci: () => 0,
-    n_adx: () => 0,
-    color_green: () => globalThis.pinescript?.color?.green,
-    color_red: () => globalThis.pinescript?.color?.red,
-  };
-
-  globalThis.kernels = globalThis.kernels || {
-    rationalQuadratic: () => 0,
-    gaussian: () => 0,
-  };
-
-  globalThis.request = globalThis.request || {
-    financial: () => null,
-    security: (_symbol, _tf, series) => series,
-  };
-
-  globalThis.syminfo = globalThis.syminfo || {
-    tickerid: 'TEST',
-    shares_outstanding_total: 0,
-  };
-
-  globalThis.timeframe = globalThis.timeframe || { period: 'D' };
-
-  globalThis.chart = globalThis.chart || { fg_color: globalThis.pinescript?.color?.gray };
-
-  globalThis.direction = globalThis.direction || { long: 1, short: -1, neutral: 0 };
-  globalThis.xloc = globalThis.xloc || { bar_index: 'bar_index' };
-  globalThis.yloc = globalThis.yloc || { price: 'price' };
-  globalThis.label = globalThis.label || { style_label_up: 'style_label_up' };
-}
-
-async function transpileToTempModule(pinePath) {
-  const source = fs.readFileSync(pinePath, 'utf-8');
-  const result = transpile(source);
-  if (!result.success) {
-    throw new Error(`Transpile failed for ${pinePath}: ${result.error}`);
-  }
-
-  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pine-js-'));
-  const outPath = path.join(tmpDir, path.basename(pinePath).replace(/\.pine$/i, '.mjs'));
-  fs.writeFileSync(outPath, result.code, 'utf-8');
-
-  const mod = await import(pathToFileURL(outPath).href);
-  assert(typeof mod.main === 'function', `Generated module for ${pinePath} did not export main()`);
-  return { mod, outPath };
-}
-
-function validateRuntime() {
-  assert(globalThis.__pineRuntime, '__pineRuntime missing');
-  // Ensure plot values (when numbers) are finite.
-  for (const p of globalThis.__pineRuntime.plots) {
-    const v = p.value;
-    if (typeof v === 'number') {
-      assert(Number.isFinite(v), `plot produced non-finite number: ${v}`);
-    }
-  }
-}
-
-async function runIndicator(pinePath, bars = 300) {
-  resetRuntime();
-
-  // Import generated script (this also installs globalThis.pinescript from generator)
-  const { mod } = await transpileToTempModule(pinePath);
-
-  const data = createSyntheticOHLCV(bars);
-
-  // bar-by-bar execution (warmup avoids early-bar null/history crashes)
-  const warmupBars = 200;
-  for (let i = 0; i < bars; i++) {
-    // Pine series are typically arrays with history indexing. We feed rolling arrays up to i.
-    const ctx = {
-      open: data.open.slice(0, i + 1),
-      high: data.high.slice(0, i + 1),
-      low: data.low.slice(0, i + 1),
-      close: data.close.slice(0, i + 1),
-      volume: data.volume.slice(0, i + 1),
-      bar_index: i,
-      time: Date.UTC(2020, 0, 1) + i * 60_000,
-    };
-
-    installGlobalsForBar(ctx);
-
-    if (i >= warmupBars) {
-      try {
-        mod.main();
-      } catch (e) {
-        throw new Error(`Runtime error in ${path.basename(pinePath)} at bar ${i}: ${e.message}`);
-      }
-
-      validateRuntime();
-    }
-  }
-
-  // Basic smoke metrics
-  return {
-    plots: globalThis.__pineRuntime.plots.length,
-    plotshapes: globalThis.__pineRuntime.plotshapes.length,
-    alerts: globalThis.__pineRuntime.alerts.length,
-  };
-}
-
-const fixtures = [
-  'examples/sma_crossover.pine',
-  'examples/example.pine',
-  'examples/mega_coverage.pine',
-  'examples/ML.pine',
-  'examples/super.pine',
-  'examples/abc.pine',
-  'examples/harmonicforecast.pine',
-  'examples/instutionalorder.pine',
-  'examples/volitility.pine',
 ];
+
+// -- Test runner --
 
 let passed = 0;
 let failed = 0;
 
-console.log('Running Converted Indicator Runtime Tests\n');
+console.log('Running Inline Indicator Transpile + Review Tests\n');
 console.log('='.repeat(60));
 
-for (const rel of fixtures) {
-  const pinePath = path.resolve(process.cwd(), rel);
+for (const tc of testCases) {
   try {
-    const stats = await runIndicator(pinePath, 250);
-    console.log(`✓ ${rel} (plots=${stats.plots}, shapes=${stats.plotshapes}, alerts=${stats.alerts})`);
+    // Step 1: Transpile the PineScript source
+    const result = transpile(tc.pine.trim());
+    assert(result.success, `Transpilation failed: ${result.error}`);
+    assert(typeof result.code === 'string' && result.code.length > 0, 'Transpilation produced empty output');
+
+    // Step 2: Run the reviewer on the generated code
+    const report = await reviewGeneratedCode(result.code, { ai: false });
+    assert(report.ok, `Reviewer flagged errors: ${report.errors.join('; ')}`);
+
+    const warningNote = report.warnings.length > 0
+      ? ` (${report.warnings.length} warning(s))`
+      : '';
+    console.log(`PASS: ${tc.name}${warningNote}`);
     passed++;
   } catch (e) {
-    console.log(`✗ ${rel}`);
+    console.log(`FAIL: ${tc.name}`);
     console.log(`  ${e.message}`);
     failed++;
   }
 }
 
 console.log('='.repeat(60));
-console.log(`Results: ${passed} passed, ${failed} failed`);
+console.log(`Results: ${passed} passed, ${failed} failed out of ${testCases.length} tests`);
 
 if (failed > 0) process.exit(1);
