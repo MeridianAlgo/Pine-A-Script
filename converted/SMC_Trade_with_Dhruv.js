@@ -1,12 +1,63 @@
-// PineScript to JavaScript Transpiled Code
+// Auto-generated JavaScript from PineScript source
 
-// Generated automatically
+// Do not edit by hand -- re-run the converter instead
 
 
-// Built-in PineScript functions
+// All the built-in PineScript functions that scripts depend on at runtime
 
 const pinescript = {
 
+  __scalar: function(v) {
+    if (v === null || v === undefined) return v;
+    if (typeof v === 'object' && typeof v.valueOf === 'function') {
+      const s = v.valueOf();
+      if (typeof s === 'number' || typeof s === 'boolean' || s === null) return s;
+    }
+    return v;
+  },
+  series: function(id, value) {
+    const rt = this.__rt || (this.__rt = {});
+    const store = rt.series || (rt.series = {});
+    let buf = store[id];
+    if (!buf) buf = store[id] = [];
+    buf[this.__bar | 0] = this.__scalar(value);
+    return buf;
+  },
+  hist: function(id, value, n) {
+    const buf = this.series(id, value);
+    const idx = (this.__bar | 0) - (n | 0);
+    return idx >= 0 && idx < buf.length ? buf[idx] : null;
+  },
+  time: function(timeframe, session) {
+    const t = globalThis.time;
+    if (t && typeof t.valueOf === 'function') return t.valueOf();
+    return Array.isArray(t) ? t[t.length - 1] : t;
+  },
+  sign: function(x) {
+    if (x === null || x === undefined || (typeof x === 'number' && isNaN(x))) return null;
+    return Math.sign(Number(x));
+  },
+  unpack: function(value, count) {
+    if (Array.isArray(value)) return value;
+    if (value != null && typeof value[Symbol.iterator] === 'function') return Array.from(value);
+    return new Array(count || 0).fill(null);
+  },
+  alertcondition: function(condition, ...rest) {
+    if (globalThis.__pineRuntime) {
+      globalThis.__pineRuntime.alerts.push({ condition, args: rest });
+    }
+    return null;
+  },
+  barcolor: function(color) { return null; },
+  bgcolor: function(color, title, editable, showLast) {
+    return null;
+  },
+  fill: function(series1, series2, color, title, editable) {
+    return null;
+  },
+  hline: function(_price, _title, _opts) {
+    return null;
+  },
   sma: function(series, length) {
     if (series === null || series === undefined) return null;
     if (!Array.isArray(series)) series = [series];
@@ -84,6 +135,13 @@ const pinescript = {
     }
     return weightSum > 0 ? sum / weightSum : null;
   },
+  swma: function(series) {
+    if (series === null || series === undefined) return null;
+    if (!Array.isArray(series)) series = [series];
+    if (series.length < 4) return null;
+    const s = series.slice(-4);
+    return (s[0] * 1 + s[1] * 2 + s[2] * 2 + s[3] * 1) / 6;
+  },
   atr: function(high, low, close, length = 14) {
     if (!Array.isArray(high) || !Array.isArray(low) || !Array.isArray(close)) return null;
     if (high.length < length + 1 || low.length < length + 1 || close.length < length + 1) return null;
@@ -113,6 +171,53 @@ const pinescript = {
     const sma = builtins.get('sma')(typicalPrice, length);
     const atr = builtins.get('atr')(high, low, close, length);
     return { middle: sma, upper: sma + mult * atr, lower: sma - mult * atr };
+  },
+  supertrend: function(factor, atrPeriod, high, low, close) {
+    if (!Array.isArray(high) || !Array.isArray(low) || !Array.isArray(close)) return [null, null];
+    if (high.length < atrPeriod + 1) return [null, null];
+    const atrVal = builtins.get('atr')(high, low, close, atrPeriod);
+    if (atrVal === null) return [null, null];
+    const lastIdx = close.length - 1;
+    const hl2 = (high[lastIdx] + low[lastIdx]) / 2;
+    const upperBand = hl2 + factor * atrVal;
+    const lowerBand = hl2 - factor * atrVal;
+    // Determine direction: 1 means downtrend (price below band), -1 means uptrend
+    const direction = close[lastIdx] > upperBand ? -1 : close[lastIdx] < lowerBand ? 1 : -1;
+    const supertrendValue = direction === -1 ? lowerBand : upperBand;
+    return [supertrendValue, direction];
+  },
+  ta_supertrend: function(factor, atrPeriod) {
+    const H = globalThis.high;
+    const L = globalThis.low;
+    const C = globalThis.close;
+    return builtins.get('supertrend')(factor, atrPeriod, H, L, C);
+  },
+  dmi: function(diLength, adxSmoothing, high, low, close) {
+    if (!Array.isArray(high) || !Array.isArray(low) || !Array.isArray(close)) return { plusDI: null, minusDI: null, adx: null };
+    if (high.length < diLength + 1) return { plusDI: null, minusDI: null, adx: null };
+    let plusDMSum = 0, minusDMSum = 0, trSum = 0;
+    for (let i = 1; i <= diLength; i++) {
+      const idx = high.length - 1 - diLength + i;
+      const upMove = high[idx] - high[idx - 1];
+      const downMove = low[idx - 1] - low[idx];
+      plusDMSum += (upMove > downMove && upMove > 0) ? upMove : 0;
+      minusDMSum += (downMove > upMove && downMove > 0) ? downMove : 0;
+      const tr = Math.max(
+        high[idx] - low[idx],
+        Math.abs(high[idx] - close[idx - 1]),
+        Math.abs(low[idx] - close[idx - 1])
+      );
+      trSum += tr;
+    }
+    const plusDI = trSum > 0 ? (plusDMSum / trSum) * 100 : 0;
+    const minusDI = trSum > 0 ? (minusDMSum / trSum) * 100 : 0;
+    const diSum = plusDI + minusDI;
+    const dx = diSum > 0 ? Math.abs(plusDI - minusDI) / diSum * 100 : 0;
+    return { plusDI, minusDI, adx: dx };
+  },
+  adx: function(diLength, adxSmoothing, high, low, close) {
+    const result = builtins.get('dmi')(diLength, adxSmoothing, high, low, close);
+    return result ? result.adx : null;
   },
   rsi: function(close, length = 14) {
     if (close === null || close === undefined) return null;
@@ -171,9 +276,7 @@ const pinescript = {
     return { macd: macdLine, signal: signalLine, histogram: histogram };
   },
   cci: function(a, b, c, d) {
-    // Pine signatures:
-    // - ta.cci(source, length)
-    // - ta.cci(high, low, close, length)
+    // Supports both ta.cci(source, length) and ta.cci(high, low, close, length) signatures
     let source;
     let length;
     if (Array.isArray(a) && typeof b === 'number' && c === undefined) {
@@ -304,6 +407,15 @@ const pinescript = {
   stdev: function(source, length) {
     return Math.sqrt(builtins.get('variance')(source, length));
   },
+  median: function(source, length) {
+    if (!source || source.length < length) return null;
+    const sorted = [...source.slice(-length)].sort((a, b) => a - b);
+    const mid = Math.floor(sorted.length / 2);
+    return sorted.length % 2 !== 0 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2;
+  },
+  ta_median: function(source, length) {
+    return builtins.get('median')(source, length);
+  },
   hl2: function(high, low) {
     return high && low ? (high[high.length - 1] + low[low.length - 1]) / 2 : null;
   },
@@ -420,6 +532,24 @@ const pinescript = {
     return (series1[i - 1] < series2[i - 1] && series1[i] >= series2[i]) ||
            (series1[i - 1] > series2[i - 1] && series1[i] <= series2[i]);
   },
+  crossover: function(series1, series2) {
+    if (series1 === null || series1 === undefined) return false;
+    if (series2 === null || series2 === undefined) return false;
+    if (!Array.isArray(series1)) series1 = [series1];
+    if (!Array.isArray(series2)) series2 = [series2];
+    if (series1.length < 2 || series2.length < 2) return false;
+    const i = series1.length - 1;
+    return series1[i - 1] < series2[i - 1] && series1[i] >= series2[i];
+  },
+  crossunder: function(series1, series2) {
+    if (series1 === null || series1 === undefined) return false;
+    if (series2 === null || series2 === undefined) return false;
+    if (!Array.isArray(series1)) series1 = [series1];
+    if (!Array.isArray(series2)) series2 = [series2];
+    if (series1.length < 2 || series2.length < 2) return false;
+    const i = series1.length - 1;
+    return series1[i - 1] > series2[i - 1] && series1[i] <= series2[i];
+  },
   offset: function(series, offset) {
     if (!Array.isArray(series)) return null;
     const idx = series.length - 1 - offset;
@@ -500,12 +630,14 @@ const pinescript = {
     return builtins.get('nz')(value, replacement);
   },
   plot: function(series, title = '', color = null, linewidth = 1) {
-    globalThis.__pineRuntime.plots.push({
-      series,
-      title,
-      color,
-      linewidth
-    });
+    const rt = globalThis.__pineRuntime;
+    if (!rt) return series;
+    const bar = rt.__barIndex | 0;
+    const ord = (rt.__plotIdx = (rt.__plotIdx | 0) + 1) - 1;
+    const key = (title && String(title)) || ('plot_' + ord);
+    let p = rt.plots[key];
+    if (!p) p = rt.plots[key] = { title: key, color, linewidth, data: [] };
+    p.data[bar] = this.__scalar(series);
     return series;
   },
   lineNew: function(x1, y1, x2, y2, opts = {}) {
@@ -514,20 +646,72 @@ const pinescript = {
   lineDelete: function(l) {
     return null;
   },
-  labelNew: function(...args) {
-    if (globalThis.__pineRuntime) {
-      globalThis.__pineRuntime.labels = globalThis.__pineRuntime.labels || [];
-      globalThis.__pineRuntime.labels.push({ args });
-    }
-    return { args };
+  lineSetXY: function(line, point, x, y) {
+    if (!line) return null;
+    if (point === 0 || point === 'x1') { line.x1 = x; line.y1 = y; }
+    else { line.x2 = x; line.y2 = y; }
+    return line;
+  },
+  lineGetX: function(line, point) {
+    if (!line) return null;
+    return point === 0 || point === 'x1' ? line.x1 : line.x2;
+  },
+  lineGetY: function(line, point) {
+    if (!line) return null;
+    return point === 0 || point === 'y1' ? line.y1 : line.y2;
+  },
+  labelNew: function(x, y, text = '', opts = {}) {
+    return { x, y, text, opts, _type: 'label' };
   },
   labelDelete: function(l) {
     return null;
   },
+  labelSetText: function(label, text) {
+    if (!label) return null;
+    label.text = text;
+    return label;
+  },
+  labelGetText: function(label) {
+    if (!label) return '';
+    return label.text || '';
+  },
+  boxNew: function(left, top, right, bottom, opts = {}) {
+    return { left, top, right, bottom, opts, _type: 'box' };
+  },
+  boxDelete: function(box) {
+    return null;
+  },
+  boxSetLeftTop: function(box, left, top) {
+    if (!box) return null;
+    box.left = left;
+    box.top = top;
+    return box;
+  },
+  boxSetRightBottom: function(box, right, bottom) {
+    if (!box) return null;
+    box.right = right;
+    box.bottom = bottom;
+    return box;
+  },
+  polylineNew: function(points, opts = {}) {
+    return { points: points || [], opts, _type: 'polyline' };
+  },
+  polylineDelete: function(poly) {
+    return null;
+  },
   plotshape: function(condition, ...rest) {
-    if (globalThis.__pineRuntime) {
-      globalThis.__pineRuntime.plotshapes.push({ condition, args: rest });
+    const rt = globalThis.__pineRuntime;
+    if (!rt) return condition;
+    const bar = rt.__barIndex | 0;
+    const ord = (rt.__shapeIdx = (rt.__shapeIdx | 0) + 1) - 1;
+    let key = 'shape_' + ord;
+    for (const r of rest) {
+      if (typeof r === 'string') { key = r; break; }
+      if (r && typeof r === 'object' && r.title) { key = String(r.title); break; }
     }
+    let s = rt.plotshapes[key];
+    if (!s) s = rt.plotshapes[key] = { title: key, data: [] };
+    s.data[bar] = !!this.__scalar(condition);
     return condition;
   },
   indicator: function(title, shorttitle, overlay, opts) {
@@ -542,26 +726,11 @@ const pinescript = {
     }
     return null;
   },
-  alertcondition: function(condition, ...rest) {
-    if (globalThis.__pineRuntime) {
-      globalThis.__pineRuntime.alerts.push({ condition, args: rest });
-    }
-    return null;
-  },
   plotbar: function(open, high, low, close, title, color, editable, showLast) {
     return { open, high, low, close };
   },
   plotcandle: function(open, high, low, close, title, color, wickColor, borderColor, editable, showLast) {
     return { open, high, low, close };
-  },
-  hline: function(_price, _title, _opts) {
-    return null;
-  },
-  bgcolor: function(color, title, editable, showLast) {
-    return null;
-  },
-  fill: function(series1, series2, color, title, editable) {
-    return null;
   },
   alert: function(condition, message, frequency) {
     console.log('Alert:', condition ? message : 'Condition not met');
@@ -828,6 +997,9 @@ const pinescript = {
   arrayIndexOf: function(arr, value) {
     return arr ? arr.indexOf(value) : -1;
   },
+  arrayLastIndexOf: function(arr, value) {
+    return arr ? arr.lastIndexOf(value) : -1;
+  },
   arraySum: function(arr) {
     return arr ? arr.reduce((a, b) => a + b, 0) : 0;
   },
@@ -839,6 +1011,42 @@ const pinescript = {
   },
   arrayMax: function(arr) {
     return arr && arr.length > 0 ? Math.max(...arr) : null;
+  },
+  arrayStdev: function(arr) {
+    if (!arr || arr.length === 0) return null;
+    const mean = arr.reduce((a, b) => a + b, 0) / arr.length;
+    const variance = arr.reduce((sum, val) => sum + Math.pow(val - mean, 2), 0) / arr.length;
+    return Math.sqrt(variance);
+  },
+  arrayVariance: function(arr) {
+    if (!arr || arr.length === 0) return null;
+    const mean = arr.reduce((a, b) => a + b, 0) / arr.length;
+    return arr.reduce((sum, val) => sum + Math.pow(val - mean, 2), 0) / arr.length;
+  },
+  arrayCovariance: function(arr1, arr2) {
+    if (!arr1 || !arr2 || arr1.length === 0 || arr1.length !== arr2.length) return null;
+    const mean1 = arr1.reduce((a, b) => a + b, 0) / arr1.length;
+    const mean2 = arr2.reduce((a, b) => a + b, 0) / arr2.length;
+    let cov = 0;
+    for (let i = 0; i < arr1.length; i++) {
+      cov += (arr1[i] - mean1) * (arr2[i] - mean2);
+    }
+    return cov / arr1.length;
+  },
+  mode: function(arr) {
+    if (!arr || arr.length === 0) return null;
+    const counts = new Map();
+    let maxCount = 0;
+    let modeVal = arr[0];
+    for (const val of arr) {
+      const c = (counts.get(val) || 0) + 1;
+      counts.set(val, c);
+      if (c > maxCount) {
+        maxCount = c;
+        modeVal = val;
+      }
+    }
+    return modeVal;
   },
   strLength: function(str) {
     return str ? str.length : 0;
@@ -895,6 +1103,84 @@ const pinescript = {
   strReverse: function(str) {
     return str ? str.split('').reverse().join('') : '';
   },
+  strFormat: function(formatStr, ...args) {
+    if (!formatStr) return '';
+    return formatStr.replace(/\{(\d+)\}/g, (match, idx) => {
+      const i = parseInt(idx, 10);
+      return i < args.length ? String(args[i]) : match;
+    });
+  },
+  input: function(defval, title, tooltip, inline, group) {
+    return defval;
+  },
+  inputInt: function(defval = 0, title, minval, maxval, step, tooltip, inline, group) {
+    return defval;
+  },
+  inputFloat: function(defval = 0.0, title, minval, maxval, step, tooltip, inline, group) {
+    return defval;
+  },
+  inputBool: function(defval = false, title, tooltip, inline, group) {
+    return defval;
+  },
+  inputString: function(defval = '', title, options, tooltip, inline, group) {
+    return defval;
+  },
+  inputSource: function(defval = null, title, tooltip, inline, group) {
+    return defval;
+  },
+  inputColor: function(defval = '#000000', title, tooltip, inline, group) {
+    return defval;
+  },
+  inputTime: function(defval = 0, title, tooltip, inline, group) {
+    return defval;
+  },
+  mathSign: function(value) {
+    return Math.sign(value);
+  },
+  mathAvg: function(...args) {
+    const valid = args.filter(v => v !== null && v !== undefined && !isNaN(v));
+    return valid.length > 0 ? valid.reduce((a, b) => a + b, 0) / valid.length : null;
+  },
+  mathSum: function(series, length) {
+    if (!series || series.length < length) return null;
+    return series.slice(-length).reduce((a, b) => a + b, 0);
+  },
+  mathRandom: function(min = 0, max = 1) {
+    return min + Math.random() * (max - min);
+  },
+  mathTodegrees: function(radians) {
+    return radians * (180 / Math.PI);
+  },
+  mathToradians: function(degrees) {
+    return degrees * (Math.PI / 180);
+  },
+  colorT: function(color, transparency) {
+    if (transparency !== undefined) {
+      return { color, transparency };
+    }
+    if (color && typeof color === 'object' && 'transparency' in color) {
+      return color.transparency;
+    }
+    return 0;
+  },
+  tableCellSetText: function(table, column, row, text) {
+    return null;
+  },
+  tableCellSetBgcolor: function(table, column, row, bgcolor) {
+    return null;
+  },
+  tableMergeCells: function(table, startColumn, startRow, endColumn, endRow) {
+    return null;
+  },
+  tableDelete: function(table) {
+    return null;
+  },
+  tableClear: function(table, startColumn, startRow, endColumn, endRow) {
+    return null;
+  },
+  maxBarsBack: function(series, length) {
+    return null;
+  },
   pi: 3.141592653589793,
   e: 2.718281828459045,
   true: true,
@@ -905,8 +1191,7 @@ const pinescript = {
     const info = { ticker: 'AAPL', tickerid: 'NASDAQ:AAPL', prefix: 'NASDAQ', root: 'AAPL', suffix: '' };
     return info[type] || '';
   },
-  time: 1771178053104,
-  timenow: 1771178053104,
+  timenow: 1781574528763,
   barstate: "LAST",
   dividends: {},
   splits: {},
@@ -923,7 +1208,7 @@ const pinescript = {
     return null;
   },
   tr: function(high, low, close) {
-    // Pine signature: ta.tr(true)
+    // Handles both the boolean shorthand ta.tr(true) and explicit high/low/close arguments
     if (typeof high === 'boolean') {
       const H = globalThis.high;
       const L = globalThis.low;
@@ -934,7 +1219,7 @@ const pinescript = {
       return Math.max(H[i] - L[i], Math.abs(H[i] - prevClose), Math.abs(L[i] - prevClose));
     }
 
-    // Fallback: treat inputs as scalars for current bar
+    // When arrays are passed, compute true range from the last bar using the previous close
     if (Array.isArray(close)) {
       const prevClose = close[close.length - 2] || close[0];
       const currHigh = Array.isArray(high) ? high[high.length - 1] : high;
@@ -944,6 +1229,92 @@ const pinescript = {
     }
 
     return Math.max(high - low, Math.abs(high - close), Math.abs(low - close));
+  },
+  arrayFirst: function(arr) {
+    if (!arr || arr.length === 0) return null;
+    return arr[0];
+  },
+  arrayLast: function(arr) {
+    if (!arr || arr.length === 0) return null;
+    return arr[arr.length - 1];
+  },
+  arrayJoin: function(arr, separator = ',') {
+    if (!arr) return '';
+    return arr.join(separator);
+  },
+  arrayConcat: function(arr1, arr2) {
+    if (!arr1) return arr2 || [];
+    if (!arr2) return arr1;
+    return arr1.concat(arr2);
+  },
+  arrayCopy: function(arr) {
+    if (!arr) return [];
+    return [...arr];
+  },
+  arrayBinarySearch: function(arr, value) {
+    if (!arr || arr.length === 0) return -1;
+    let lo = 0, hi = arr.length - 1;
+    while (lo <= hi) {
+      const mid = (lo + hi) >>> 1;
+      if (arr[mid] === value) return mid;
+      if (arr[mid] < value) lo = mid + 1;
+      else hi = mid - 1;
+    }
+    return -1;
+  },
+  arrayRange: function(arr) {
+    if (!arr || arr.length === 0) return 0;
+    return Math.max(...arr) - Math.min(...arr);
+  },
+  arrayMedian: function(arr) {
+    if (!arr || arr.length === 0) return null;
+    const sorted = [...arr].sort((a, b) => a - b);
+    const mid = Math.floor(sorted.length / 2);
+    return sorted.length % 2 !== 0 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2;
+  },
+  arrayMode: function(arr) {
+    if (!arr || arr.length === 0) return null;
+    const freq = {};
+    let maxCount = 0;
+    let mode = arr[0];
+    for (const v of arr) {
+      freq[v] = (freq[v] || 0) + 1;
+      if (freq[v] > maxCount) { maxCount = freq[v]; mode = v; }
+    }
+    return mode;
+  },
+  arrayPercentile: function(arr, percentile) {
+    if (!arr || arr.length === 0) return null;
+    const sorted = [...arr].sort((a, b) => a - b);
+    const idx = (percentile / 100) * (sorted.length - 1);
+    const lo = Math.floor(idx);
+    const hi = Math.ceil(idx);
+    if (lo === hi) return sorted[lo];
+    return sorted[lo] + (sorted[hi] - sorted[lo]) * (idx - lo);
+  },
+  arrayPercentileLinearInterpolation: function(arr, percentile) {
+    return builtins.get('arrayPercentile')(arr, percentile);
+  },
+  arrayPercentileNearestRank: function(arr, percentile) {
+    if (!arr || arr.length === 0) return null;
+    const sorted = [...arr].sort((a, b) => a - b);
+    const idx = Math.ceil((percentile / 100) * sorted.length) - 1;
+    return sorted[Math.max(0, idx)];
+  },
+  arrayAbs: function(arr) {
+    if (!arr) return [];
+    return arr.map(v => Math.abs(v));
+  },
+  arrayEvery: function(arr, callback) {
+    if (!arr) return false;
+    return arr.every(callback);
+  },
+  arraySome: function(arr, callback) {
+    if (!arr) return false;
+    return arr.some(callback);
+  },
+  requestFinancial: function() {
+    return null;
   },
 };
 
@@ -1101,6 +1472,115 @@ globalThis.barmerge = globalThis.barmerge || {
 };
 
 
+function __pineNS(real) {
+
+  const base = real || {};
+
+  return new Proxy(base, {
+
+    get(target, key) {
+
+      if (key in target) return target[key];
+
+      if (typeof key === "symbol") return target[key];
+
+      // Unknown member: usable as a value (null), a constant, or a no-op function.
+
+      const noop = function() { return null; };
+
+      noop.toString = () => "";
+
+      return noop;
+
+    }
+
+  });
+
+}
+
+globalThis.ta = globalThis.ta || __pineNS({});
+
+globalThis.math = globalThis.math || __pineNS({ pi: Math.PI, e: Math.E, phi: 1.618033988749895, rphi: 0.618033988749895 });
+
+globalThis.chart = globalThis.chart || __pineNS({ point: __pineNS({}), bg_color: null, fg_color: null });
+
+globalThis.line = globalThis.line || __pineNS({ style_solid: "solid", style_dashed: "dashed", style_dotted: "dotted" });
+
+globalThis.box = globalThis.box || __pineNS({});
+
+globalThis.label = globalThis.label || __pineNS({ style_label_down: "label_down", style_label_up: "label_up", style_none: "none" });
+
+globalThis.polyline = globalThis.polyline || __pineNS({});
+
+globalThis.linefill = globalThis.linefill || __pineNS({});
+
+globalThis.matrix = globalThis.matrix || __pineNS({});
+
+globalThis.map = globalThis.map || __pineNS({});
+
+globalThis.session = globalThis.session || __pineNS({ regular: "regular", extended: "extended" });
+
+globalThis.dayofweek = globalThis.dayofweek || __pineNS({ sunday: 1, monday: 2, tuesday: 3, wednesday: 4, thursday: 5, friday: 6, saturday: 7 });
+
+globalThis.timeframe = __pineNS(Object.assign(globalThis.timeframe || {}, { period: (globalThis.timeframe && globalThis.timeframe.period) || "D", isintraday: false, isdaily: true, multiplier: 1 }));
+
+globalThis.request = __pineNS(globalThis.request || {});
+
+globalThis.input = __pineNS(globalThis.input || {});
+
+globalThis.adjustment = globalThis.adjustment || __pineNS({});
+
+globalThis.earnings = globalThis.earnings || __pineNS({});
+
+globalThis.dividends = globalThis.dividends || __pineNS({});
+
+globalThis.splits = globalThis.splits || __pineNS({});
+
+globalThis.currency = globalThis.currency || __pineNS({});
+
+globalThis.display = globalThis.display || __pineNS({ none: "none", all: "all", pane: "pane", data_window: "data_window", status_line: "status_line", price_scale: "price_scale" });
+
+globalThis.format = globalThis.format || __pineNS({ price: "price", volume: "volume", percent: "percent", mintick: "mintick", inherit: "inherit" });
+
+globalThis.scale = globalThis.scale || __pineNS({ left: "left", right: "right", none: "none" });
+
+globalThis.font = globalThis.font || __pineNS({ family_default: "default", family_monospace: "monospace" });
+
+globalThis.xloc = globalThis.xloc || __pineNS({ bar_index: "bar_index", bar_time: "bar_time" });
+
+globalThis.yloc = globalThis.yloc || __pineNS({ price: "price", abovebar: "abovebar", belowbar: "belowbar" });
+
+globalThis.extend = globalThis.extend || __pineNS({ none: "none", left: "left", right: "right", both: "both" });
+
+globalThis.order = globalThis.order || __pineNS({ ascending: "ascending", descending: "descending" });
+
+globalThis.alert = globalThis.alert || Object.assign(function() { return null; }, { freq_once_per_bar: "once_per_bar", freq_once_per_bar_close: "once_per_bar_close", freq_all: "all" });
+
+globalThis.dayofmonth = globalThis.dayofmonth || function(t) { return new Date(t || 0).getUTCDate(); };
+
+globalThis.plot = globalThis.plot || __pineNS({ style_line: "line", style_linebr: "linebr", style_stepline: "stepline", style_histogram: "histogram", style_cross: "cross", style_area: "area", style_areabr: "areabr", style_columns: "columns", style_circles: "circles" });
+
+globalThis.int = globalThis.int || function(x) { return x == null ? null : Math.trunc(Number(x)); };
+
+globalThis.float = globalThis.float || function(x) { return x == null ? null : Number(x); };
+
+globalThis.bool = globalThis.bool || function(x) { return Boolean(x); };
+
+globalThis.string = globalThis.string || function(x) { return x == null ? null : String(x); };
+
+globalThis.dayofweek = globalThis.dayofweek || __pineNS({ sunday: 1, monday: 2, tuesday: 3, wednesday: 4, thursday: 5, friday: 6, saturday: 7 });
+
+globalThis.str = globalThis.str || __pineNS({});
+
+pinescript.math = globalThis.math;
+
+pinescript.ta = globalThis.ta;
+
+pinescript.str = globalThis.str;
+
+pinescript.array = __pineNS(globalThis.array);
+
+
 pinescript.color = {
 
   hex: function(s) {
@@ -1190,7 +1670,7 @@ pinescript.table = {
 };
 
 
-// Input parameters
+// Script input parameters and their defaults
 
 const alerts = { new: function(internalBullishBOS, internalBearishBOS, internalBullishCHoCH, internalBearishCHoCH, swingBullishBOS, swingBearishBOS, swingBullishCHoCH, swingBearishCHoCH, internalBullishOrderBlock, internalBearishOrderBlock, swingBullishOrderBlock, swingBearishOrderBlock, equalHighs, equalLows, bullishFairValueGap, bearishFairValueGap) { return { internalBullishBOS: internalBullishBOS, internalBearishBOS: internalBearishBOS, internalBullishCHoCH: internalBullishCHoCH, internalBearishCHoCH: internalBearishCHoCH, swingBullishBOS: swingBullishBOS, swingBearishBOS: swingBearishBOS, swingBullishCHoCH: swingBullishCHoCH, swingBearishCHoCH: swingBearishCHoCH, internalBullishOrderBlock: internalBullishOrderBlock, internalBearishOrderBlock: internalBearishOrderBlock, swingBullishOrderBlock: swingBullishOrderBlock, swingBearishOrderBlock: swingBearishOrderBlock, equalHighs: equalHighs, equalLows: equalLows, bullishFairValueGap: bullishFairValueGap, bearishFairValueGap: bearishFairValueGap }; } };
 const trailingExtremes = { new: function(top, bottom, barTime, barIndex, lastTopTime, lastBottomTime) { return { top: top, bottom: bottom, barTime: barTime, barIndex: barIndex, lastTopTime: lastTopTime, lastBottomTime: lastBottomTime }; } };
@@ -1200,7 +1680,7 @@ const equalDisplay = { new: function(l_ine, l_abel) { return { l_ine: l_ine, l_a
 const pivot = { new: function(currentLevel, lastLevel, crossed, barTime, barIndex) { return { currentLevel: currentLevel, lastLevel: lastLevel, crossed: crossed, barTime: barTime, barIndex: barIndex }; } };
 const orderBlock = { new: function(barHigh, barLow, barTime, bias) { return { barHigh: barHigh, barLow: barLow, barTime: barTime, bias: bias }; } };
 
-// Main script logic
+// The transpiled script logic, called once per bar
 
 function main() {
 
@@ -1270,58 +1750,58 @@ function main() {
   let fairValueGapsTimeframeTooltip = "Fair value gaps timeframe";
   let fairValueGapsExtendTooltip = "Determine how many bars to extend the Fair Value Gap boxes on chart";
   let showPremiumDiscountZonesTooltip = "Display premium, discount, and equilibrium zones on chart";
-  let modeInput = input.string(HISTORICAL, "Mode", ({ group: SMART_GROUP, tooltip: modeTooltip, options: [HISTORICAL, PRESENT] }));
-  let styleInput = input.string(COLORED, "Style", ({ group: SMART_GROUP, tooltip: styleTooltip, options: [COLORED, MONOCHROME] }));
-  let showTrendInput = input(false, "Color Candles", ({ group: SMART_GROUP, tooltip: showTrendTooltip }));
-  let showInternalsInput = input(true, "Show Internal Structure", ({ group: INTERNAL_GROUP, tooltip: showInternalsTooltip }));
-  let showInternalBullInput = input.string(ALL, "Bullish Structure", ({ group: INTERNAL_GROUP, inline: "ibull", options: [ALL, BOS, CHOCH] }));
-  let internalBullColorInput = input(GREEN, "", ({ group: INTERNAL_GROUP, inline: "ibull" }));
-  let showInternalBearInput = input.string(ALL, "Bearish Structure", ({ group: INTERNAL_GROUP, inline: "ibear", options: [ALL, BOS, CHOCH] }));
-  let internalBearColorInput = input(RED, "", ({ group: INTERNAL_GROUP, inline: "ibear" }));
-  let internalFilterConfluenceInput = input(false, "Confluence Filter", ({ group: INTERNAL_GROUP, tooltip: internalFilterConfluenceTooltip }));
-  let internalStructureSize = input.string(TINY, "Internal Label Size", ({ group: INTERNAL_GROUP, options: [TINY, SMALL, NORMAL] }));
-  let showStructureInput = input(true, "Show Swing Structure", ({ group: SWING_GROUP, tooltip: showStructureTooltip }));
-  let showSwingBullInput = input.string(ALL, "Bullish Structure", ({ group: SWING_GROUP, inline: "bull", options: [ALL, BOS, CHOCH] }));
-  let swingBullColorInput = input(GREEN, "", ({ group: SWING_GROUP, inline: "bull" }));
-  let showSwingBearInput = input.string(ALL, "Bearish Structure", ({ group: SWING_GROUP, inline: "bear", options: [ALL, BOS, CHOCH] }));
-  let swingBearColorInput = input(RED, "", ({ group: SWING_GROUP, inline: "bear" }));
-  let swingStructureSize = input.string(SMALL, "Swing Label Size", ({ group: SWING_GROUP, options: [TINY, SMALL, NORMAL] }));
-  let showSwingsInput = input(false, "Show Swings Points", ({ group: SWING_GROUP, tooltip: showSwingsTooltip, inline: "swings" }));
-  let swingsLengthInput = input.int(50, "", ({ group: SWING_GROUP, minval: 10, inline: "swings" }));
-  let showHighLowSwingsInput = input(true, "Show Strong/Weak High/Low", ({ group: SWING_GROUP, tooltip: showHighLowSwingsTooltip }));
-  let showInternalOrderBlocksInput = input(true, "Internal Order Blocks", ({ group: BLOCKS_GROUP, tooltip: showInternalOrderBlocksTooltip, inline: "iob" }));
-  let internalOrderBlocksSizeInput = input.int(5, "", ({ group: BLOCKS_GROUP, minval: 1, maxval: 20, inline: "iob" }));
-  let showSwingOrderBlocksInput = input(false, "Swing Order Blocks", ({ group: BLOCKS_GROUP, tooltip: showSwingOrderBlocksTooltip, inline: "ob" }));
-  let swingOrderBlocksSizeInput = input.int(5, "", ({ group: BLOCKS_GROUP, minval: 1, maxval: 20, inline: "ob" }));
-  let orderBlockFilterInput = input.string("Atr", "Order Block Filter", ({ group: BLOCKS_GROUP, tooltip: orderBlockFilterTooltip, options: [ATR, RANGE] }));
-  let orderBlockMitigationInput = input.string(HIGHLOW, "Order Block Mitigation", ({ group: BLOCKS_GROUP, tooltip: orderBlockMitigationTooltip, options: [CLOSE, HIGHLOW] }));
-  let internalBullishOrderBlockColor = input.color(pinescript.color.rgb(49, 245, 186, 80), "Internal Bullish OB", ({ group: BLOCKS_GROUP }));
-  let internalBearishOrderBlockColor = input.color(pinescript.color.new(pinescript.color.hex("#f77c80"), 80), "Internal Bearish OB", ({ group: BLOCKS_GROUP }));
-  let swingBullishOrderBlockColor = input.color(pinescript.color.new(pinescript.color.hex("#1848cc"), 80), "Bullish OB", ({ group: BLOCKS_GROUP }));
-  let swingBearishOrderBlockColor = input.color(pinescript.color.new(pinescript.color.hex("#b22833"), 80), "Bearish OB", ({ group: BLOCKS_GROUP }));
-  let showEqualHighsLowsInput = input(true, "Equal High/Low", ({ group: EQUAL_GROUP, tooltip: showEqualHighsLowsTooltip }));
-  let equalHighsLowsLengthInput = input.int(3, "Bars Confirmation", ({ group: EQUAL_GROUP, tooltip: equalHighsLowsLengthTooltip, minval: 1 }));
-  let equalHighsLowsThresholdInput = input.float(0.1, "Threshold", ({ group: EQUAL_GROUP, tooltip: equalHighsLowsThresholdTooltip, minval: 0, maxval: 0.5, step: 0.1 }));
-  let equalHighsLowsSizeInput = input.string(TINY, "Label Size", ({ group: EQUAL_GROUP, options: [TINY, SMALL, NORMAL] }));
-  let showFairValueGapsInput = input(false, "Fair Value Gaps", ({ group: GAPS_GROUP, tooltip: showFairValueGapsTooltip }));
-  let fairValueGapsThresholdInput = input(true, "Auto Threshold", ({ group: GAPS_GROUP, tooltip: fairValueGapsThresholdTooltip }));
+  let modeInput = pinescript.inputString(HISTORICAL, "Mode", ({ group: SMART_GROUP, tooltip: modeTooltip, options: [HISTORICAL, PRESENT] }));
+  let styleInput = pinescript.inputString(COLORED, "Style", ({ group: SMART_GROUP, tooltip: styleTooltip, options: [COLORED, MONOCHROME] }));
+  let showTrendInput = pinescript.input(false, "Color Candles", ({ group: SMART_GROUP, tooltip: showTrendTooltip }));
+  let showInternalsInput = pinescript.input(true, "Show Internal Structure", ({ group: INTERNAL_GROUP, tooltip: showInternalsTooltip }));
+  let showInternalBullInput = pinescript.inputString(ALL, "Bullish Structure", ({ group: INTERNAL_GROUP, inline: "ibull", options: [ALL, BOS, CHOCH] }));
+  let internalBullColorInput = pinescript.input(GREEN, "", ({ group: INTERNAL_GROUP, inline: "ibull" }));
+  let showInternalBearInput = pinescript.inputString(ALL, "Bearish Structure", ({ group: INTERNAL_GROUP, inline: "ibear", options: [ALL, BOS, CHOCH] }));
+  let internalBearColorInput = pinescript.input(RED, "", ({ group: INTERNAL_GROUP, inline: "ibear" }));
+  let internalFilterConfluenceInput = pinescript.input(false, "Confluence Filter", ({ group: INTERNAL_GROUP, tooltip: internalFilterConfluenceTooltip }));
+  let internalStructureSize = pinescript.inputString(TINY, "Internal Label Size", ({ group: INTERNAL_GROUP, options: [TINY, SMALL, NORMAL] }));
+  let showStructureInput = pinescript.input(true, "Show Swing Structure", ({ group: SWING_GROUP, tooltip: showStructureTooltip }));
+  let showSwingBullInput = pinescript.inputString(ALL, "Bullish Structure", ({ group: SWING_GROUP, inline: "bull", options: [ALL, BOS, CHOCH] }));
+  let swingBullColorInput = pinescript.input(GREEN, "", ({ group: SWING_GROUP, inline: "bull" }));
+  let showSwingBearInput = pinescript.inputString(ALL, "Bearish Structure", ({ group: SWING_GROUP, inline: "bear", options: [ALL, BOS, CHOCH] }));
+  let swingBearColorInput = pinescript.input(RED, "", ({ group: SWING_GROUP, inline: "bear" }));
+  let swingStructureSize = pinescript.inputString(SMALL, "Swing Label Size", ({ group: SWING_GROUP, options: [TINY, SMALL, NORMAL] }));
+  let showSwingsInput = pinescript.input(false, "Show Swings Points", ({ group: SWING_GROUP, tooltip: showSwingsTooltip, inline: "swings" }));
+  let swingsLengthInput = pinescript.inputInt(50, "", ({ group: SWING_GROUP, minval: 10, inline: "swings" }));
+  let showHighLowSwingsInput = pinescript.input(true, "Show Strong/Weak High/Low", ({ group: SWING_GROUP, tooltip: showHighLowSwingsTooltip }));
+  let showInternalOrderBlocksInput = pinescript.input(true, "Internal Order Blocks", ({ group: BLOCKS_GROUP, tooltip: showInternalOrderBlocksTooltip, inline: "iob" }));
+  let internalOrderBlocksSizeInput = pinescript.inputInt(5, "", ({ group: BLOCKS_GROUP, minval: 1, maxval: 20, inline: "iob" }));
+  let showSwingOrderBlocksInput = pinescript.input(false, "Swing Order Blocks", ({ group: BLOCKS_GROUP, tooltip: showSwingOrderBlocksTooltip, inline: "ob" }));
+  let swingOrderBlocksSizeInput = pinescript.inputInt(5, "", ({ group: BLOCKS_GROUP, minval: 1, maxval: 20, inline: "ob" }));
+  let orderBlockFilterInput = pinescript.inputString("Atr", "Order Block Filter", ({ group: BLOCKS_GROUP, tooltip: orderBlockFilterTooltip, options: [ATR, RANGE] }));
+  let orderBlockMitigationInput = pinescript.inputString(HIGHLOW, "Order Block Mitigation", ({ group: BLOCKS_GROUP, tooltip: orderBlockMitigationTooltip, options: [CLOSE, HIGHLOW] }));
+  let internalBullishOrderBlockColor = pinescript.inputColor(pinescript.color.rgb(49, 245, 186, 80), "Internal Bullish OB", ({ group: BLOCKS_GROUP }));
+  let internalBearishOrderBlockColor = pinescript.inputColor(pinescript.color.new(pinescript.color.hex("#f77c80"), 80), "Internal Bearish OB", ({ group: BLOCKS_GROUP }));
+  let swingBullishOrderBlockColor = pinescript.inputColor(pinescript.color.new(pinescript.color.hex("#1848cc"), 80), "Bullish OB", ({ group: BLOCKS_GROUP }));
+  let swingBearishOrderBlockColor = pinescript.inputColor(pinescript.color.new(pinescript.color.hex("#b22833"), 80), "Bearish OB", ({ group: BLOCKS_GROUP }));
+  let showEqualHighsLowsInput = pinescript.input(true, "Equal High/Low", ({ group: EQUAL_GROUP, tooltip: showEqualHighsLowsTooltip }));
+  let equalHighsLowsLengthInput = pinescript.inputInt(3, "Bars Confirmation", ({ group: EQUAL_GROUP, tooltip: equalHighsLowsLengthTooltip, minval: 1 }));
+  let equalHighsLowsThresholdInput = pinescript.inputFloat(0.1, "Threshold", ({ group: EQUAL_GROUP, tooltip: equalHighsLowsThresholdTooltip, minval: 0, maxval: 0.5, step: 0.1 }));
+  let equalHighsLowsSizeInput = pinescript.inputString(TINY, "Label Size", ({ group: EQUAL_GROUP, options: [TINY, SMALL, NORMAL] }));
+  let showFairValueGapsInput = pinescript.input(false, "Fair Value Gaps", ({ group: GAPS_GROUP, tooltip: showFairValueGapsTooltip }));
+  let fairValueGapsThresholdInput = pinescript.input(true, "Auto Threshold", ({ group: GAPS_GROUP, tooltip: fairValueGapsThresholdTooltip }));
   let fairValueGapsTimeframeInput = input.timeframe("", "Timeframe", ({ group: GAPS_GROUP, tooltip: fairValueGapsTimeframeTooltip }));
-  let fairValueGapsBullColorInput = input.color(pinescript.color.new(pinescript.color.hex("#00ff68"), 70), "Bullish FVG", ({ group: GAPS_GROUP }));
-  let fairValueGapsBearColorInput = input.color(pinescript.color.new(pinescript.color.hex("#ff0008"), 70), "Bearish FVG", ({ group: GAPS_GROUP }));
-  let fairValueGapsExtendInput = input.int(1, "Extend FVG", ({ group: GAPS_GROUP, tooltip: fairValueGapsExtendTooltip, minval: 0 }));
-  let showDailyLevelsInput = input(false, "Daily", ({ group: LEVELS_GROUP, inline: "daily" }));
-  let dailyLevelsStyleInput = input.string(SOLID, "", ({ group: LEVELS_GROUP, inline: "daily", options: [SOLID, DASHED, DOTTED] }));
-  let dailyLevelsColorInput = input(BLUE, "", ({ group: LEVELS_GROUP, inline: "daily" }));
-  let showWeeklyLevelsInput = input(false, "Weekly", ({ group: LEVELS_GROUP, inline: "weekly" }));
-  let weeklyLevelsStyleInput = input.string(SOLID, "", ({ group: LEVELS_GROUP, inline: "weekly", options: [SOLID, DASHED, DOTTED] }));
-  let weeklyLevelsColorInput = input(BLUE, "", ({ group: LEVELS_GROUP, inline: "weekly" }));
-  let showMonthlyLevelsInput = input(false, "Monthly", ({ group: LEVELS_GROUP, inline: "monthly" }));
-  let monthlyLevelsStyleInput = input.string(SOLID, "", ({ group: LEVELS_GROUP, inline: "monthly", options: [SOLID, DASHED, DOTTED] }));
-  let monthlyLevelsColorInput = input(BLUE, "", ({ group: LEVELS_GROUP, inline: "monthly" }));
-  let showPremiumDiscountZonesInput = input(false, "Premium/Discount Zones", ({ group: ZONES_GROUP, tooltip: showPremiumDiscountZonesTooltip }));
-  let premiumZoneColorInput = input.color(RED, "Premium Zone", ({ group: ZONES_GROUP }));
-  let equilibriumZoneColorInput = input.color(GRAY, "Equilibrium Zone", ({ group: ZONES_GROUP }));
-  let discountZoneColorInput = input.color(GREEN, "Discount Zone", ({ group: ZONES_GROUP }));
+  let fairValueGapsBullColorInput = pinescript.inputColor(pinescript.color.new(pinescript.color.hex("#00ff68"), 70), "Bullish FVG", ({ group: GAPS_GROUP }));
+  let fairValueGapsBearColorInput = pinescript.inputColor(pinescript.color.new(pinescript.color.hex("#ff0008"), 70), "Bearish FVG", ({ group: GAPS_GROUP }));
+  let fairValueGapsExtendInput = pinescript.inputInt(1, "Extend FVG", ({ group: GAPS_GROUP, tooltip: fairValueGapsExtendTooltip, minval: 0 }));
+  let showDailyLevelsInput = pinescript.input(false, "Daily", ({ group: LEVELS_GROUP, inline: "daily" }));
+  let dailyLevelsStyleInput = pinescript.inputString(SOLID, "", ({ group: LEVELS_GROUP, inline: "daily", options: [SOLID, DASHED, DOTTED] }));
+  let dailyLevelsColorInput = pinescript.input(BLUE, "", ({ group: LEVELS_GROUP, inline: "daily" }));
+  let showWeeklyLevelsInput = pinescript.input(false, "Weekly", ({ group: LEVELS_GROUP, inline: "weekly" }));
+  let weeklyLevelsStyleInput = pinescript.inputString(SOLID, "", ({ group: LEVELS_GROUP, inline: "weekly", options: [SOLID, DASHED, DOTTED] }));
+  let weeklyLevelsColorInput = pinescript.input(BLUE, "", ({ group: LEVELS_GROUP, inline: "weekly" }));
+  let showMonthlyLevelsInput = pinescript.input(false, "Monthly", ({ group: LEVELS_GROUP, inline: "monthly" }));
+  let monthlyLevelsStyleInput = pinescript.inputString(SOLID, "", ({ group: LEVELS_GROUP, inline: "monthly", options: [SOLID, DASHED, DOTTED] }));
+  let monthlyLevelsColorInput = pinescript.input(BLUE, "", ({ group: LEVELS_GROUP, inline: "monthly" }));
+  let showPremiumDiscountZonesInput = pinescript.input(false, "Premium/Discount Zones", ({ group: ZONES_GROUP, tooltip: showPremiumDiscountZonesTooltip }));
+  let premiumZoneColorInput = pinescript.inputColor(RED, "Premium Zone", ({ group: ZONES_GROUP }));
+  let equilibriumZoneColorInput = pinescript.inputColor(GRAY, "Equilibrium Zone", ({ group: ZONES_GROUP }));
+  let discountZoneColorInput = pinescript.inputColor(GREEN, "Discount Zone", ({ group: ZONES_GROUP }));
   if (state.swingHigh === undefined) state.swingHigh = pivot.new(null, null, false);
   if (state.swingLow === undefined) state.swingLow = pivot.new(null, null, false);
   if (state.internalHigh === undefined) state.internalHigh = pivot.new(null, null, false);
@@ -1356,19 +1836,19 @@ function main() {
   if (barstate.isfirst) {
     if (showSwingOrderBlocksInput) {
       for (let index = 1; index <= swingOrderBlocksSizeInput; index++) {
-        swingOrderBlocksBoxes.push(box.new(null, null, null, null, ({ xloc: xloc.bar_time, extend: extend.right })));
+        swingOrderBlocksBoxes.push(pinescript.boxNew(null, null, null, null, ({ xloc: xloc.bar_time, extend: extend.right })));
       }
     }
     if (showInternalOrderBlocksInput) {
       for (let index = 1; index <= internalOrderBlocksSizeInput; index++) {
-        internalOrderBlocksBoxes.push(box.new(null, null, null, null, ({ xloc: xloc.bar_time, extend: extend.right })));
+        internalOrderBlocksBoxes.push(pinescript.boxNew(null, null, null, null, ({ xloc: xloc.bar_time, extend: extend.right })));
       }
     }
   }
   let bearishOrderBlockMitigationSource = ((orderBlockMitigationInput === CLOSE) ? close : high);
   let bullishOrderBlockMitigationSource = ((orderBlockMitigationInput === CLOSE) ? close : low);
-  let atrMeasure = ta.atr(200);
-  let volatilityMeasure = ((orderBlockFilterInput === ATR) ? atrMeasure : (ta.cum(pinescript.ta.tr) / bar_index));
+  let atrMeasure = pinescript.atr(200);
+  let volatilityMeasure = ((orderBlockFilterInput === ATR) ? atrMeasure : (pinescript.cum(pinescript.series(0, pinescript.ta.tr)) / bar_index));
   let highVolatilityBar = ((high - low) >= (2 * volatilityMeasure));
   let parsedHigh = (highVolatilityBar ? low : high);
   let parsedLow = (highVolatilityBar ? high : low);
@@ -1379,8 +1859,8 @@ function main() {
   times.push(time);
   function leg(size) {
     if (state.leg === undefined) state.leg = 0;
-    let newLegHigh = (pinescript.offset(high, pinescript.size) > pinescript.highest(pinescript.size));
-    let newLegLow = (pinescript.offset(low, pinescript.size) < pinescript.lowest(pinescript.size));
+    let newLegHigh = (pinescript.hist(1, high, pinescript.size) > pinescript.highest(pinescript.series(2, pinescript.size)));
+    let newLegLow = (pinescript.hist(3, low, pinescript.size) < pinescript.lowest(pinescript.series(4, pinescript.size)));
     if (newLegHigh) {
       state.leg = BEARISH_LEG;
     } else {
@@ -1391,13 +1871,13 @@ function main() {
     return state.leg;
   }
   function startOfNewLeg(leg) {
-    return (ta.change(state.leg) !== 0);
+    return (pinescript.change(pinescript.series(5, state.leg)) !== 0);
   }
   function startOfBearishLeg(leg) {
-    return (ta.change(state.leg) === -1);
+    return (pinescript.change(pinescript.series(6, state.leg)) === -1);
   }
   function startOfBullishLeg(leg) {
-    return (ta.change(state.leg) === 1);
+    return (pinescript.change(pinescript.series(7, state.leg)) === 1);
   }
   function drawLabel(labelTime, labelPrice, tag, labelColor, labelStyle) {
     if (state.l_abel === undefined) state.l_abel = null;
@@ -1420,7 +1900,7 @@ function main() {
       pinescript.lineDelete(e_qualDisplay.l_ine);
       pinescript.labelDelete(e_qualDisplay.l_abel);
     }
-    e_qualDisplay.l_ine = pinescript.lineNew(pinescript.chartPointNew(p_ivot.barTime, null, p_ivot.currentLevel), pinescript.chartPointNew(pinescript.offset(time, pinescript.size), null, level), ({ xloc: xloc.bar_time, color: equalColor, style: line.style_dotted }));
+    e_qualDisplay.l_ine = pinescript.lineNew(pinescript.chartPointNew(p_ivot.barTime, null, p_ivot.currentLevel), pinescript.chartPointNew(pinescript.hist(8, time, pinescript.size), null, level), ({ xloc: xloc.bar_time, color: equalColor, style: line.style_dotted }));
     let labelPosition = pinescript.round((0.5 * ((p_ivot.barIndex + bar_index) - pinescript.size)));
     e_qualDisplay.l_abel = pinescript.labelNew(pinescript.chartPointNew(null, labelPosition, level), tag, xloc.bar_index, ({ color: color(null), textcolor: equalColor, style: labelStyle, size: equalHighsLowsSizeInput }));
   }
@@ -1432,14 +1912,14 @@ function main() {
     if (newPivot) {
       if (pivotLow) {
         let p_ivot = (equalHighLow ? state.equalLow : (internal ? state.internalLow : state.swingLow));
-        if ((equalHighLow && (pinescript.abs((p_ivot.currentLevel - pinescript.offset(low, pinescript.size))) < (equalHighsLowsThresholdInput * atrMeasure)))) {
-          drawEqualHighLow(p_ivot, pinescript.offset(low, pinescript.size), pinescript.size, false);
+        if ((equalHighLow && (pinescript.abs((p_ivot.currentLevel - pinescript.hist(9, low, pinescript.size))) < (equalHighsLowsThresholdInput * atrMeasure)))) {
+          drawEqualHighLow(p_ivot, pinescript.hist(10, low, pinescript.size), pinescript.size, false);
         }
         p_ivot.lastLevel = p_ivot.currentLevel;
-        p_ivot.currentLevel = pinescript.offset(low, pinescript.size);
+        p_ivot.currentLevel = pinescript.hist(11, low, pinescript.size);
         p_ivot.crossed = false;
-        p_ivot.barTime = pinescript.offset(time, pinescript.size);
-        p_ivot.barIndex = pinescript.offset(bar_index, pinescript.size);
+        p_ivot.barTime = pinescript.hist(12, time, pinescript.size);
+        p_ivot.barIndex = pinescript.hist(13, bar_index, pinescript.size);
         if ((!equalHighLow && !internal)) {
           state.trailing.bottom = p_ivot.currentLevel;
           state.trailing.barTime = p_ivot.barTime;
@@ -1447,18 +1927,18 @@ function main() {
           state.trailing.lastBottomTime = p_ivot.barTime;
         }
         if (((showSwingsInput && !internal) && !equalHighLow)) {
-          drawLabel(pinescript.offset(time, pinescript.size), p_ivot.currentLevel, ((p_ivot.currentLevel < p_ivot.lastLevel) ? "LL" : "HL"), state.swingBullishColor, label.style_label_up);
+          drawLabel(pinescript.hist(14, time, pinescript.size), p_ivot.currentLevel, ((p_ivot.currentLevel < p_ivot.lastLevel) ? "LL" : "HL"), state.swingBullishColor, label.style_label_up);
         }
       } else {
         let p_ivot = (equalHighLow ? state.equalHigh : (internal ? state.internalHigh : state.swingHigh));
-        if ((equalHighLow && (pinescript.abs((p_ivot.currentLevel - pinescript.offset(high, pinescript.size))) < (equalHighsLowsThresholdInput * atrMeasure)))) {
-          drawEqualHighLow(p_ivot, pinescript.offset(high, pinescript.size), pinescript.size, true);
+        if ((equalHighLow && (pinescript.abs((p_ivot.currentLevel - pinescript.hist(15, high, pinescript.size))) < (equalHighsLowsThresholdInput * atrMeasure)))) {
+          drawEqualHighLow(p_ivot, pinescript.hist(16, high, pinescript.size), pinescript.size, true);
         }
         p_ivot.lastLevel = p_ivot.currentLevel;
-        p_ivot.currentLevel = pinescript.offset(high, pinescript.size);
+        p_ivot.currentLevel = pinescript.hist(17, high, pinescript.size);
         p_ivot.crossed = false;
-        p_ivot.barTime = pinescript.offset(time, pinescript.size);
-        p_ivot.barIndex = pinescript.offset(bar_index, pinescript.size);
+        p_ivot.barTime = pinescript.hist(18, time, pinescript.size);
+        p_ivot.barIndex = pinescript.hist(19, bar_index, pinescript.size);
         if ((!equalHighLow && !internal)) {
           state.trailing.top = p_ivot.currentLevel;
           state.trailing.barTime = p_ivot.barTime;
@@ -1466,7 +1946,7 @@ function main() {
           state.trailing.lastTopTime = p_ivot.barTime;
         }
         if (((showSwingsInput && !internal) && !equalHighLow)) {
-          drawLabel(pinescript.offset(time, pinescript.size), p_ivot.currentLevel, ((p_ivot.currentLevel > p_ivot.lastLevel) ? "HH" : "LH"), state.swingBearishColor, label.style_label_down);
+          drawLabel(pinescript.hist(20, time, pinescript.size), p_ivot.currentLevel, ((p_ivot.currentLevel > p_ivot.lastLevel) ? "HH" : "LH"), state.swingBearishColor, label.style_label_down);
         }
       }
     }
@@ -1556,7 +2036,7 @@ function main() {
     let labelSize = (internal ? internalStructureSize : swingStructureSize);
     let extraCondition = (internal ? ((state.internalHigh.currentLevel !== state.swingHigh.currentLevel) && state.bullishBar) : true);
     let bullishColor = ((styleInput === MONOCHROME) ? MONO_BULLISH : (internal ? internalBullColorInput : swingBullColorInput));
-    if (((pinescript.cross(close, p_ivot.currentLevel) && !p_ivot.crossed) && extraCondition)) {
+    if (((pinescript.crossover(pinescript.series(21, close), pinescript.series(22, p_ivot.currentLevel)) && !p_ivot.crossed) && extraCondition)) {
       let tag = ((t_rend.bias === BEARISH) ? CHOCH : BOS);
       if (internal) {
         currentAlerts.internalBullishCHoCH = (tag === CHOCH);
@@ -1578,7 +2058,7 @@ function main() {
     p_ivot = (internal ? state.internalLow : state.swingLow);
     extraCondition = (internal ? ((state.internalLow.currentLevel !== state.swingLow.currentLevel) && state.bearishBar) : true);
     let bearishColor = ((styleInput === MONOCHROME) ? MONO_BEARISH : (internal ? internalBearColorInput : swingBearColorInput));
-    if (((pinescript.cross(close, p_ivot.currentLevel) && !p_ivot.crossed) && extraCondition)) {
+    if (((pinescript.crossunder(pinescript.series(23, close), pinescript.series(24, p_ivot.currentLevel)) && !p_ivot.crossed) && extraCondition)) {
       let tag = ((t_rend.bias === BULLISH) ? CHOCH : BOS);
       if (internal) {
         currentAlerts.internalBearishCHoCH = (tag === CHOCH);
@@ -1599,7 +2079,7 @@ function main() {
     }
   }
   function fairValueGapBox(leftTime, rightTime, topPrice, bottomPrice, boxColor) {
-    return box.new(pinescript.chartPointNew(leftTime, null, topPrice), pinescript.chartPointNew((rightTime + (fairValueGapsExtendInput * (time - pinescript.offset(time, 1)))), null, bottomPrice), ({ xloc: xloc.bar_time, border_color: boxColor, bgcolor: boxColor }));
+    return pinescript.boxNew(pinescript.chartPointNew(leftTime, null, topPrice), pinescript.chartPointNew((rightTime + (fairValueGapsExtendInput * (time - pinescript.hist(25, time, 1)))), null, bottomPrice), ({ xloc: xloc.bar_time, border_color: boxColor, bgcolor: boxColor }));
   }
   function deleteFairValueGaps() {
     for (const [index, eachFairValueGap] of state.fairValueGaps) {
@@ -1611,19 +2091,19 @@ function main() {
     }
   }
   function drawFairValueGaps() {
-    let [lastClose, lastOpen, lastTime, currentHigh, currentLow, currentTime, last2High, last2Low] = pinescript.requestSecurity(syminfo.tickerid, fairValueGapsTimeframeInput, [pinescript.offset(close, 1), pinescript.offset(open, 1), pinescript.offset(time, 1), pinescript.offset(high, 0), pinescript.offset(low, 0), pinescript.offset(time, 0), pinescript.offset(high, 2), pinescript.offset(low, 2)], ({ lookahead: barmerge.lookahead_on }));
+    let [lastClose, lastOpen, lastTime, currentHigh, currentLow, currentTime, last2High, last2Low] = pinescript.unpack(pinescript.requestSecurity(syminfo.tickerid, fairValueGapsTimeframeInput, [pinescript.hist(26, close, 1), pinescript.hist(27, open, 1), pinescript.hist(28, time, 1), pinescript.hist(29, high, 0), pinescript.hist(30, low, 0), pinescript.hist(31, time, 0), pinescript.hist(32, high, 2), pinescript.hist(33, low, 2)], ({ lookahead: barmerge.lookahead_on })), 8);
     let barDeltaPercent = ((lastClose - lastOpen) / (lastOpen * 100));
     let newTimeframe = timeframe.change(fairValueGapsTimeframeInput);
-    let threshold = (fairValueGapsThresholdInput ? ((ta.cum(pinescript.abs((newTimeframe ? barDeltaPercent : 0))) / bar_index) * 2) : 0);
+    let threshold = (fairValueGapsThresholdInput ? ((pinescript.cum(pinescript.series(34, pinescript.abs((newTimeframe ? barDeltaPercent : 0)))) / bar_index) * 2) : 0);
     let bullishFairValueGap = ((((currentLow > last2High) && (lastClose > last2High)) && (barDeltaPercent > threshold)) && newTimeframe);
     let bearishFairValueGap = ((((currentHigh < last2Low) && (lastClose < last2Low)) && (-barDeltaPercent > threshold)) && newTimeframe);
     if (bullishFairValueGap) {
       currentAlerts.bullishFairValueGap = true;
-      fairValueGaps.unshift(fairValueGap.new(currentLow, last2High, BULLISH, fairValueGapBox(lastTime, currentTime, currentLow, math.avg(currentLow, last2High), state.fairValueGapBullishColor), fairValueGapBox(lastTime, currentTime, math.avg(currentLow, last2High), last2High, state.fairValueGapBullishColor)));
+      fairValueGaps.unshift(fairValueGap.new(currentLow, last2High, BULLISH, fairValueGapBox(lastTime, currentTime, currentLow, pinescript.avg(currentLow, last2High), state.fairValueGapBullishColor), fairValueGapBox(lastTime, currentTime, pinescript.avg(currentLow, last2High), last2High, state.fairValueGapBullishColor)));
     }
     if (bearishFairValueGap) {
       currentAlerts.bearishFairValueGap = true;
-      fairValueGaps.unshift(fairValueGap.new(currentHigh, last2Low, BEARISH, fairValueGapBox(lastTime, currentTime, currentHigh, math.avg(currentHigh, last2Low), state.fairValueGapBearishColor), fairValueGapBox(lastTime, currentTime, math.avg(currentHigh, last2Low), last2Low, state.fairValueGapBearishColor)));
+      fairValueGaps.unshift(fairValueGap.new(currentHigh, last2Low, BEARISH, fairValueGapBox(lastTime, currentTime, currentHigh, pinescript.avg(currentHigh, last2Low), state.fairValueGapBearishColor), fairValueGapBox(lastTime, currentTime, pinescript.avg(currentHigh, last2Low), last2Low, state.fairValueGapBearishColor)));
     }
   }
   function getStyle(style) {
@@ -1646,7 +2126,7 @@ function main() {
     }
   }
   function drawLevels(timeframe, sameTimeframe, style, levelColor) {
-    let [topLevel, bottomLevel, leftTime, rightTime] = pinescript.requestSecurity(syminfo.tickerid, timeframe, [pinescript.offset(high, 1), pinescript.offset(low, 1), pinescript.offset(time, 1), time], ({ lookahead: barmerge.lookahead_on }));
+    let [topLevel, bottomLevel, leftTime, rightTime] = pinescript.unpack(pinescript.requestSecurity(syminfo.tickerid, timeframe, [pinescript.hist(35, high, 1), pinescript.hist(36, low, 1), pinescript.hist(37, time, 1), time], ({ lookahead: barmerge.lookahead_on })), 4);
     let parsedTop = (sameTimeframe ? high : topLevel);
     let parsedBottom = (sameTimeframe ? low : bottomLevel);
     let parsedLeftTime = (sameTimeframe ? time : leftTime);
@@ -1664,14 +2144,14 @@ function main() {
     }
     if (state.topLine === undefined) state.topLine = pinescript.lineNew(null, null, null, null, ({ xloc: xloc.bar_time, color: levelColor, style: getStyle(style) }));
     if (state.bottomLine === undefined) state.bottomLine = pinescript.lineNew(null, null, null, null, ({ xloc: xloc.bar_time, color: levelColor, style: getStyle(style) }));
-    if (state.topLabel === undefined) state.topLabel = pinescript.labelNew(null, null, ({ xloc: xloc.bar_time, text: str.format("P{0}H", timeframe), color: color(null), textcolor: levelColor, size: pinescript.size.small, style: label.style_label_left }));
-    if (state.bottomLabel === undefined) state.bottomLabel = pinescript.labelNew(null, null, ({ xloc: xloc.bar_time, text: str.format("P{0}L", timeframe), color: color(null), textcolor: levelColor, size: pinescript.size.small, style: label.style_label_left }));
+    if (state.topLabel === undefined) state.topLabel = pinescript.labelNew(null, null, ({ xloc: xloc.bar_time, text: pinescript.strFormat("P{0}H", timeframe), color: color(null), textcolor: levelColor, size: pinescript.size.small, style: label.style_label_left }));
+    if (state.bottomLabel === undefined) state.bottomLabel = pinescript.labelNew(null, null, ({ xloc: xloc.bar_time, text: pinescript.strFormat("P{0}L", timeframe), color: color(null), textcolor: levelColor, size: pinescript.size.small, style: label.style_label_left }));
     topLine.set_first_point(pinescript.chartPointNew(parsedTopTime, null, parsedTop));
-    topLine.set_second_point(pinescript.chartPointNew((last_bar_time + (20 * (time - pinescript.offset(time, 1)))), null, parsedTop));
-    topLabel.set_point(pinescript.chartPointNew((last_bar_time + (20 * (time - pinescript.offset(time, 1)))), null, parsedTop));
+    topLine.set_second_point(pinescript.chartPointNew((last_bar_time + (20 * (time - pinescript.hist(38, time, 1)))), null, parsedTop));
+    topLabel.set_point(pinescript.chartPointNew((last_bar_time + (20 * (time - pinescript.hist(39, time, 1)))), null, parsedTop));
     bottomLine.set_first_point(pinescript.chartPointNew(parsedBottomTime, null, parsedBottom));
-    bottomLine.set_second_point(pinescript.chartPointNew((last_bar_time + (20 * (time - pinescript.offset(time, 1)))), null, parsedBottom));
-    return bottomLabel.set_point(pinescript.chartPointNew((last_bar_time + (20 * (time - pinescript.offset(time, 1)))), null, parsedBottom));
+    bottomLine.set_second_point(pinescript.chartPointNew((last_bar_time + (20 * (time - pinescript.hist(40, time, 1)))), null, parsedBottom));
+    return bottomLabel.set_point(pinescript.chartPointNew((last_bar_time + (20 * (time - pinescript.hist(41, time, 1)))), null, parsedBottom));
   }
   function higherTimeframe(timeframe) {
     return (timeframe.in_seconds() > timeframe.in_seconds(timeframe));
@@ -1687,7 +2167,7 @@ function main() {
     if (state.bottomLine === undefined) state.bottomLine = pinescript.lineNew(null, null, null, null, ({ color: state.swingBullishColor, xloc: xloc.bar_time }));
     if (state.topLabel === undefined) state.topLabel = pinescript.labelNew(null, null, ({ color: color(null), textcolor: state.swingBearishColor, xloc: xloc.bar_time, style: label.style_label_down, size: pinescript.size.tiny }));
     if (state.bottomLabel === undefined) state.bottomLabel = pinescript.labelNew(null, null, ({ color: color(null), textcolor: state.swingBullishColor, xloc: xloc.bar_time, style: label.style_label_up, size: pinescript.size.tiny }));
-    let rightTimeBar = (last_bar_time + (20 * (time - pinescript.offset(time, 1))));
+    let rightTimeBar = (last_bar_time + (20 * (time - pinescript.hist(42, time, 1))));
     topLine.set_first_point(pinescript.chartPointNew(state.trailing.lastTopTime, null, state.trailing.top));
     topLine.set_second_point(pinescript.chartPointNew(rightTimeBar, null, state.trailing.top));
     topLabel.set_point(pinescript.chartPointNew(rightTimeBar, null, state.trailing.top));
@@ -1699,14 +2179,14 @@ function main() {
   }
   function drawZone(labelLevel, labelIndex, top, bottom, tag, zoneColor, style) {
     if (state.l_abel === undefined) state.l_abel = pinescript.labelNew(null, null, ({ text: tag, color: color(null), textcolor: zoneColor, style: style, size: pinescript.size.small }));
-    if (state.b_ox === undefined) state.b_ox = box.new(null, null, null, null, ({ bgcolor: pinescript.color.new(zoneColor, 80), border_color: color(null), xloc: xloc.bar_time }));
+    if (state.b_ox === undefined) state.b_ox = pinescript.boxNew(null, null, null, null, ({ bgcolor: pinescript.color.new(zoneColor, 80), border_color: color(null), xloc: xloc.bar_time }));
     b_ox.set_top_left_point(pinescript.chartPointNew(state.trailing.barTime, null, top));
     b_ox.set_bottom_right_point(pinescript.chartPointNew(last_bar_time, null, bottom));
     return l_abel.set_point(pinescript.chartPointNew(null, labelIndex, labelLevel));
   }
   function drawPremiumDiscountZones() {
     drawZone(state.trailing.top, pinescript.round((0.5 * (state.trailing.barIndex + last_bar_index))), state.trailing.top, ((0.95 * state.trailing.top) + (0.05 * state.trailing.bottom)), "Premium", state.premiumZoneColor, label.style_label_down);
-    let equilibriumLevel = math.avg(state.trailing.top, state.trailing.bottom);
+    let equilibriumLevel = pinescript.avg(state.trailing.top, state.trailing.bottom);
     drawZone(equilibriumLevel, last_bar_index, ((0.525 * state.trailing.top) + (0.475 * state.trailing.bottom)), ((0.525 * state.trailing.bottom) + (0.475 * state.trailing.top)), "Equilibrium", equilibriumZoneColorInput, label.style_label_left);
     return drawZone(state.trailing.bottom, pinescript.round((0.5 * (state.trailing.barIndex + last_bar_index))), ((0.95 * state.trailing.bottom) + (0.05 * state.trailing.top)), state.trailing.bottom, "Discount", state.discountZoneColor, label.style_label_up);
   }
@@ -1767,26 +2247,86 @@ function main() {
       drawLevels("M", timeframe.ismonthly, monthlyLevelsStyleInput, monthlyLevelsColorInput);
     }
   }
-  alertcondition(currentAlerts.internalBullishBOS, "Internal Bullish BOS", "Internal Bullish BOS formed");
-  alertcondition(currentAlerts.internalBullishCHoCH, "Internal Bullish CHoCH", "Internal Bullish CHoCH formed");
-  alertcondition(currentAlerts.internalBearishBOS, "Internal Bearish BOS", "Internal Bearish BOS formed");
-  alertcondition(currentAlerts.internalBearishCHoCH, "Internal Bearish CHoCH", "Internal Bearish CHoCH formed");
-  alertcondition(currentAlerts.swingBullishBOS, "Bullish BOS", "Internal Bullish BOS formed");
-  alertcondition(currentAlerts.swingBullishCHoCH, "Bullish CHoCH", "Internal Bullish CHoCH formed");
-  alertcondition(currentAlerts.swingBearishBOS, "Bearish BOS", "Bearish BOS formed");
-  alertcondition(currentAlerts.swingBearishCHoCH, "Bearish CHoCH", "Bearish CHoCH formed");
-  alertcondition(currentAlerts.internalBullishOrderBlock, "Bullish Internal OB Breakout", "Price broke bullish internal OB");
-  alertcondition(currentAlerts.internalBearishOrderBlock, "Bearish Internal OB Breakout", "Price broke bearish internal OB");
-  alertcondition(currentAlerts.swingBullishOrderBlock, "Bullish Swing OB Breakout", "Price broke bullish swing OB");
-  alertcondition(currentAlerts.swingBearishOrderBlock, "Bearish Swing OB Breakout", "Price broke bearish swing OB");
-  alertcondition(currentAlerts.equalHighs, "Equal Highs", "Equal highs detected");
-  alertcondition(currentAlerts.equalLows, "Equal Lows", "Equal lows detected");
-  alertcondition(currentAlerts.bullishFairValueGap, "Bullish FVG", "Bullish FVG formed");
-  alertcondition(currentAlerts.bearishFairValueGap, "Bearish FVG", "Bearish FVG formed");
+  pinescript.alertcondition(currentAlerts.internalBullishBOS, "Internal Bullish BOS", "Internal Bullish BOS formed");
+  pinescript.alertcondition(currentAlerts.internalBullishCHoCH, "Internal Bullish CHoCH", "Internal Bullish CHoCH formed");
+  pinescript.alertcondition(currentAlerts.internalBearishBOS, "Internal Bearish BOS", "Internal Bearish BOS formed");
+  pinescript.alertcondition(currentAlerts.internalBearishCHoCH, "Internal Bearish CHoCH", "Internal Bearish CHoCH formed");
+  pinescript.alertcondition(currentAlerts.swingBullishBOS, "Bullish BOS", "Internal Bullish BOS formed");
+  pinescript.alertcondition(currentAlerts.swingBullishCHoCH, "Bullish CHoCH", "Internal Bullish CHoCH formed");
+  pinescript.alertcondition(currentAlerts.swingBearishBOS, "Bearish BOS", "Bearish BOS formed");
+  pinescript.alertcondition(currentAlerts.swingBearishCHoCH, "Bearish CHoCH", "Bearish CHoCH formed");
+  pinescript.alertcondition(currentAlerts.internalBullishOrderBlock, "Bullish Internal OB Breakout", "Price broke bullish internal OB");
+  pinescript.alertcondition(currentAlerts.internalBearishOrderBlock, "Bearish Internal OB Breakout", "Price broke bearish internal OB");
+  pinescript.alertcondition(currentAlerts.swingBullishOrderBlock, "Bullish Swing OB Breakout", "Price broke bullish swing OB");
+  pinescript.alertcondition(currentAlerts.swingBearishOrderBlock, "Bearish Swing OB Breakout", "Price broke bearish swing OB");
+  pinescript.alertcondition(currentAlerts.equalHighs, "Equal Highs", "Equal highs detected");
+  pinescript.alertcondition(currentAlerts.equalLows, "Equal Lows", "Equal lows detected");
+  pinescript.alertcondition(currentAlerts.bullishFairValueGap, "Bullish FVG", "Bullish FVG formed");
+  pinescript.alertcondition(currentAlerts.bearishFairValueGap, "Bearish FVG", "Bearish FVG formed");
 }
 
 
-// Export for use
 
-export { main
+// The bar-by-bar engine: runs main() once per bar over the dataset.
+function run(data, options = {}) {
+  data = data || {};
+  const inClose = (data.close || []).map(Number);
+  const n = inClose.length;
+  const inOpen = (data.open || inClose).map(Number);
+  const inHigh = (data.high || inClose).map(Number);
+  const inLow = (data.low || inClose).map(Number);
+  const inVol = (data.volume || new Array(n).fill(0)).map(Number);
+  const inTime = (data.time || inClose.map((_, i) => i)).map(Number);
+
+  // Reset all persistent and per-run state so repeated runs are independent.
+  globalThis.__pineState = {};
+  globalThis.__pineRuntime = { plots: {}, plotshapes: {}, alerts: [], bars: n, inputs: options.inputs || {} };
+  pinescript.__rt = {};
+  pinescript.__bar = 0;
+
+  // Growing OHLCV windows: each is a SeriesArray that gains one element per bar,
+  // so window built-ins like sma and highest see history up to the current bar.
+  const O = pinescript.asSeries([]), H = pinescript.asSeries([]), L = pinescript.asSeries([]);
+  const C = pinescript.asSeries([]), V = pinescript.asSeries([]), T = pinescript.asSeries([]);
+  const HL2 = pinescript.asSeries([]), HLC3 = pinescript.asSeries([]), OHLC4 = pinescript.asSeries([]);
+  globalThis.open = O; globalThis.high = H; globalThis.low = L; globalThis.close = C;
+  globalThis.volume = V; globalThis.time = T;
+  globalThis.hl2 = HL2; globalThis.hlc3 = HLC3; globalThis.ohlc4 = OHLC4;
+  globalThis.syminfo = globalThis.syminfo || { tickerid: 'SYNTHETIC', ticker: 'SYNTHETIC', mintick: 0.01 };
+
+  const rt = globalThis.__pineRuntime;
+  for (let i = 0; i < n; i++) {
+    O.push(inOpen[i]); H.push(inHigh[i]); L.push(inLow[i]); C.push(inClose[i]); V.push(inVol[i]); T.push(inTime[i]);
+    HL2.push((inHigh[i] + inLow[i]) / 2);
+    HLC3.push((inHigh[i] + inLow[i] + inClose[i]) / 3);
+    OHLC4.push((inOpen[i] + inHigh[i] + inLow[i] + inClose[i]) / 4);
+
+    pinescript.__bar = i;
+    rt.__barIndex = i;
+    rt.__plotIdx = 0;
+    rt.__shapeIdx = 0;
+    globalThis.bar_index = i;
+    globalThis.last_bar_index = n - 1;
+    globalThis.barstate = {
+      isfirst: i === 0, islast: i === n - 1, isrealtime: false, ishistory: true,
+      isconfirmed: true, isnew: true, islastconfirmedhistory: i === n - 1,
+    };
+
+    main();
+  }
+
+  // Backfill skipped bars so every output series has exactly n entries.
+  for (const k of Object.keys(rt.plots)) {
+    const d = rt.plots[k].data;
+    for (let i = 0; i < n; i++) if (d[i] === undefined) d[i] = null;
+  }
+  for (const k of Object.keys(rt.plotshapes)) {
+    const d = rt.plotshapes[k].data;
+    for (let i = 0; i < n; i++) if (d[i] === undefined) d[i] = false;
+  }
+  return rt;
+}
+
+
+export { main, run
 };

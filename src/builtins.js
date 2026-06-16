@@ -5,6 +5,90 @@
  */
 
 export const builtins = new Map([
+  // ===== Bar-by-bar execution engine =====
+  // PineScript runs the whole script once per bar, building up time series as it
+  // goes. The generated run() driver calls main() once per bar with OHLCV grown
+  // up to the current bar. These helpers give every history-dependent construct
+  // (x[n], crossover, change, ...) real per-bar history, keyed by a stable
+  // call-site id that the code generator injects, stored on pinescript.__rt and
+  // indexed by the current bar pinescript.__bar. Without this, values computed on
+  // the current bar (like ta.sma(close, 20)) would be lone scalars with no past,
+  // and crossover/[1]/var logic could never work.
+
+  // Collapse a SeriesArray (or any object with valueOf) down to its current-bar
+  // scalar so we record a plain number/boolean in history buffers.
+  ['__scalar', function(v) {
+    if (v === null || v === undefined) return v;
+    if (typeof v === 'object' && typeof v.valueOf === 'function') {
+      const s = v.valueOf();
+      if (typeof s === 'number' || typeof s === 'boolean' || s === null) return s;
+    }
+    return v;
+  }],
+
+  // Record the current-bar value of an expression at call-site `id` and return
+  // its full per-bar history as an array, so the array-based built-ins below
+  // (crossover, change, highest, ...) see genuine history instead of a scalar.
+  ['series', function(id, value) {
+    const rt = this.__rt || (this.__rt = {});
+    const store = rt.series || (rt.series = {});
+    let buf = store[id];
+    if (!buf) buf = store[id] = [];
+    buf[this.__bar | 0] = this.__scalar(value);
+    return buf;
+  }],
+
+  // Pine's `x[n]` historical lookback. Records the current value at call-site
+  // `id`, then returns the value from n bars ago (or null if out of range).
+  ['hist', function(id, value, n) {
+    const buf = this.series(id, value);
+    const idx = (this.__bar | 0) - (n | 0);
+    return idx >= 0 && idx < buf.length ? buf[idx] : null;
+  }],
+
+  // Pine's time(timeframe, session) built-in. We don't model session calendars,
+  // so this returns the current bar's timestamp (the common `time` usage).
+  ['time', function(timeframe, session) {
+    const t = globalThis.time;
+    if (t && typeof t.valueOf === 'function') return t.valueOf();
+    return Array.isArray(t) ? t[t.length - 1] : t;
+  }],
+
+  ['sign', function(x) {
+    if (x === null || x === undefined || (typeof x === 'number' && isNaN(x))) return null;
+    return Math.sign(Number(x));
+  }],
+
+  // Safe tuple unpacking for `[a, b] = expr`. Many Pine functions return na (null)
+  // before they have enough data; destructuring null throws in JS, so we coerce a
+  // non-iterable into an array of nulls of the expected length instead.
+  ['unpack', function(value, count) {
+    if (Array.isArray(value)) return value;
+    if (value != null && typeof value[Symbol.iterator] === 'function') return Array.from(value);
+    return new Array(count || 0).fill(null);
+  }],
+
+  // Visual-output built-ins. We don't render charts, so these record the call and
+  // return safely instead of throwing, letting indicators that use them still run.
+  ['alertcondition', function(condition, title, message) {
+    const rt = globalThis.__pineRuntime;
+    if (rt) {
+      rt.alerts = rt.alerts || [];
+      if (this.__scalar(condition)) rt.alerts.push({ bar: rt.__barIndex | 0, title, message });
+    }
+    return null;
+  }],
+
+  ['barcolor', function(color) { return null; }],
+
+  ['bgcolor', function(color, opts) { return null; }],
+
+  ['fill', function(plot1, plot2, color, opts) { return null; }],
+
+  ['hline', function(price, title, opts) {
+    return { price: this.__scalar(price), title: title || '', _type: 'hline' };
+  }],
+
   // Moving average calculations used for trend smoothing and noise reduction
   ['sma', function(series, length) {
     if (series === null || series === undefined) return null;
@@ -676,14 +760,19 @@ export const builtins = new Map([
     return builtins.get('nz')(value, replacement);
   }],
 
-  // Plotting and visual output stubs that record drawing instructions for the runtime
+  // Plotting output. Under the bar-by-bar engine this is called once per bar, so
+  // we append the current-bar value into a named series (rt.plots[name].data[bar]),
+  // building up a full output series instead of a single final value. The plot
+  // ordinal is reset each bar by the engine so untitled plots get stable names.
   ['plot', function(series, title = '', color = null, linewidth = 1) {
-    globalThis.__pineRuntime.plots.push({
-      series,
-      title,
-      color,
-      linewidth
-    });
+    const rt = globalThis.__pineRuntime;
+    if (!rt) return series;
+    const bar = rt.__barIndex | 0;
+    const ord = (rt.__plotIdx = (rt.__plotIdx | 0) + 1) - 1;
+    const key = (title && String(title)) || ('plot_' + ord);
+    let p = rt.plots[key];
+    if (!p) p = rt.plots[key] = { title: key, color, linewidth, data: [] };
+    p.data[bar] = this.__scalar(series);
     return series;
   }],
 
@@ -766,9 +855,18 @@ export const builtins = new Map([
   }],
 
   ['plotshape', function(condition, ...rest) {
-    if (globalThis.__pineRuntime) {
-      globalThis.__pineRuntime.plotshapes.push({ condition, args: rest });
+    const rt = globalThis.__pineRuntime;
+    if (!rt) return condition;
+    const bar = rt.__barIndex | 0;
+    const ord = (rt.__shapeIdx = (rt.__shapeIdx | 0) + 1) - 1;
+    let key = 'shape_' + ord;
+    for (const r of rest) {
+      if (typeof r === 'string') { key = r; break; }
+      if (r && typeof r === 'object' && r.title) { key = String(r.title); break; }
     }
+    let s = rt.plotshapes[key];
+    if (!s) s = rt.plotshapes[key] = { title: key, data: [] };
+    s.data[bar] = !!this.__scalar(condition);
     return condition;
   }],
 
@@ -1395,7 +1493,9 @@ export const builtins = new Map([
     const info = { ticker: 'AAPL', tickerid: 'NASDAQ:AAPL', prefix: 'NASDAQ', root: 'AAPL', suffix: '' };
     return info[type] || '';
   }],
-  ['time', Date.now()],
+  // NOTE: `time` is defined as a function near the top of this map (Pine's
+  // time(timeframe, session) built-in). Don't redefine it here as a scalar, or
+  // the Map would overwrite the function and `time(...)` calls would break.
   ['timenow', Date.now()],
   ['barstate', 'LAST'],
   ['dividends', {}],

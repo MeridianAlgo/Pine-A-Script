@@ -2,6 +2,30 @@
 
 import { builtins } from './builtins.js';
 
+// Built-ins whose listed positional arguments are *series* that must be seen with
+// full per-bar history (not just the current-bar scalar) for the result to be
+// correct. The generator wraps those arguments in pinescript.series(id, expr) so
+// the runtime accumulates their history across bars. This is what makes
+// crossover/change/highest/lowest/etc. actually work on computed values.
+const SERIES_ARG_FUNCS = {
+  'pinescript.crossover': [0, 1],
+  'pinescript.crossunder': [0, 1],
+  'pinescript.cross': [0, 1],
+  'pinescript.change': [0],
+  'pinescript.rising': [0],
+  'pinescript.falling': [0],
+  'pinescript.cum': [0],
+  'pinescript.cumsum': [0],
+  'pinescript.barssince': [0],
+  'pinescript.valuewhen': [0, 1],
+  'pinescript.highest': [0],
+  'pinescript.lowest': [0],
+  'pinescript.highestbars': [0],
+  'pinescript.lowestbars': [0],
+  'pinescript.sum': [0],
+  'pinescript.offset': [0],
+};
+
 class CodeGenerator {
   constructor() {
     this.output = [];
@@ -22,12 +46,22 @@ class CodeGenerator {
 
     this.renameMap = new Map();
 
+    // Monotonic id handed to history-dependent runtime calls (x[n], crossover,
+    // change, ...). Each call-site in the source gets a unique, stable id so the
+    // engine can keep a separate per-bar history buffer for it.
+    this.siteCounter = 0;
+
     this.reservedNamespaces = new Set([
       'ta', 'math', 'array', 'str',
       'color', 'table', 'position', 'location', 'shape', 'size', 'text',
       'strategy',
       'state'
     ]);
+  }
+
+  // Hands out the next stable call-site id for history-dependent runtime calls.
+  nextSite() {
+    return this.siteCounter++;
   }
 
   // Renames user-declared variables that collide with reserved Pine namespaces
@@ -119,16 +153,20 @@ class CodeGenerator {
     const targets = (node.targets || []).filter(t => t !== '_');
     const lhs = `[${(node.targets || []).map(t => t === '_' ? '' : t).join(', ')}]`;
 
+    // Wrap the right-hand side so unpacking a na/null tuple yields nulls instead
+    // of throwing "is not iterable" (Pine functions often return na early on).
+    const rhs = `pinescript.unpack(${this.generate(node.value)}, ${(node.targets || []).length})`;
+
     const needsDeclaration = targets.some(t => !this.context.variables.has(t) && !this.reservedNamespaces.has(t));
     if (needsDeclaration) {
       for (const t of targets) {
         if (!this.reservedNamespaces.has(t)) this.context.variables.add(t);
       }
-      this.writeln(`let ${lhs} = ${this.generate(node.value)};`);
+      this.writeln(`let ${lhs} = ${rhs};`);
       return;
     }
 
-    this.writeln(`${lhs} = ${this.generate(node.value)};`);
+    this.writeln(`${lhs} = ${rhs};`);
   }
 
   // Pine's switch-as-expression becomes a chain of ternary operators in JavaScript,
@@ -261,6 +299,76 @@ class CodeGenerator {
     this.write('  lookahead_on: true,\n');
     this.write('};\n\n');
 
+    // Graceful-degradation namespace shims. PineScript has a huge standard library
+    // and not every function/namespace is implemented yet. Rather than crashing on
+    // an unmapped reference like `chart.point.now()` or `timeframe.in_seconds()`,
+    // these Proxy-backed namespaces return a safe no-op (null) for anything we don't
+    // implement, so a script still runs end-to-end and produces whatever output it
+    // can. The post-conversion reviewer separately reports which builtins are missing.
+    this.write('function __pineNS(real) {\n');
+    this.write('  const base = real || {};\n');
+    this.write('  return new Proxy(base, {\n');
+    this.write('    get(target, key) {\n');
+    this.write('      if (key in target) return target[key];\n');
+    this.write('      if (typeof key === "symbol") return target[key];\n');
+    this.write('      // Unknown member: usable as a value (null), a constant, or a no-op function.\n');
+    this.write('      const noop = function() { return null; };\n');
+    this.write('      noop.toString = () => "";\n');
+    this.write('      return noop;\n');
+    this.write('    }\n');
+    this.write('  });\n');
+    this.write('}\n');
+    // Bare namespace objects that scripts reference directly. ta./math./array./str.
+    // calls are normally rewritten to pinescript.*, so these mainly catch the long
+    // tail of unimplemented members and keep them from throwing.
+    this.write('globalThis.ta = globalThis.ta || __pineNS({});\n');
+    this.write('globalThis.math = globalThis.math || __pineNS({ pi: Math.PI, e: Math.E, phi: 1.618033988749895, rphi: 0.618033988749895 });\n');
+    this.write('globalThis.chart = globalThis.chart || __pineNS({ point: __pineNS({}), bg_color: null, fg_color: null });\n');
+    this.write('globalThis.line = globalThis.line || __pineNS({ style_solid: "solid", style_dashed: "dashed", style_dotted: "dotted" });\n');
+    this.write('globalThis.box = globalThis.box || __pineNS({});\n');
+    this.write('globalThis.label = globalThis.label || __pineNS({ style_label_down: "label_down", style_label_up: "label_up", style_none: "none" });\n');
+    this.write('globalThis.polyline = globalThis.polyline || __pineNS({});\n');
+    this.write('globalThis.linefill = globalThis.linefill || __pineNS({});\n');
+    this.write('globalThis.matrix = globalThis.matrix || __pineNS({});\n');
+    this.write('globalThis.map = globalThis.map || __pineNS({});\n');
+    this.write('globalThis.session = globalThis.session || __pineNS({ regular: "regular", extended: "extended" });\n');
+    this.write('globalThis.dayofweek = globalThis.dayofweek || __pineNS({ sunday: 1, monday: 2, tuesday: 3, wednesday: 4, thursday: 5, friday: 6, saturday: 7 });\n');
+    this.write('globalThis.timeframe = __pineNS(Object.assign(globalThis.timeframe || {}, { period: (globalThis.timeframe && globalThis.timeframe.period) || "D", isintraday: false, isdaily: true, multiplier: 1 }));\n');
+    this.write('globalThis.request = __pineNS(globalThis.request || {});\n');
+    this.write('globalThis.input = __pineNS(globalThis.input || {});\n');
+    this.write('globalThis.adjustment = globalThis.adjustment || __pineNS({});\n');
+    this.write('globalThis.earnings = globalThis.earnings || __pineNS({});\n');
+    this.write('globalThis.dividends = globalThis.dividends || __pineNS({});\n');
+    this.write('globalThis.splits = globalThis.splits || __pineNS({});\n');
+    this.write('globalThis.currency = globalThis.currency || __pineNS({});\n');
+    this.write('globalThis.display = globalThis.display || __pineNS({ none: "none", all: "all", pane: "pane", data_window: "data_window", status_line: "status_line", price_scale: "price_scale" });\n');
+    this.write('globalThis.format = globalThis.format || __pineNS({ price: "price", volume: "volume", percent: "percent", mintick: "mintick", inherit: "inherit" });\n');
+    this.write('globalThis.scale = globalThis.scale || __pineNS({ left: "left", right: "right", none: "none" });\n');
+    this.write('globalThis.font = globalThis.font || __pineNS({ family_default: "default", family_monospace: "monospace" });\n');
+    this.write('globalThis.xloc = globalThis.xloc || __pineNS({ bar_index: "bar_index", bar_time: "bar_time" });\n');
+    this.write('globalThis.yloc = globalThis.yloc || __pineNS({ price: "price", abovebar: "abovebar", belowbar: "belowbar" });\n');
+    this.write('globalThis.extend = globalThis.extend || __pineNS({ none: "none", left: "left", right: "right", both: "both" });\n');
+    this.write('globalThis.order = globalThis.order || __pineNS({ ascending: "ascending", descending: "descending" });\n');
+    this.write('globalThis.alert = globalThis.alert || Object.assign(function() { return null; }, { freq_once_per_bar: "once_per_bar", freq_once_per_bar_close: "once_per_bar_close", freq_all: "all" });\n');
+    this.write('globalThis.dayofmonth = globalThis.dayofmonth || function(t) { return new Date(t || 0).getUTCDate(); };\n');
+    // `plot` is rewritten to pinescript.plot when called, so a bare `plot` is only
+    // ever a style-constant lookup like plot.style_histogram.
+    this.write('globalThis.plot = globalThis.plot || __pineNS({ style_line: "line", style_linebr: "linebr", style_stepline: "stepline", style_histogram: "histogram", style_cross: "cross", style_area: "area", style_areabr: "areabr", style_columns: "columns", style_circles: "circles" });\n');
+    // PineScript type-cast helpers used as functions, e.g. int(x), float(x).
+    this.write('globalThis.int = globalThis.int || function(x) { return x == null ? null : Math.trunc(Number(x)); };\n');
+    this.write('globalThis.float = globalThis.float || function(x) { return x == null ? null : Number(x); };\n');
+    this.write('globalThis.bool = globalThis.bool || function(x) { return Boolean(x); };\n');
+    this.write('globalThis.string = globalThis.string || function(x) { return x == null ? null : String(x); };\n');
+    this.write('globalThis.dayofweek = globalThis.dayofweek || __pineNS({ sunday: 1, monday: 2, tuesday: 3, wednesday: 4, thursday: 5, friday: 6, saturday: 7 });\n');
+    this.write('globalThis.str = globalThis.str || __pineNS({});\n');
+    // The reserved namespaces (ta, math, str, array) are emitted as pinescript.<ns>
+    // when a script uses them as a value (e.g. `math.pi`), so mirror the global
+    // shims onto pinescript too.
+    this.write('pinescript.math = globalThis.math;\n');
+    this.write('pinescript.ta = globalThis.ta;\n');
+    this.write('pinescript.str = globalThis.str;\n');
+    this.write('pinescript.array = __pineNS(globalThis.array);\n\n');
+
     // Minimal color namespace -- provides hex parsing, gradient interpolation,
     // rgb construction, and a handful of named color constants.
     this.write('pinescript.color = {\n');
@@ -358,15 +466,90 @@ class CodeGenerator {
     this.popIndent();
     this.write('}\n\n');
 
-    // Export the main entry point along with any input parameters
-    // so the host environment can inspect and override them.
-    this.write('export { main');
+    // Emit the bar-by-bar engine driver. PineScript executes the whole script
+    // once per bar; run() reproduces that by growing the OHLCV series one bar at
+    // a time and calling main() for each bar, collecting plotted values into
+    // full output series. This is the core of correct PineScript semantics.
+    this.write(this.buildRunDriver());
+
+    // Export the main entry point, the bar-by-bar runner, and any input
+    // parameters so the host environment can inspect and override them.
+    this.write('export { main, run');
     for (const input of node.inputs || []) {
       this.write(`, ${input.name}`);
     }
     this.write('};\n');
 
     return this.output.join('\n');
+  }
+
+  // Produces the run(data) driver source that executes the script bar by bar.
+  // `data` is an object of OHLCV arrays: { open, high, low, close, volume, time }.
+  // Returns the populated globalThis.__pineRuntime, whose .plots / .plotshapes are
+  // named series with one value per bar.
+  buildRunDriver() {
+    return `
+// The bar-by-bar engine: runs main() once per bar over the dataset.
+function run(data, options = {}) {
+  data = data || {};
+  const inClose = (data.close || []).map(Number);
+  const n = inClose.length;
+  const inOpen = (data.open || inClose).map(Number);
+  const inHigh = (data.high || inClose).map(Number);
+  const inLow = (data.low || inClose).map(Number);
+  const inVol = (data.volume || new Array(n).fill(0)).map(Number);
+  const inTime = (data.time || inClose.map((_, i) => i)).map(Number);
+
+  // Reset all persistent and per-run state so repeated runs are independent.
+  globalThis.__pineState = {};
+  globalThis.__pineRuntime = { plots: {}, plotshapes: {}, alerts: [], bars: n, inputs: options.inputs || {} };
+  pinescript.__rt = {};
+  pinescript.__bar = 0;
+
+  // Growing OHLCV windows: each is a SeriesArray that gains one element per bar,
+  // so window built-ins like sma and highest see history up to the current bar.
+  const O = pinescript.asSeries([]), H = pinescript.asSeries([]), L = pinescript.asSeries([]);
+  const C = pinescript.asSeries([]), V = pinescript.asSeries([]), T = pinescript.asSeries([]);
+  const HL2 = pinescript.asSeries([]), HLC3 = pinescript.asSeries([]), OHLC4 = pinescript.asSeries([]);
+  globalThis.open = O; globalThis.high = H; globalThis.low = L; globalThis.close = C;
+  globalThis.volume = V; globalThis.time = T;
+  globalThis.hl2 = HL2; globalThis.hlc3 = HLC3; globalThis.ohlc4 = OHLC4;
+  globalThis.syminfo = globalThis.syminfo || { tickerid: 'SYNTHETIC', ticker: 'SYNTHETIC', mintick: 0.01 };
+
+  const rt = globalThis.__pineRuntime;
+  for (let i = 0; i < n; i++) {
+    O.push(inOpen[i]); H.push(inHigh[i]); L.push(inLow[i]); C.push(inClose[i]); V.push(inVol[i]); T.push(inTime[i]);
+    HL2.push((inHigh[i] + inLow[i]) / 2);
+    HLC3.push((inHigh[i] + inLow[i] + inClose[i]) / 3);
+    OHLC4.push((inOpen[i] + inHigh[i] + inLow[i] + inClose[i]) / 4);
+
+    pinescript.__bar = i;
+    rt.__barIndex = i;
+    rt.__plotIdx = 0;
+    rt.__shapeIdx = 0;
+    globalThis.bar_index = i;
+    globalThis.last_bar_index = n - 1;
+    globalThis.barstate = {
+      isfirst: i === 0, islast: i === n - 1, isrealtime: false, ishistory: true,
+      isconfirmed: true, isnew: true, islastconfirmedhistory: i === n - 1,
+    };
+
+    main();
+  }
+
+  // Backfill skipped bars so every output series has exactly n entries.
+  for (const k of Object.keys(rt.plots)) {
+    const d = rt.plots[k].data;
+    for (let i = 0; i < n; i++) if (d[i] === undefined) d[i] = null;
+  }
+  for (const k of Object.keys(rt.plotshapes)) {
+    const d = rt.plotshapes[k].data;
+    for (let i = 0; i < n; i++) if (d[i] === undefined) d[i] = false;
+  }
+  return rt;
+}
+
+`;
   }
 
   generateInputDeclaration(node) {
@@ -715,6 +898,18 @@ class CodeGenerator {
     }
 
     const args = positionalArgs.map(arg => this.generate(arg));
+
+    // For history-dependent built-ins, wrap their series arguments so the runtime
+    // tracks each one's per-bar history (see SERIES_ARG_FUNCS).
+    const wrapPositions = SERIES_ARG_FUNCS[calleeName];
+    if (wrapPositions) {
+      for (const pos of wrapPositions) {
+        if (pos < args.length) {
+          args[pos] = `pinescript.series(${this.nextSite()}, ${args[pos]})`;
+        }
+      }
+    }
+
     if (namedArgs.length > 0) {
       const opts = namedArgs
         .map(na => `${na.name}: ${this.generate(na.value)}`)
@@ -725,10 +920,11 @@ class CodeGenerator {
     return `${calleeName}(${args.join(', ')})`;
   }
 
-  // Pine's `x[n]` is historical series look-back, not array indexing.
-  // We translate it to a runtime helper that handles the offset safely.
+  // Pine's `x[n]` is historical series look-back, not array indexing. We record
+  // the current-bar value of `x` at a unique call-site id and read back n bars,
+  // so lookback works even when `x` is a value computed on the current bar.
   generateArrayAccess(node) {
-    return `pinescript.offset(${this.generate(node.array)}, ${this.generate(node.index)})`;
+    return `pinescript.hist(${this.nextSite()}, ${this.generate(node.array)}, ${this.generate(node.index)})`;
   }
 
   generatePropertyAccess(node) {
@@ -1012,6 +1208,8 @@ class CodeGenerator {
       'bgcolor': 'pinescript.bgcolor',
       'fill': 'pinescript.fill',
       'alert': 'pinescript.alert',
+      'alertcondition': 'pinescript.alertcondition',
+      'barcolor': 'pinescript.barcolor',
 
       // Strategy order functions
       'strategy.entry': 'pinescript.strategyEntry',

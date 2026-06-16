@@ -1,12 +1,63 @@
-// PineScript to JavaScript Transpiled Code
+// Auto-generated JavaScript from PineScript source
 
-// Generated automatically
+// Do not edit by hand -- re-run the converter instead
 
 
-// Built-in PineScript functions
+// All the built-in PineScript functions that scripts depend on at runtime
 
 const pinescript = {
 
+  __scalar: function(v) {
+    if (v === null || v === undefined) return v;
+    if (typeof v === 'object' && typeof v.valueOf === 'function') {
+      const s = v.valueOf();
+      if (typeof s === 'number' || typeof s === 'boolean' || s === null) return s;
+    }
+    return v;
+  },
+  series: function(id, value) {
+    const rt = this.__rt || (this.__rt = {});
+    const store = rt.series || (rt.series = {});
+    let buf = store[id];
+    if (!buf) buf = store[id] = [];
+    buf[this.__bar | 0] = this.__scalar(value);
+    return buf;
+  },
+  hist: function(id, value, n) {
+    const buf = this.series(id, value);
+    const idx = (this.__bar | 0) - (n | 0);
+    return idx >= 0 && idx < buf.length ? buf[idx] : null;
+  },
+  time: function(timeframe, session) {
+    const t = globalThis.time;
+    if (t && typeof t.valueOf === 'function') return t.valueOf();
+    return Array.isArray(t) ? t[t.length - 1] : t;
+  },
+  sign: function(x) {
+    if (x === null || x === undefined || (typeof x === 'number' && isNaN(x))) return null;
+    return Math.sign(Number(x));
+  },
+  unpack: function(value, count) {
+    if (Array.isArray(value)) return value;
+    if (value != null && typeof value[Symbol.iterator] === 'function') return Array.from(value);
+    return new Array(count || 0).fill(null);
+  },
+  alertcondition: function(condition, ...rest) {
+    if (globalThis.__pineRuntime) {
+      globalThis.__pineRuntime.alerts.push({ condition, args: rest });
+    }
+    return null;
+  },
+  barcolor: function(color) { return null; },
+  bgcolor: function(color, title, editable, showLast) {
+    return null;
+  },
+  fill: function(series1, series2, color, title, editable) {
+    return null;
+  },
+  hline: function(_price, _title, _opts) {
+    return null;
+  },
   sma: function(series, length) {
     if (series === null || series === undefined) return null;
     if (!Array.isArray(series)) series = [series];
@@ -84,6 +135,13 @@ const pinescript = {
     }
     return weightSum > 0 ? sum / weightSum : null;
   },
+  swma: function(series) {
+    if (series === null || series === undefined) return null;
+    if (!Array.isArray(series)) series = [series];
+    if (series.length < 4) return null;
+    const s = series.slice(-4);
+    return (s[0] * 1 + s[1] * 2 + s[2] * 2 + s[3] * 1) / 6;
+  },
   atr: function(high, low, close, length = 14) {
     if (!Array.isArray(high) || !Array.isArray(low) || !Array.isArray(close)) return null;
     if (high.length < length + 1 || low.length < length + 1 || close.length < length + 1) return null;
@@ -113,6 +171,53 @@ const pinescript = {
     const sma = builtins.get('sma')(typicalPrice, length);
     const atr = builtins.get('atr')(high, low, close, length);
     return { middle: sma, upper: sma + mult * atr, lower: sma - mult * atr };
+  },
+  supertrend: function(factor, atrPeriod, high, low, close) {
+    if (!Array.isArray(high) || !Array.isArray(low) || !Array.isArray(close)) return [null, null];
+    if (high.length < atrPeriod + 1) return [null, null];
+    const atrVal = builtins.get('atr')(high, low, close, atrPeriod);
+    if (atrVal === null) return [null, null];
+    const lastIdx = close.length - 1;
+    const hl2 = (high[lastIdx] + low[lastIdx]) / 2;
+    const upperBand = hl2 + factor * atrVal;
+    const lowerBand = hl2 - factor * atrVal;
+    // Determine direction: 1 means downtrend (price below band), -1 means uptrend
+    const direction = close[lastIdx] > upperBand ? -1 : close[lastIdx] < lowerBand ? 1 : -1;
+    const supertrendValue = direction === -1 ? lowerBand : upperBand;
+    return [supertrendValue, direction];
+  },
+  ta_supertrend: function(factor, atrPeriod) {
+    const H = globalThis.high;
+    const L = globalThis.low;
+    const C = globalThis.close;
+    return builtins.get('supertrend')(factor, atrPeriod, H, L, C);
+  },
+  dmi: function(diLength, adxSmoothing, high, low, close) {
+    if (!Array.isArray(high) || !Array.isArray(low) || !Array.isArray(close)) return { plusDI: null, minusDI: null, adx: null };
+    if (high.length < diLength + 1) return { plusDI: null, minusDI: null, adx: null };
+    let plusDMSum = 0, minusDMSum = 0, trSum = 0;
+    for (let i = 1; i <= diLength; i++) {
+      const idx = high.length - 1 - diLength + i;
+      const upMove = high[idx] - high[idx - 1];
+      const downMove = low[idx - 1] - low[idx];
+      plusDMSum += (upMove > downMove && upMove > 0) ? upMove : 0;
+      minusDMSum += (downMove > upMove && downMove > 0) ? downMove : 0;
+      const tr = Math.max(
+        high[idx] - low[idx],
+        Math.abs(high[idx] - close[idx - 1]),
+        Math.abs(low[idx] - close[idx - 1])
+      );
+      trSum += tr;
+    }
+    const plusDI = trSum > 0 ? (plusDMSum / trSum) * 100 : 0;
+    const minusDI = trSum > 0 ? (minusDMSum / trSum) * 100 : 0;
+    const diSum = plusDI + minusDI;
+    const dx = diSum > 0 ? Math.abs(plusDI - minusDI) / diSum * 100 : 0;
+    return { plusDI, minusDI, adx: dx };
+  },
+  adx: function(diLength, adxSmoothing, high, low, close) {
+    const result = builtins.get('dmi')(diLength, adxSmoothing, high, low, close);
+    return result ? result.adx : null;
   },
   rsi: function(close, length = 14) {
     if (close === null || close === undefined) return null;
@@ -171,9 +276,7 @@ const pinescript = {
     return { macd: macdLine, signal: signalLine, histogram: histogram };
   },
   cci: function(a, b, c, d) {
-    // Pine signatures:
-    // - ta.cci(source, length)
-    // - ta.cci(high, low, close, length)
+    // Supports both ta.cci(source, length) and ta.cci(high, low, close, length) signatures
     let source;
     let length;
     if (Array.isArray(a) && typeof b === 'number' && c === undefined) {
@@ -304,6 +407,15 @@ const pinescript = {
   stdev: function(source, length) {
     return Math.sqrt(builtins.get('variance')(source, length));
   },
+  median: function(source, length) {
+    if (!source || source.length < length) return null;
+    const sorted = [...source.slice(-length)].sort((a, b) => a - b);
+    const mid = Math.floor(sorted.length / 2);
+    return sorted.length % 2 !== 0 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2;
+  },
+  ta_median: function(source, length) {
+    return builtins.get('median')(source, length);
+  },
   hl2: function(high, low) {
     return high && low ? (high[high.length - 1] + low[low.length - 1]) / 2 : null;
   },
@@ -420,6 +532,24 @@ const pinescript = {
     return (series1[i - 1] < series2[i - 1] && series1[i] >= series2[i]) ||
            (series1[i - 1] > series2[i - 1] && series1[i] <= series2[i]);
   },
+  crossover: function(series1, series2) {
+    if (series1 === null || series1 === undefined) return false;
+    if (series2 === null || series2 === undefined) return false;
+    if (!Array.isArray(series1)) series1 = [series1];
+    if (!Array.isArray(series2)) series2 = [series2];
+    if (series1.length < 2 || series2.length < 2) return false;
+    const i = series1.length - 1;
+    return series1[i - 1] < series2[i - 1] && series1[i] >= series2[i];
+  },
+  crossunder: function(series1, series2) {
+    if (series1 === null || series1 === undefined) return false;
+    if (series2 === null || series2 === undefined) return false;
+    if (!Array.isArray(series1)) series1 = [series1];
+    if (!Array.isArray(series2)) series2 = [series2];
+    if (series1.length < 2 || series2.length < 2) return false;
+    const i = series1.length - 1;
+    return series1[i - 1] > series2[i - 1] && series1[i] <= series2[i];
+  },
   offset: function(series, offset) {
     if (!Array.isArray(series)) return null;
     const idx = series.length - 1 - offset;
@@ -500,12 +630,14 @@ const pinescript = {
     return builtins.get('nz')(value, replacement);
   },
   plot: function(series, title = '', color = null, linewidth = 1) {
-    globalThis.__pineRuntime.plots.push({
-      series,
-      title,
-      color,
-      linewidth
-    });
+    const rt = globalThis.__pineRuntime;
+    if (!rt) return series;
+    const bar = rt.__barIndex | 0;
+    const ord = (rt.__plotIdx = (rt.__plotIdx | 0) + 1) - 1;
+    const key = (title && String(title)) || ('plot_' + ord);
+    let p = rt.plots[key];
+    if (!p) p = rt.plots[key] = { title: key, color, linewidth, data: [] };
+    p.data[bar] = this.__scalar(series);
     return series;
   },
   lineNew: function(x1, y1, x2, y2, opts = {}) {
@@ -514,20 +646,72 @@ const pinescript = {
   lineDelete: function(l) {
     return null;
   },
-  labelNew: function(...args) {
-    if (globalThis.__pineRuntime) {
-      globalThis.__pineRuntime.labels = globalThis.__pineRuntime.labels || [];
-      globalThis.__pineRuntime.labels.push({ args });
-    }
-    return { args };
+  lineSetXY: function(line, point, x, y) {
+    if (!line) return null;
+    if (point === 0 || point === 'x1') { line.x1 = x; line.y1 = y; }
+    else { line.x2 = x; line.y2 = y; }
+    return line;
+  },
+  lineGetX: function(line, point) {
+    if (!line) return null;
+    return point === 0 || point === 'x1' ? line.x1 : line.x2;
+  },
+  lineGetY: function(line, point) {
+    if (!line) return null;
+    return point === 0 || point === 'y1' ? line.y1 : line.y2;
+  },
+  labelNew: function(x, y, text = '', opts = {}) {
+    return { x, y, text, opts, _type: 'label' };
   },
   labelDelete: function(l) {
     return null;
   },
+  labelSetText: function(label, text) {
+    if (!label) return null;
+    label.text = text;
+    return label;
+  },
+  labelGetText: function(label) {
+    if (!label) return '';
+    return label.text || '';
+  },
+  boxNew: function(left, top, right, bottom, opts = {}) {
+    return { left, top, right, bottom, opts, _type: 'box' };
+  },
+  boxDelete: function(box) {
+    return null;
+  },
+  boxSetLeftTop: function(box, left, top) {
+    if (!box) return null;
+    box.left = left;
+    box.top = top;
+    return box;
+  },
+  boxSetRightBottom: function(box, right, bottom) {
+    if (!box) return null;
+    box.right = right;
+    box.bottom = bottom;
+    return box;
+  },
+  polylineNew: function(points, opts = {}) {
+    return { points: points || [], opts, _type: 'polyline' };
+  },
+  polylineDelete: function(poly) {
+    return null;
+  },
   plotshape: function(condition, ...rest) {
-    if (globalThis.__pineRuntime) {
-      globalThis.__pineRuntime.plotshapes.push({ condition, args: rest });
+    const rt = globalThis.__pineRuntime;
+    if (!rt) return condition;
+    const bar = rt.__barIndex | 0;
+    const ord = (rt.__shapeIdx = (rt.__shapeIdx | 0) + 1) - 1;
+    let key = 'shape_' + ord;
+    for (const r of rest) {
+      if (typeof r === 'string') { key = r; break; }
+      if (r && typeof r === 'object' && r.title) { key = String(r.title); break; }
     }
+    let s = rt.plotshapes[key];
+    if (!s) s = rt.plotshapes[key] = { title: key, data: [] };
+    s.data[bar] = !!this.__scalar(condition);
     return condition;
   },
   indicator: function(title, shorttitle, overlay, opts) {
@@ -542,26 +726,11 @@ const pinescript = {
     }
     return null;
   },
-  alertcondition: function(condition, ...rest) {
-    if (globalThis.__pineRuntime) {
-      globalThis.__pineRuntime.alerts.push({ condition, args: rest });
-    }
-    return null;
-  },
   plotbar: function(open, high, low, close, title, color, editable, showLast) {
     return { open, high, low, close };
   },
   plotcandle: function(open, high, low, close, title, color, wickColor, borderColor, editable, showLast) {
     return { open, high, low, close };
-  },
-  hline: function(_price, _title, _opts) {
-    return null;
-  },
-  bgcolor: function(color, title, editable, showLast) {
-    return null;
-  },
-  fill: function(series1, series2, color, title, editable) {
-    return null;
   },
   alert: function(condition, message, frequency) {
     console.log('Alert:', condition ? message : 'Condition not met');
@@ -828,6 +997,9 @@ const pinescript = {
   arrayIndexOf: function(arr, value) {
     return arr ? arr.indexOf(value) : -1;
   },
+  arrayLastIndexOf: function(arr, value) {
+    return arr ? arr.lastIndexOf(value) : -1;
+  },
   arraySum: function(arr) {
     return arr ? arr.reduce((a, b) => a + b, 0) : 0;
   },
@@ -839,6 +1011,42 @@ const pinescript = {
   },
   arrayMax: function(arr) {
     return arr && arr.length > 0 ? Math.max(...arr) : null;
+  },
+  arrayStdev: function(arr) {
+    if (!arr || arr.length === 0) return null;
+    const mean = arr.reduce((a, b) => a + b, 0) / arr.length;
+    const variance = arr.reduce((sum, val) => sum + Math.pow(val - mean, 2), 0) / arr.length;
+    return Math.sqrt(variance);
+  },
+  arrayVariance: function(arr) {
+    if (!arr || arr.length === 0) return null;
+    const mean = arr.reduce((a, b) => a + b, 0) / arr.length;
+    return arr.reduce((sum, val) => sum + Math.pow(val - mean, 2), 0) / arr.length;
+  },
+  arrayCovariance: function(arr1, arr2) {
+    if (!arr1 || !arr2 || arr1.length === 0 || arr1.length !== arr2.length) return null;
+    const mean1 = arr1.reduce((a, b) => a + b, 0) / arr1.length;
+    const mean2 = arr2.reduce((a, b) => a + b, 0) / arr2.length;
+    let cov = 0;
+    for (let i = 0; i < arr1.length; i++) {
+      cov += (arr1[i] - mean1) * (arr2[i] - mean2);
+    }
+    return cov / arr1.length;
+  },
+  mode: function(arr) {
+    if (!arr || arr.length === 0) return null;
+    const counts = new Map();
+    let maxCount = 0;
+    let modeVal = arr[0];
+    for (const val of arr) {
+      const c = (counts.get(val) || 0) + 1;
+      counts.set(val, c);
+      if (c > maxCount) {
+        maxCount = c;
+        modeVal = val;
+      }
+    }
+    return modeVal;
   },
   strLength: function(str) {
     return str ? str.length : 0;
@@ -895,6 +1103,84 @@ const pinescript = {
   strReverse: function(str) {
     return str ? str.split('').reverse().join('') : '';
   },
+  strFormat: function(formatStr, ...args) {
+    if (!formatStr) return '';
+    return formatStr.replace(/\{(\d+)\}/g, (match, idx) => {
+      const i = parseInt(idx, 10);
+      return i < args.length ? String(args[i]) : match;
+    });
+  },
+  input: function(defval, title, tooltip, inline, group) {
+    return defval;
+  },
+  inputInt: function(defval = 0, title, minval, maxval, step, tooltip, inline, group) {
+    return defval;
+  },
+  inputFloat: function(defval = 0.0, title, minval, maxval, step, tooltip, inline, group) {
+    return defval;
+  },
+  inputBool: function(defval = false, title, tooltip, inline, group) {
+    return defval;
+  },
+  inputString: function(defval = '', title, options, tooltip, inline, group) {
+    return defval;
+  },
+  inputSource: function(defval = null, title, tooltip, inline, group) {
+    return defval;
+  },
+  inputColor: function(defval = '#000000', title, tooltip, inline, group) {
+    return defval;
+  },
+  inputTime: function(defval = 0, title, tooltip, inline, group) {
+    return defval;
+  },
+  mathSign: function(value) {
+    return Math.sign(value);
+  },
+  mathAvg: function(...args) {
+    const valid = args.filter(v => v !== null && v !== undefined && !isNaN(v));
+    return valid.length > 0 ? valid.reduce((a, b) => a + b, 0) / valid.length : null;
+  },
+  mathSum: function(series, length) {
+    if (!series || series.length < length) return null;
+    return series.slice(-length).reduce((a, b) => a + b, 0);
+  },
+  mathRandom: function(min = 0, max = 1) {
+    return min + Math.random() * (max - min);
+  },
+  mathTodegrees: function(radians) {
+    return radians * (180 / Math.PI);
+  },
+  mathToradians: function(degrees) {
+    return degrees * (Math.PI / 180);
+  },
+  colorT: function(color, transparency) {
+    if (transparency !== undefined) {
+      return { color, transparency };
+    }
+    if (color && typeof color === 'object' && 'transparency' in color) {
+      return color.transparency;
+    }
+    return 0;
+  },
+  tableCellSetText: function(table, column, row, text) {
+    return null;
+  },
+  tableCellSetBgcolor: function(table, column, row, bgcolor) {
+    return null;
+  },
+  tableMergeCells: function(table, startColumn, startRow, endColumn, endRow) {
+    return null;
+  },
+  tableDelete: function(table) {
+    return null;
+  },
+  tableClear: function(table, startColumn, startRow, endColumn, endRow) {
+    return null;
+  },
+  maxBarsBack: function(series, length) {
+    return null;
+  },
   pi: 3.141592653589793,
   e: 2.718281828459045,
   true: true,
@@ -905,8 +1191,7 @@ const pinescript = {
     const info = { ticker: 'AAPL', tickerid: 'NASDAQ:AAPL', prefix: 'NASDAQ', root: 'AAPL', suffix: '' };
     return info[type] || '';
   },
-  time: 1771178052040,
-  timenow: 1771178052040,
+  timenow: 1781574527774,
   barstate: "LAST",
   dividends: {},
   splits: {},
@@ -923,7 +1208,7 @@ const pinescript = {
     return null;
   },
   tr: function(high, low, close) {
-    // Pine signature: ta.tr(true)
+    // Handles both the boolean shorthand ta.tr(true) and explicit high/low/close arguments
     if (typeof high === 'boolean') {
       const H = globalThis.high;
       const L = globalThis.low;
@@ -934,7 +1219,7 @@ const pinescript = {
       return Math.max(H[i] - L[i], Math.abs(H[i] - prevClose), Math.abs(L[i] - prevClose));
     }
 
-    // Fallback: treat inputs as scalars for current bar
+    // When arrays are passed, compute true range from the last bar using the previous close
     if (Array.isArray(close)) {
       const prevClose = close[close.length - 2] || close[0];
       const currHigh = Array.isArray(high) ? high[high.length - 1] : high;
@@ -944,6 +1229,92 @@ const pinescript = {
     }
 
     return Math.max(high - low, Math.abs(high - close), Math.abs(low - close));
+  },
+  arrayFirst: function(arr) {
+    if (!arr || arr.length === 0) return null;
+    return arr[0];
+  },
+  arrayLast: function(arr) {
+    if (!arr || arr.length === 0) return null;
+    return arr[arr.length - 1];
+  },
+  arrayJoin: function(arr, separator = ',') {
+    if (!arr) return '';
+    return arr.join(separator);
+  },
+  arrayConcat: function(arr1, arr2) {
+    if (!arr1) return arr2 || [];
+    if (!arr2) return arr1;
+    return arr1.concat(arr2);
+  },
+  arrayCopy: function(arr) {
+    if (!arr) return [];
+    return [...arr];
+  },
+  arrayBinarySearch: function(arr, value) {
+    if (!arr || arr.length === 0) return -1;
+    let lo = 0, hi = arr.length - 1;
+    while (lo <= hi) {
+      const mid = (lo + hi) >>> 1;
+      if (arr[mid] === value) return mid;
+      if (arr[mid] < value) lo = mid + 1;
+      else hi = mid - 1;
+    }
+    return -1;
+  },
+  arrayRange: function(arr) {
+    if (!arr || arr.length === 0) return 0;
+    return Math.max(...arr) - Math.min(...arr);
+  },
+  arrayMedian: function(arr) {
+    if (!arr || arr.length === 0) return null;
+    const sorted = [...arr].sort((a, b) => a - b);
+    const mid = Math.floor(sorted.length / 2);
+    return sorted.length % 2 !== 0 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2;
+  },
+  arrayMode: function(arr) {
+    if (!arr || arr.length === 0) return null;
+    const freq = {};
+    let maxCount = 0;
+    let mode = arr[0];
+    for (const v of arr) {
+      freq[v] = (freq[v] || 0) + 1;
+      if (freq[v] > maxCount) { maxCount = freq[v]; mode = v; }
+    }
+    return mode;
+  },
+  arrayPercentile: function(arr, percentile) {
+    if (!arr || arr.length === 0) return null;
+    const sorted = [...arr].sort((a, b) => a - b);
+    const idx = (percentile / 100) * (sorted.length - 1);
+    const lo = Math.floor(idx);
+    const hi = Math.ceil(idx);
+    if (lo === hi) return sorted[lo];
+    return sorted[lo] + (sorted[hi] - sorted[lo]) * (idx - lo);
+  },
+  arrayPercentileLinearInterpolation: function(arr, percentile) {
+    return builtins.get('arrayPercentile')(arr, percentile);
+  },
+  arrayPercentileNearestRank: function(arr, percentile) {
+    if (!arr || arr.length === 0) return null;
+    const sorted = [...arr].sort((a, b) => a - b);
+    const idx = Math.ceil((percentile / 100) * sorted.length) - 1;
+    return sorted[Math.max(0, idx)];
+  },
+  arrayAbs: function(arr) {
+    if (!arr) return [];
+    return arr.map(v => Math.abs(v));
+  },
+  arrayEvery: function(arr, callback) {
+    if (!arr) return false;
+    return arr.every(callback);
+  },
+  arraySome: function(arr, callback) {
+    if (!arr) return false;
+    return arr.some(callback);
+  },
+  requestFinancial: function() {
+    return null;
   },
 };
 
@@ -1101,6 +1472,115 @@ globalThis.barmerge = globalThis.barmerge || {
 };
 
 
+function __pineNS(real) {
+
+  const base = real || {};
+
+  return new Proxy(base, {
+
+    get(target, key) {
+
+      if (key in target) return target[key];
+
+      if (typeof key === "symbol") return target[key];
+
+      // Unknown member: usable as a value (null), a constant, or a no-op function.
+
+      const noop = function() { return null; };
+
+      noop.toString = () => "";
+
+      return noop;
+
+    }
+
+  });
+
+}
+
+globalThis.ta = globalThis.ta || __pineNS({});
+
+globalThis.math = globalThis.math || __pineNS({ pi: Math.PI, e: Math.E, phi: 1.618033988749895, rphi: 0.618033988749895 });
+
+globalThis.chart = globalThis.chart || __pineNS({ point: __pineNS({}), bg_color: null, fg_color: null });
+
+globalThis.line = globalThis.line || __pineNS({ style_solid: "solid", style_dashed: "dashed", style_dotted: "dotted" });
+
+globalThis.box = globalThis.box || __pineNS({});
+
+globalThis.label = globalThis.label || __pineNS({ style_label_down: "label_down", style_label_up: "label_up", style_none: "none" });
+
+globalThis.polyline = globalThis.polyline || __pineNS({});
+
+globalThis.linefill = globalThis.linefill || __pineNS({});
+
+globalThis.matrix = globalThis.matrix || __pineNS({});
+
+globalThis.map = globalThis.map || __pineNS({});
+
+globalThis.session = globalThis.session || __pineNS({ regular: "regular", extended: "extended" });
+
+globalThis.dayofweek = globalThis.dayofweek || __pineNS({ sunday: 1, monday: 2, tuesday: 3, wednesday: 4, thursday: 5, friday: 6, saturday: 7 });
+
+globalThis.timeframe = __pineNS(Object.assign(globalThis.timeframe || {}, { period: (globalThis.timeframe && globalThis.timeframe.period) || "D", isintraday: false, isdaily: true, multiplier: 1 }));
+
+globalThis.request = __pineNS(globalThis.request || {});
+
+globalThis.input = __pineNS(globalThis.input || {});
+
+globalThis.adjustment = globalThis.adjustment || __pineNS({});
+
+globalThis.earnings = globalThis.earnings || __pineNS({});
+
+globalThis.dividends = globalThis.dividends || __pineNS({});
+
+globalThis.splits = globalThis.splits || __pineNS({});
+
+globalThis.currency = globalThis.currency || __pineNS({});
+
+globalThis.display = globalThis.display || __pineNS({ none: "none", all: "all", pane: "pane", data_window: "data_window", status_line: "status_line", price_scale: "price_scale" });
+
+globalThis.format = globalThis.format || __pineNS({ price: "price", volume: "volume", percent: "percent", mintick: "mintick", inherit: "inherit" });
+
+globalThis.scale = globalThis.scale || __pineNS({ left: "left", right: "right", none: "none" });
+
+globalThis.font = globalThis.font || __pineNS({ family_default: "default", family_monospace: "monospace" });
+
+globalThis.xloc = globalThis.xloc || __pineNS({ bar_index: "bar_index", bar_time: "bar_time" });
+
+globalThis.yloc = globalThis.yloc || __pineNS({ price: "price", abovebar: "abovebar", belowbar: "belowbar" });
+
+globalThis.extend = globalThis.extend || __pineNS({ none: "none", left: "left", right: "right", both: "both" });
+
+globalThis.order = globalThis.order || __pineNS({ ascending: "ascending", descending: "descending" });
+
+globalThis.alert = globalThis.alert || Object.assign(function() { return null; }, { freq_once_per_bar: "once_per_bar", freq_once_per_bar_close: "once_per_bar_close", freq_all: "all" });
+
+globalThis.dayofmonth = globalThis.dayofmonth || function(t) { return new Date(t || 0).getUTCDate(); };
+
+globalThis.plot = globalThis.plot || __pineNS({ style_line: "line", style_linebr: "linebr", style_stepline: "stepline", style_histogram: "histogram", style_cross: "cross", style_area: "area", style_areabr: "areabr", style_columns: "columns", style_circles: "circles" });
+
+globalThis.int = globalThis.int || function(x) { return x == null ? null : Math.trunc(Number(x)); };
+
+globalThis.float = globalThis.float || function(x) { return x == null ? null : Number(x); };
+
+globalThis.bool = globalThis.bool || function(x) { return Boolean(x); };
+
+globalThis.string = globalThis.string || function(x) { return x == null ? null : String(x); };
+
+globalThis.dayofweek = globalThis.dayofweek || __pineNS({ sunday: 1, monday: 2, tuesday: 3, wednesday: 4, thursday: 5, friday: 6, saturday: 7 });
+
+globalThis.str = globalThis.str || __pineNS({});
+
+pinescript.math = globalThis.math;
+
+pinescript.ta = globalThis.ta;
+
+pinescript.str = globalThis.str;
+
+pinescript.array = __pineNS(globalThis.array);
+
+
 pinescript.color = {
 
   hex: function(s) {
@@ -1190,11 +1670,11 @@ pinescript.table = {
 };
 
 
-// Input parameters
+// Script input parameters and their defaults
 
 const LTFCandles = { new: function(bodies, wicks_high, wicks_low, opens, highs, lows, closes) { return { bodies: bodies, wicks_high: wicks_high, wicks_low: wicks_low, opens: opens, highs: highs, lows: lows, closes: closes }; } };
 
-// Main script logic
+// The transpiled script logic, called once per bar
 
 function main() {
 
@@ -1210,65 +1690,65 @@ function main() {
   // Study: 
   // Options: {"title":"NY Opening Range (Enhanced with LTF)","shorttitle":"NY ORB","overlay":true,"max_lines_count":500,"max_labels_count":500,"max_boxes_count":500,"max_bars_back":5000}
   if (state.g_5MIN === undefined) state.g_5MIN = "━━━━━━━━━ 5-MINUTE ORB ━━━━━━━━━";
-  let show_5min = input.bool(true, "Show 5-Minute ORB", ({ group: state.g_5MIN }));
-  let bullish_color_5m = input.color(pinescript.color.rgb(0, 255, 149), "Bullish Color", ({ inline: "5mc", group: state.g_5MIN }));
-  let bearish_color_5m = input.color(pinescript.color.rgb(195, 0, 255), "Bearish Color", ({ inline: "5mc", group: state.g_5MIN }));
-  let bullish_fill_5m = input.color(pinescript.color.rgb(0, 255, 149, 85), "Bullish Fill", ({ inline: "5mf", group: state.g_5MIN }));
-  let bearish_fill_5m = input.color(pinescript.color.rgb(195, 0, 255, 85), "Bearish Fill", ({ inline: "5mf", group: state.g_5MIN }));
-  let boxStyle_5m = input.string("Solid", "Range Style", ({ options: ["Solid", "Dashed", "Dotted"], inline: "5box", group: state.g_5MIN }));
-  let borderWidth_5m = input.int(1, "Width", 1, 10, ({ inline: "5box", group: state.g_5MIN }));
-  let show_midLine_5m = input.bool(true, "Show Midline", ({ inline: "5mid", group: state.g_5MIN }));
-  let lineStyle_5m = input.string("Dashed", "Style", ({ options: ["Solid", "Dashed", "Dotted"], inline: "5mid", group: state.g_5MIN }));
-  let lineWidth_5m = input.int(1, "Width", 1, 10, ({ inline: "5mid", group: state.g_5MIN }));
-  let show_extensions_5m = input.bool(true, "Show Median Extensions", ({ inline: "5ext", group: state.g_5MIN }));
-  let ext_line_style_5m = input.string("Dotted", "Style", ({ options: ["Solid", "Dashed", "Dotted"], inline: "5ext", group: state.g_5MIN }));
-  let ext_line_width_5m = input.int(1, "Width", ({ minval: 1, maxval: 5, inline: "5ext", group: state.g_5MIN }));
-  let show_ext_labels_5m = input.bool(true, "Show Extension Labels", ({ group: state.g_5MIN }));
-  let show_ltf_5m = input.bool(true, "Show LTF Candles", ({ group: state.g_5MIN }));
-  let ltf_5m_count = input.int(5, "  └─ Number of Candles", ({ minval: 1, maxval: 20, group: state.g_5MIN }));
-  let ltf_offset_5m = input.int(5, "  └─ Offset (bars from right)", ({ minval: 1, maxval: 100, group: state.g_5MIN }));
-  let ltf_spacing_5m = input.int(3, "  └─ Candle Spacing", ({ minval: 1, maxval: 5, group: state.g_5MIN }));
-  let ltf_width_5m = input.int(2, "  └─ Candle Width", ({ minval: 1, maxval: 5, group: state.g_5MIN }));
-  let ltf_bull_color_5m = input.color(pinescript.color.rgb(0, 255, 149, 60), "  └─ LTF Bullish Color", ({ group: state.g_5MIN }));
-  let ltf_bear_color_5m = input.color(pinescript.color.rgb(195, 0, 255, 60), "  └─ LTF Bearish Color", ({ group: state.g_5MIN }));
-  let show_ltf_range_5m = input.bool(true, "  └─ Show LTF High/Low Lines", ({ group: state.g_5MIN }));
-  let ltf_range_style_5m = input.string("Dotted", "  └─ LTF Range Style", ({ options: ["Solid", "Dashed", "Dotted"], group: state.g_5MIN }));
-  let ltf_range_width_5m = input.int(1, "  └─ LTF Range Width", ({ minval: 1, maxval: 5, group: state.g_5MIN }));
-  let ltf_range_color_5m = input.color(pinescript.color.rgb(0, 255, 149, 50), "  └─ LTF Range Color", ({ group: state.g_5MIN }));
+  let show_5min = pinescript.inputBool(true, "Show 5-Minute ORB", ({ group: state.g_5MIN }));
+  let bullish_color_5m = pinescript.inputColor(pinescript.color.rgb(0, 255, 149), "Bullish Color", ({ inline: "5mc", group: state.g_5MIN }));
+  let bearish_color_5m = pinescript.inputColor(pinescript.color.rgb(195, 0, 255), "Bearish Color", ({ inline: "5mc", group: state.g_5MIN }));
+  let bullish_fill_5m = pinescript.inputColor(pinescript.color.rgb(0, 255, 149, 85), "Bullish Fill", ({ inline: "5mf", group: state.g_5MIN }));
+  let bearish_fill_5m = pinescript.inputColor(pinescript.color.rgb(195, 0, 255, 85), "Bearish Fill", ({ inline: "5mf", group: state.g_5MIN }));
+  let boxStyle_5m = pinescript.inputString("Solid", "Range Style", ({ options: ["Solid", "Dashed", "Dotted"], inline: "5box", group: state.g_5MIN }));
+  let borderWidth_5m = pinescript.inputInt(1, "Width", 1, 10, ({ inline: "5box", group: state.g_5MIN }));
+  let show_midLine_5m = pinescript.inputBool(true, "Show Midline", ({ inline: "5mid", group: state.g_5MIN }));
+  let lineStyle_5m = pinescript.inputString("Dashed", "Style", ({ options: ["Solid", "Dashed", "Dotted"], inline: "5mid", group: state.g_5MIN }));
+  let lineWidth_5m = pinescript.inputInt(1, "Width", 1, 10, ({ inline: "5mid", group: state.g_5MIN }));
+  let show_extensions_5m = pinescript.inputBool(true, "Show Median Extensions", ({ inline: "5ext", group: state.g_5MIN }));
+  let ext_line_style_5m = pinescript.inputString("Dotted", "Style", ({ options: ["Solid", "Dashed", "Dotted"], inline: "5ext", group: state.g_5MIN }));
+  let ext_line_width_5m = pinescript.inputInt(1, "Width", ({ minval: 1, maxval: 5, inline: "5ext", group: state.g_5MIN }));
+  let show_ext_labels_5m = pinescript.inputBool(true, "Show Extension Labels", ({ group: state.g_5MIN }));
+  let show_ltf_5m = pinescript.inputBool(true, "Show LTF Candles", ({ group: state.g_5MIN }));
+  let ltf_5m_count = pinescript.inputInt(5, "  └─ Number of Candles", ({ minval: 1, maxval: 20, group: state.g_5MIN }));
+  let ltf_offset_5m = pinescript.inputInt(5, "  └─ Offset (bars from right)", ({ minval: 1, maxval: 100, group: state.g_5MIN }));
+  let ltf_spacing_5m = pinescript.inputInt(3, "  └─ Candle Spacing", ({ minval: 1, maxval: 5, group: state.g_5MIN }));
+  let ltf_width_5m = pinescript.inputInt(2, "  └─ Candle Width", ({ minval: 1, maxval: 5, group: state.g_5MIN }));
+  let ltf_bull_color_5m = pinescript.inputColor(pinescript.color.rgb(0, 255, 149, 60), "  └─ LTF Bullish Color", ({ group: state.g_5MIN }));
+  let ltf_bear_color_5m = pinescript.inputColor(pinescript.color.rgb(195, 0, 255, 60), "  └─ LTF Bearish Color", ({ group: state.g_5MIN }));
+  let show_ltf_range_5m = pinescript.inputBool(true, "  └─ Show LTF High/Low Lines", ({ group: state.g_5MIN }));
+  let ltf_range_style_5m = pinescript.inputString("Dotted", "  └─ LTF Range Style", ({ options: ["Solid", "Dashed", "Dotted"], group: state.g_5MIN }));
+  let ltf_range_width_5m = pinescript.inputInt(1, "  └─ LTF Range Width", ({ minval: 1, maxval: 5, group: state.g_5MIN }));
+  let ltf_range_color_5m = pinescript.inputColor(pinescript.color.rgb(0, 255, 149, 50), "  └─ LTF Range Color", ({ group: state.g_5MIN }));
   if (state.g_15MIN === undefined) state.g_15MIN = "━━━━━━━━━ 15-MINUTE ORB ━━━━━━━━━";
-  let show_15min = input.bool(true, "Show 15-Minute ORB", ({ group: state.g_15MIN }));
-  let bullish_color_15m = input.color(pinescript.color.rgb(33, 150, 243), "Bullish Color", ({ inline: "15mc", group: state.g_15MIN }));
-  let bearish_color_15m = input.color(pinescript.color.rgb(255, 152, 0), "Bearish Color", ({ inline: "15mc", group: state.g_15MIN }));
-  let bullish_fill_15m = input.color(pinescript.color.rgb(33, 150, 243, 85), "Bullish Fill", ({ inline: "15mf", group: state.g_15MIN }));
-  let bearish_fill_15m = input.color(pinescript.color.rgb(255, 152, 0, 85), "Bearish Fill", ({ inline: "15mf", group: state.g_15MIN }));
-  let boxStyle_15m = input.string("Solid", "Range Style", ({ options: ["Solid", "Dashed", "Dotted"], inline: "15box", group: state.g_15MIN }));
-  let borderWidth_15m = input.int(1, "Width", 1, 10, ({ inline: "15box", group: state.g_15MIN }));
-  let show_midLine_15m = input.bool(true, "Show Midline", ({ inline: "15mid", group: state.g_15MIN }));
-  let lineStyle_15m = input.string("Dashed", "Style", ({ options: ["Solid", "Dashed", "Dotted"], inline: "15mid", group: state.g_15MIN }));
-  let lineWidth_15m = input.int(1, "Width", 1, 10, ({ inline: "15mid", group: state.g_15MIN }));
-  let show_extensions_15m = input.bool(true, "Show Median Extensions", ({ inline: "15ext", group: state.g_15MIN }));
-  let ext_line_style_15m = input.string("Dotted", "Style", ({ options: ["Solid", "Dashed", "Dotted"], inline: "15ext", group: state.g_15MIN }));
-  let ext_line_width_15m = input.int(1, "Width", ({ minval: 1, maxval: 5, inline: "15ext", group: state.g_15MIN }));
-  let show_ext_labels_15m = input.bool(true, "Show Extension Labels", ({ group: state.g_15MIN }));
-  let show_ltf_15m = input.bool(true, "Show LTF Candles", ({ group: state.g_15MIN }));
-  let ltf_15m_count = input.int(15, "  └─ Number of Candles", ({ minval: 1, maxval: 20, group: state.g_15MIN }));
-  let ltf_offset_15m = input.int(35, "  └─ Offset (bars from right)", ({ minval: 1, maxval: 100, group: state.g_15MIN }));
-  let ltf_spacing_15m = input.int(3, "  └─ Candle Spacing", ({ minval: 1, maxval: 5, group: state.g_15MIN }));
-  let ltf_width_15m = input.int(2, "  └─ Candle Width", ({ minval: 1, maxval: 5, group: state.g_15MIN }));
-  let ltf_bull_color_15m = input.color(pinescript.color.rgb(0, 255, 149, 60), "  └─ LTF Bullish Color", ({ group: state.g_15MIN }));
-  let ltf_bear_color_15m = input.color(pinescript.color.rgb(195, 0, 255, 60), "  └─ LTF Bearish Color", ({ group: state.g_15MIN }));
-  let show_ltf_range_15m = input.bool(true, "  └─ Show LTF High/Low Lines", ({ group: state.g_15MIN }));
-  let ltf_range_style_15m = input.string("Dotted", "  └─ LTF Range Style", ({ options: ["Solid", "Dashed", "Dotted"], group: state.g_15MIN }));
-  let ltf_range_width_15m = input.int(1, "  └─ LTF Range Width", ({ minval: 1, maxval: 5, group: state.g_15MIN }));
-  let ltf_range_color_15m = input.color(pinescript.color.rgb(33, 150, 243, 50), "  └─ LTF Range Color", ({ group: state.g_15MIN }));
+  let show_15min = pinescript.inputBool(true, "Show 15-Minute ORB", ({ group: state.g_15MIN }));
+  let bullish_color_15m = pinescript.inputColor(pinescript.color.rgb(33, 150, 243), "Bullish Color", ({ inline: "15mc", group: state.g_15MIN }));
+  let bearish_color_15m = pinescript.inputColor(pinescript.color.rgb(255, 152, 0), "Bearish Color", ({ inline: "15mc", group: state.g_15MIN }));
+  let bullish_fill_15m = pinescript.inputColor(pinescript.color.rgb(33, 150, 243, 85), "Bullish Fill", ({ inline: "15mf", group: state.g_15MIN }));
+  let bearish_fill_15m = pinescript.inputColor(pinescript.color.rgb(255, 152, 0, 85), "Bearish Fill", ({ inline: "15mf", group: state.g_15MIN }));
+  let boxStyle_15m = pinescript.inputString("Solid", "Range Style", ({ options: ["Solid", "Dashed", "Dotted"], inline: "15box", group: state.g_15MIN }));
+  let borderWidth_15m = pinescript.inputInt(1, "Width", 1, 10, ({ inline: "15box", group: state.g_15MIN }));
+  let show_midLine_15m = pinescript.inputBool(true, "Show Midline", ({ inline: "15mid", group: state.g_15MIN }));
+  let lineStyle_15m = pinescript.inputString("Dashed", "Style", ({ options: ["Solid", "Dashed", "Dotted"], inline: "15mid", group: state.g_15MIN }));
+  let lineWidth_15m = pinescript.inputInt(1, "Width", 1, 10, ({ inline: "15mid", group: state.g_15MIN }));
+  let show_extensions_15m = pinescript.inputBool(true, "Show Median Extensions", ({ inline: "15ext", group: state.g_15MIN }));
+  let ext_line_style_15m = pinescript.inputString("Dotted", "Style", ({ options: ["Solid", "Dashed", "Dotted"], inline: "15ext", group: state.g_15MIN }));
+  let ext_line_width_15m = pinescript.inputInt(1, "Width", ({ minval: 1, maxval: 5, inline: "15ext", group: state.g_15MIN }));
+  let show_ext_labels_15m = pinescript.inputBool(true, "Show Extension Labels", ({ group: state.g_15MIN }));
+  let show_ltf_15m = pinescript.inputBool(true, "Show LTF Candles", ({ group: state.g_15MIN }));
+  let ltf_15m_count = pinescript.inputInt(15, "  └─ Number of Candles", ({ minval: 1, maxval: 20, group: state.g_15MIN }));
+  let ltf_offset_15m = pinescript.inputInt(35, "  └─ Offset (bars from right)", ({ minval: 1, maxval: 100, group: state.g_15MIN }));
+  let ltf_spacing_15m = pinescript.inputInt(3, "  └─ Candle Spacing", ({ minval: 1, maxval: 5, group: state.g_15MIN }));
+  let ltf_width_15m = pinescript.inputInt(2, "  └─ Candle Width", ({ minval: 1, maxval: 5, group: state.g_15MIN }));
+  let ltf_bull_color_15m = pinescript.inputColor(pinescript.color.rgb(0, 255, 149, 60), "  └─ LTF Bullish Color", ({ group: state.g_15MIN }));
+  let ltf_bear_color_15m = pinescript.inputColor(pinescript.color.rgb(195, 0, 255, 60), "  └─ LTF Bearish Color", ({ group: state.g_15MIN }));
+  let show_ltf_range_15m = pinescript.inputBool(true, "  └─ Show LTF High/Low Lines", ({ group: state.g_15MIN }));
+  let ltf_range_style_15m = pinescript.inputString("Dotted", "  └─ LTF Range Style", ({ options: ["Solid", "Dashed", "Dotted"], group: state.g_15MIN }));
+  let ltf_range_width_15m = pinescript.inputInt(1, "  └─ LTF Range Width", ({ minval: 1, maxval: 5, group: state.g_15MIN }));
+  let ltf_range_color_15m = pinescript.inputColor(pinescript.color.rgb(33, 150, 243, 50), "  └─ LTF Range Color", ({ group: state.g_15MIN }));
   if (state.g_LABELS === undefined) state.g_LABELS = "Labels & Display";
-  let showL = input.bool(true, "Show High/Low/Mid Labels", ({ inline: "Labels", group: state.g_LABELS }));
-  let showP = input.bool(false, "Show Prices", ({ inline: "Labels", group: state.g_LABELS }));
-  let pos = input.string("Left", "Position", ({ options: ["Left", "Right"], group: state.g_LABELS }));
+  let showL = pinescript.inputBool(true, "Show High/Low/Mid Labels", ({ inline: "Labels", group: state.g_LABELS }));
+  let showP = pinescript.inputBool(false, "Show Prices", ({ inline: "Labels", group: state.g_LABELS }));
+  let pos = pinescript.inputString("Left", "Position", ({ options: ["Left", "Right"], group: state.g_LABELS }));
   if (state.g_TABLE === undefined) state.g_TABLE = "Statistics Table";
-  let show_stats_table = input.bool(true, "Show Statistics Table", ({ group: state.g_TABLE }));
-  let stats_table_pos = input.string("Top Right", "Table Position", ({ options: ["Bottom Center", "Bottom Left", "Bottom Right", "Middle Center", "Middle Left", "Middle Right", "Top Center", "Top Left", "Top Right"], group: state.g_TABLE }));
-  let stats_table_size = input.string("Small", "Table Size", ({ options: ["Auto", "Tiny", "Small", "Normal", "Large", "Huge"], group: state.g_TABLE }));
+  let show_stats_table = pinescript.inputBool(true, "Show Statistics Table", ({ group: state.g_TABLE }));
+  let stats_table_pos = pinescript.inputString("Top Right", "Table Position", ({ options: ["Bottom Center", "Bottom Left", "Bottom Right", "Middle Center", "Middle Left", "Middle Right", "Top Center", "Top Left", "Top Right"], group: state.g_TABLE }));
+  let stats_table_size = pinescript.inputString("Small", "Table Size", ({ options: ["Auto", "Tiny", "Small", "Normal", "Large", "Huge"], group: state.g_TABLE }));
   function get_style(style) {
     switch (style) {
       case "Solid":
@@ -1478,20 +1958,20 @@ function main() {
   if (state.ib_captured === undefined) state.ib_captured = false;
   if (state.ib_is_bullish === undefined) state.ib_is_bullish = false;
   let is_5m_session = !pinescript.na(pinescript.time(timeframe.period, "0930-0935", tz));
-  let is_5m_start = (is_5m_session && !pinescript.offset(is_5m_session, 1));
-  let is_5m_end = (pinescript.offset(is_5m_session, 1) && !is_5m_session);
+  let is_5m_start = (is_5m_session && !pinescript.hist(0, is_5m_session, 1));
+  let is_5m_end = (pinescript.hist(1, is_5m_session, 1) && !is_5m_session);
   let is_15m_session = !pinescript.na(pinescript.time(timeframe.period, "0930-0945", tz));
-  let is_15m_start = (is_15m_session && !pinescript.offset(is_15m_session, 1));
-  let is_15m_end = (pinescript.offset(is_15m_session, 1) && !is_15m_session);
+  let is_15m_start = (is_15m_session && !pinescript.hist(2, is_15m_session, 1));
+  let is_15m_end = (pinescript.hist(3, is_15m_session, 1) && !is_15m_session);
   let is_ib_session = !pinescript.na(pinescript.time(timeframe.period, "0930-1030", tz));
-  let is_ib_start = (is_ib_session && !pinescript.offset(is_ib_session, 1));
-  let is_ib_end = (pinescript.offset(is_ib_session, 1) && !is_ib_session);
+  let is_ib_start = (is_ib_session && !pinescript.hist(4, is_ib_session, 1));
+  let is_ib_end = (pinescript.hist(5, is_ib_session, 1) && !is_ib_session);
   let is_ny_session = !pinescript.na(pinescript.time(timeframe.period, "0930-1600", tz));
-  let is_ny_session_end = (pinescript.offset(is_ny_session, 1) && !is_ny_session);
-  let [H5, L5, M5, O5, C5] = pinescript.requestSecurity(ticker.standard(syminfo.tickerid), "5", [high, low, hl2, open, close], ({ lookahead: barmerge.lookahead_on }));
-  let [H15, L15, M15, O15, C15] = pinescript.requestSecurity(ticker.standard(syminfo.tickerid), "15", [high, low, hl2, open, close], ({ lookahead: barmerge.lookahead_on }));
-  let [H60, L60, O60, C60] = pinescript.requestSecurity(ticker.standard(syminfo.tickerid), "60", [high, low, open, close], ({ lookahead: barmerge.lookahead_on }));
-  let [high_1m, low_1m, open_1m, close_1m] = request.security_lower_tf(ticker.standard(syminfo.tickerid), "1", [high, low, open, close]);
+  let is_ny_session_end = (pinescript.hist(6, is_ny_session, 1) && !is_ny_session);
+  let [H5, L5, M5, O5, C5] = pinescript.unpack(pinescript.requestSecurity(ticker.standard(syminfo.tickerid), "5", [high, low, hl2, open, close], ({ lookahead: barmerge.lookahead_on })), 5);
+  let [H15, L15, M15, O15, C15] = pinescript.unpack(pinescript.requestSecurity(ticker.standard(syminfo.tickerid), "15", [high, low, hl2, open, close], ({ lookahead: barmerge.lookahead_on })), 5);
+  let [H60, L60, O60, C60] = pinescript.unpack(pinescript.requestSecurity(ticker.standard(syminfo.tickerid), "60", [high, low, open, close], ({ lookahead: barmerge.lookahead_on })), 4);
+  let [high_1m, low_1m, open_1m, close_1m] = pinescript.unpack(request.security_lower_tf(ticker.standard(syminfo.tickerid), "1", [high, low, open, close]), 4);
   let _style = ((pos === "Left") ? label.style_label_right : label.style_label_left);
   if (((is_ib_start && !pinescript.na(H60)) && !pinescript.na(L60))) {
     state.ib_high = H60;
@@ -1507,7 +1987,7 @@ function main() {
   function draw_ltf_candles(ltf, o_array, h_array, l_array, c_array, bull_color, bear_color, offset_from_right, max_candles, spacing, width) {
     if ((pinescript.arraySize(o_array) > 0)) {
       while ((pinescript.arraySize(ltf.bodies) > 0)) {
-        box.delete(ltf.bodies.shift());
+        pinescript.boxDelete(ltf.bodies.shift());
       }
       while ((pinescript.arraySize(ltf.wicks_high) > 0)) {
         pinescript.lineDelete(ltf.wicks_high.shift());
@@ -1532,7 +2012,7 @@ function main() {
         let x_mid = pinescript.round((x_start + (width / 2)));
         let body_top = pinescript.max(o, c);
         let body_bottom = pinescript.min(o, c);
-        ltf.bodies.push(box.new(x_start, body_top, x_end, body_bottom, ({ border_color: candle_color, bgcolor: candle_color, border_width: 1 })));
+        ltf.bodies.push(pinescript.boxNew(x_start, body_top, x_end, body_bottom, ({ border_color: candle_color, bgcolor: candle_color, border_width: 1 })));
         ltf.wicks_high.push(pinescript.lineNew(x_mid, body_top, x_mid, h, ({ color: candle_color, width: 1 })));
         ltf.wicks_low.push(pinescript.lineNew(x_mid, body_bottom, x_mid, l, ({ color: candle_color, width: 1 })));
         ltf.highs.push(h);
@@ -1621,7 +2101,7 @@ function main() {
       }
     }
     if ((state.or5_captured && !state.or5_mid_retested)) {
-      if (((((high >= state.or5_mid) && (low <= state.or5_mid)) || ((pinescript.offset(close, 1) < state.or5_mid) && (close >= state.or5_mid))) || ((pinescript.offset(close, 1) > state.or5_mid) && (close <= state.or5_mid)))) {
+      if (((((high >= state.or5_mid) && (low <= state.or5_mid)) || ((pinescript.hist(7, close, 1) < state.or5_mid) && (close >= state.or5_mid))) || ((pinescript.hist(8, close, 1) > state.or5_mid) && (close <= state.or5_mid)))) {
         state.or5_mid_retested = true;
       }
     }
@@ -1657,7 +2137,7 @@ function main() {
       }
     }
     if (((((state.or5_captured && show_ltf_5m) && state.or5_ltf_frozen) && (pinescript.arraySize(state.or5_ltf_opens_frozen) > 0)) && is_ny_session)) {
-      [ltf_start_x, ltf_end_x] = draw_ltf_candles(state.ltf5, state.or5_ltf_opens_frozen, state.or5_ltf_highs_frozen, state.or5_ltf_lows_frozen, state.or5_ltf_closes_frozen, ltf_bull_color_5m, ltf_bear_color_5m, ltf_offset_5m, ltf_5m_count, ltf_spacing_5m, ltf_width_5m);
+      [ltf_start_x, ltf_end_x] = pinescript.unpack(draw_ltf_candles(state.ltf5, state.or5_ltf_opens_frozen, state.or5_ltf_highs_frozen, state.or5_ltf_lows_frozen, state.or5_ltf_closes_frozen, ltf_bull_color_5m, ltf_bear_color_5m, ltf_offset_5m, ltf_5m_count, ltf_spacing_5m, ltf_width_5m), 2);
       if ((show_ltf_range_5m && (pinescript.arraySize(state.ltf5.highs) > 0))) {
         pinescript.lineDelete(state.or5_ltf_high_line);
         pinescript.lineDelete(state.or5_ltf_low_line);
@@ -1801,7 +2281,7 @@ function main() {
       }
     }
     if ((state.or15_captured && !state.or15_mid_retested)) {
-      if (((((high >= state.or15_mid) && (low <= state.or15_mid)) || ((pinescript.offset(close, 1) < state.or15_mid) && (close >= state.or15_mid))) || ((pinescript.offset(close, 1) > state.or15_mid) && (close <= state.or15_mid)))) {
+      if (((((high >= state.or15_mid) && (low <= state.or15_mid)) || ((pinescript.hist(9, close, 1) < state.or15_mid) && (close >= state.or15_mid))) || ((pinescript.hist(10, close, 1) > state.or15_mid) && (close <= state.or15_mid)))) {
         state.or15_mid_retested = true;
       }
     }
@@ -1837,7 +2317,7 @@ function main() {
       }
     }
     if (((((state.or15_captured && show_ltf_15m) && state.or15_ltf_frozen) && (pinescript.arraySize(state.or15_ltf_opens_frozen) > 0)) && is_ny_session)) {
-      [ltf_start_x, ltf_end_x] = draw_ltf_candles(state.ltf15, state.or15_ltf_opens_frozen, state.or15_ltf_highs_frozen, state.or15_ltf_lows_frozen, state.or15_ltf_closes_frozen, ltf_bull_color_15m, ltf_bear_color_15m, ltf_offset_15m, ltf_15m_count, ltf_spacing_15m, ltf_width_15m);
+      [ltf_start_x, ltf_end_x] = pinescript.unpack(draw_ltf_candles(state.ltf15, state.or15_ltf_opens_frozen, state.or15_ltf_highs_frozen, state.or15_ltf_lows_frozen, state.or15_ltf_closes_frozen, ltf_bull_color_15m, ltf_bear_color_15m, ltf_offset_15m, ltf_15m_count, ltf_spacing_15m, ltf_width_15m), 2);
       if ((show_ltf_range_15m && (pinescript.arraySize(state.ltf15.highs) > 0))) {
         pinescript.lineDelete(state.or15_ltf_high_line);
         pinescript.lineDelete(state.or15_ltf_low_line);
@@ -1905,7 +2385,7 @@ function main() {
   }
   if ((show_stats_table && (state.or5_captured || state.or15_captured))) {
     if (state.stats_table === undefined) state.stats_table = null;
-    table.delete(pinescript.offset(state.stats_table, 1));
+    pinescript.tableDelete(pinescript.hist(11, state.stats_table, 1));
     let table_pos = get_table_position(stats_table_pos);
     let table_size = get_table_text_size(stats_table_size);
     let header_bg = pinescript.color.rgb(64, 64, 64);
@@ -1920,13 +2400,13 @@ function main() {
     let session_ended = (is_ny_session_end || !is_ny_session);
     let row = 0;
     pinescript.table.cell(state.stats_table, 0, row, "━━━ ORB STATISTICS ━━━", ({ bgcolor: header_bg, text_color: header_text, text_size: table_size, text_font_family: font.family_monospace }));
-    table.merge_cells(state.stats_table, 0, row, 2, row);
+    pinescript.tableMergeCells(state.stats_table, 0, row, 2, row);
     row = (row + 1);
     if ((show_5min && state.or5_captured)) {
       let is_bull_5m = (state.or5_close >= state.or5_open);
       let extreme_5m = state.or5_extreme_first;
       pinescript.table.cell(state.stats_table, 0, row, "━━━ 5-MIN ORB ━━━", ({ bgcolor: header_bg, text_color: header_text, text_size: table_size, text_font_family: font.family_monospace }));
-      table.merge_cells(state.stats_table, 0, row, 2, row);
+      pinescript.tableMergeCells(state.stats_table, 0, row, 2, row);
       row = (row + 1);
       pinescript.table.cell(state.stats_table, 0, row, "Direction", ({ bgcolor: cell_bg, text_color: cell_text, text_size: table_size, text_font_family: font.family_monospace }));
       let dir_text = (is_bull_5m ? "Bullish" : "Bearish");
@@ -2076,14 +2556,14 @@ function main() {
         row = (row + 1);
       }
       pinescript.table.cell(state.stats_table, 0, row, "", ({ bgcolor: cell_bg, text_color: cell_text, text_size: table_size }));
-      table.merge_cells(state.stats_table, 0, row, 2, row);
+      pinescript.tableMergeCells(state.stats_table, 0, row, 2, row);
       row = (row + 1);
     }
     if ((show_15min && state.or15_captured)) {
       let is_bull_15m = (state.or15_close >= state.or15_open);
       let extreme_15m = state.or15_extreme_first;
       pinescript.table.cell(state.stats_table, 0, row, "━━━ 15-MIN ORB ━━━", ({ bgcolor: header_bg, text_color: header_text, text_size: table_size, text_font_family: font.family_monospace }));
-      table.merge_cells(state.stats_table, 0, row, 2, row);
+      pinescript.tableMergeCells(state.stats_table, 0, row, 2, row);
       row = (row + 1);
       pinescript.table.cell(state.stats_table, 0, row, "Direction", ({ bgcolor: cell_bg, text_color: cell_text, text_size: table_size, text_font_family: font.family_monospace }));
       dir_text = (is_bull_15m ? "Bullish" : "Bearish");
@@ -2237,7 +2717,67 @@ function main() {
 }
 
 
-// Export for use
 
-export { main
+// The bar-by-bar engine: runs main() once per bar over the dataset.
+function run(data, options = {}) {
+  data = data || {};
+  const inClose = (data.close || []).map(Number);
+  const n = inClose.length;
+  const inOpen = (data.open || inClose).map(Number);
+  const inHigh = (data.high || inClose).map(Number);
+  const inLow = (data.low || inClose).map(Number);
+  const inVol = (data.volume || new Array(n).fill(0)).map(Number);
+  const inTime = (data.time || inClose.map((_, i) => i)).map(Number);
+
+  // Reset all persistent and per-run state so repeated runs are independent.
+  globalThis.__pineState = {};
+  globalThis.__pineRuntime = { plots: {}, plotshapes: {}, alerts: [], bars: n, inputs: options.inputs || {} };
+  pinescript.__rt = {};
+  pinescript.__bar = 0;
+
+  // Growing OHLCV windows: each is a SeriesArray that gains one element per bar,
+  // so window built-ins like sma and highest see history up to the current bar.
+  const O = pinescript.asSeries([]), H = pinescript.asSeries([]), L = pinescript.asSeries([]);
+  const C = pinescript.asSeries([]), V = pinescript.asSeries([]), T = pinescript.asSeries([]);
+  const HL2 = pinescript.asSeries([]), HLC3 = pinescript.asSeries([]), OHLC4 = pinescript.asSeries([]);
+  globalThis.open = O; globalThis.high = H; globalThis.low = L; globalThis.close = C;
+  globalThis.volume = V; globalThis.time = T;
+  globalThis.hl2 = HL2; globalThis.hlc3 = HLC3; globalThis.ohlc4 = OHLC4;
+  globalThis.syminfo = globalThis.syminfo || { tickerid: 'SYNTHETIC', ticker: 'SYNTHETIC', mintick: 0.01 };
+
+  const rt = globalThis.__pineRuntime;
+  for (let i = 0; i < n; i++) {
+    O.push(inOpen[i]); H.push(inHigh[i]); L.push(inLow[i]); C.push(inClose[i]); V.push(inVol[i]); T.push(inTime[i]);
+    HL2.push((inHigh[i] + inLow[i]) / 2);
+    HLC3.push((inHigh[i] + inLow[i] + inClose[i]) / 3);
+    OHLC4.push((inOpen[i] + inHigh[i] + inLow[i] + inClose[i]) / 4);
+
+    pinescript.__bar = i;
+    rt.__barIndex = i;
+    rt.__plotIdx = 0;
+    rt.__shapeIdx = 0;
+    globalThis.bar_index = i;
+    globalThis.last_bar_index = n - 1;
+    globalThis.barstate = {
+      isfirst: i === 0, islast: i === n - 1, isrealtime: false, ishistory: true,
+      isconfirmed: true, isnew: true, islastconfirmedhistory: i === n - 1,
+    };
+
+    main();
+  }
+
+  // Backfill skipped bars so every output series has exactly n entries.
+  for (const k of Object.keys(rt.plots)) {
+    const d = rt.plots[k].data;
+    for (let i = 0; i < n; i++) if (d[i] === undefined) d[i] = null;
+  }
+  for (const k of Object.keys(rt.plotshapes)) {
+    const d = rt.plotshapes[k].data;
+    for (let i = 0; i < n; i++) if (d[i] === undefined) d[i] = false;
+  }
+  return rt;
+}
+
+
+export { main, run
 };
