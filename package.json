@@ -6,8 +6,10 @@
   "type": "module",
   "scripts": {
     "transpile": "node src/transpiler.js",
-    "test": "node test/test.js",
+    "test": "node test/test.js && node test/indicator_tests.js && node test/engine_tests.js",
+    "test:unit": "node test/test.js",
     "test:indicators": "node test/indicator_tests.js",
+    "test:engine": "node test/engine_tests.js",
     "convert:all": "node tools/batch_convert.js",
     "convert:status": "node tools/conversion_status.js"
   },

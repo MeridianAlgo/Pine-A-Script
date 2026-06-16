@@ -52,14 +52,14 @@ for (const file of pineFiles) {
       confidenceScore = parseFloat(confidenceMatch[1]);
     }
 
-    if (output.includes('Review: PASS')) {
+    if (output.includes('Review Result: PASS')) {
       const scoreLabel = confidenceScore !== null ? ` (confidence: ${confidenceScore}%)` : '';
       console.log(`PASS${scoreLabel}`);
       status = 'converted';
       results.passed.push(file);
       // Clean up any leftover error file from a previous run
       if (fs.existsSync(errorPath)) fs.unlinkSync(errorPath);
-    } else if (output.includes('Review: FAIL')) {
+    } else if (output.includes('Review Result: FAIL')) {
       const scoreLabel = confidenceScore !== null ? ` (confidence: ${confidenceScore}%)` : '';
       console.log(`FAIL${scoreLabel}`);
       status = 'failed';

@@ -1,180 +1,240 @@
 {
-  "timestamp": "2026-02-15T17:54:13.554Z",
+  "timestamp": "2026-06-16T01:48:49.291Z",
   "total": 29,
   "passed": 28,
   "failed": 1,
+  "totalTimeMs": 2995,
+  "averageConfidenceScore": 67,
   "files": [
     {
       "name": "3D_MACD_Bar_Plot_LuxAlgo.pine",
       "status": "converted",
+      "confidenceScore": 65,
+      "elapsedMs": 97,
       "jsExists": true,
       "errorExists": false
     },
     {
       "name": "Arbitrage_Matrix_LuxAlgo.pine",
       "status": "converted",
+      "confidenceScore": 65,
+      "elapsedMs": 103,
       "jsExists": true,
       "errorExists": false
     },
     {
       "name": "Asset_Drift_Model.pine",
       "status": "converted",
+      "confidenceScore": 70,
+      "elapsedMs": 105,
       "jsExists": true,
       "errorExists": false
     },
     {
       "name": "Automatic_Trendline_Metrify.pine",
       "status": "converted",
+      "confidenceScore": 70,
+      "elapsedMs": 103,
       "jsExists": true,
       "errorExists": false
     },
     {
       "name": "CE_1M_3M_Buy_Sell_Hold.pine",
       "status": "converted",
+      "confidenceScore": 70,
+      "elapsedMs": 93,
       "jsExists": true,
       "errorExists": false
     },
     {
       "name": "Crossing_Moving_Averages_with_ADX_Filter.pine",
       "status": "converted",
+      "confidenceScore": 70,
+      "elapsedMs": 100,
       "jsExists": true,
       "errorExists": false
     },
     {
       "name": "Folded_RSI.pine",
       "status": "converted",
+      "confidenceScore": 70,
+      "elapsedMs": 102,
       "jsExists": true,
       "errorExists": false
     },
     {
       "name": "Golden_Pocket_Zones.pine",
       "status": "converted",
+      "confidenceScore": 70,
+      "elapsedMs": 102,
       "jsExists": true,
       "errorExists": false
     },
     {
       "name": "Hyperfork_Matrix.pine",
       "status": "converted",
+      "confidenceScore": 70,
+      "elapsedMs": 117,
       "jsExists": true,
       "errorExists": false
     },
     {
       "name": "Impulse_Trend_Arrows.pine",
       "status": "converted",
+      "confidenceScore": 70,
+      "elapsedMs": 97,
       "jsExists": true,
       "errorExists": false
     },
     {
       "name": "Institutional_Order_Flow_Strength_Classifier_LuxAlgo.pine",
       "status": "converted",
+      "confidenceScore": 70,
+      "elapsedMs": 98,
       "jsExists": true,
       "errorExists": false
     },
     {
       "name": "Liquidity_Sweep_Detector.pine",
       "status": "converted",
+      "confidenceScore": 70,
+      "elapsedMs": 108,
       "jsExists": true,
       "errorExists": false
     },
     {
       "name": "Manias_Panics_and_Crashes.pine",
       "status": "converted",
+      "confidenceScore": 70,
+      "elapsedMs": 103,
       "jsExists": true,
       "errorExists": false
     },
     {
       "name": "Net_Buy_Volume_theUltimator5.pine",
       "status": "converted",
+      "confidenceScore": 70,
+      "elapsedMs": 89,
       "jsExists": true,
       "errorExists": false
     },
     {
       "name": "NY_5m_15m_Orb_-_Statistics_LTF_Candle_structure.pine",
       "status": "converted",
+      "confidenceScore": 70,
+      "elapsedMs": 126,
       "jsExists": true,
       "errorExists": false
     },
     {
       "name": "Peak_Trading_Activity_Graphs_LuxAlgo.pine",
       "status": "converted",
+      "confidenceScore": 70,
+      "elapsedMs": 104,
       "jsExists": true,
       "errorExists": false
     },
     {
       "name": "Proximal_Range_Filter_LuxAlgo.pine",
       "status": "converted",
+      "confidenceScore": 70,
+      "elapsedMs": 90,
       "jsExists": true,
       "errorExists": false
     },
     {
       "name": "Pro_Pattern_Long-Short_High_Winrate.pine",
       "status": "converted",
+      "confidenceScore": 70,
+      "elapsedMs": 107,
       "jsExists": true,
       "errorExists": false
     },
     {
       "name": "Quantum_Structure_jjart.pine",
       "status": "failed",
+      "confidenceScore": null,
+      "elapsedMs": 92,
       "jsExists": false,
       "errorExists": true
     },
     {
       "name": "RBT_strategy.pine",
       "status": "converted",
+      "confidenceScore": 70,
+      "elapsedMs": 92,
       "jsExists": true,
       "errorExists": false
     },
     {
       "name": "Scalping_Strategy_3_minutes.pine",
       "status": "converted",
+      "confidenceScore": 45,
+      "elapsedMs": 123,
       "jsExists": true,
       "errorExists": false
     },
     {
       "name": "Singular_Spectrum_Decomposition_LuxAlgo.pine",
       "status": "converted",
+      "confidenceScore": 70,
+      "elapsedMs": 102,
       "jsExists": true,
       "errorExists": false
     },
     {
       "name": "Smart_Trader_Episode_03_by_Ata_Sabanci_Candles_and_Tradelines.pine",
       "status": "converted",
+      "confidenceScore": 50,
+      "elapsedMs": 153,
       "jsExists": true,
       "errorExists": false
     },
     {
       "name": "SMC_Trade_with_Dhruv.pine",
       "status": "converted",
+      "confidenceScore": 40,
+      "elapsedMs": 118,
       "jsExists": true,
       "errorExists": false
     },
     {
       "name": "TehThomas_-_Aligned_Timeframe_Fair_Value_Gaps.pine",
       "status": "converted",
+      "confidenceScore": 70,
+      "elapsedMs": 96,
       "jsExists": true,
       "errorExists": false
     },
     {
       "name": "Volatility_Contraction_Score.pine",
       "status": "converted",
+      "confidenceScore": 70,
+      "elapsedMs": 96,
       "jsExists": true,
       "errorExists": false
     },
     {
       "name": "Volume_Surprise_LuxAlgo.pine",
       "status": "converted",
+      "confidenceScore": 70,
+      "elapsedMs": 92,
       "jsExists": true,
       "errorExists": false
     },
     {
       "name": "Volume_Weighted_Trend_QuantAlgo.pine",
       "status": "converted",
+      "confidenceScore": 70,
+      "elapsedMs": 93,
       "jsExists": true,
       "errorExists": false
     },
     {
       "name": "VSA_Pro_Trend_and_Rejection.pine",
       "status": "converted",
+      "confidenceScore": 70,
+      "elapsedMs": 94,
       "jsExists": true,
       "errorExists": false
     }

@@ -1,12 +1,63 @@
-// PineScript to JavaScript Transpiled Code
+// Auto-generated JavaScript from PineScript source
 
-// Generated automatically
+// Do not edit by hand -- re-run the converter instead
 
 
-// Built-in PineScript functions
+// All the built-in PineScript functions that scripts depend on at runtime
 
 const pinescript = {
 
+  __scalar: function(v) {
+    if (v === null || v === undefined) return v;
+    if (typeof v === 'object' && typeof v.valueOf === 'function') {
+      const s = v.valueOf();
+      if (typeof s === 'number' || typeof s === 'boolean' || s === null) return s;
+    }
+    return v;
+  },
+  series: function(id, value) {
+    const rt = this.__rt || (this.__rt = {});
+    const store = rt.series || (rt.series = {});
+    let buf = store[id];
+    if (!buf) buf = store[id] = [];
+    buf[this.__bar | 0] = this.__scalar(value);
+    return buf;
+  },
+  hist: function(id, value, n) {
+    const buf = this.series(id, value);
+    const idx = (this.__bar | 0) - (n | 0);
+    return idx >= 0 && idx < buf.length ? buf[idx] : null;
+  },
+  time: function(timeframe, session) {
+    const t = globalThis.time;
+    if (t && typeof t.valueOf === 'function') return t.valueOf();
+    return Array.isArray(t) ? t[t.length - 1] : t;
+  },
+  sign: function(x) {
+    if (x === null || x === undefined || (typeof x === 'number' && isNaN(x))) return null;
+    return Math.sign(Number(x));
+  },
+  unpack: function(value, count) {
+    if (Array.isArray(value)) return value;
+    if (value != null && typeof value[Symbol.iterator] === 'function') return Array.from(value);
+    return new Array(count || 0).fill(null);
+  },
+  alertcondition: function(condition, ...rest) {
+    if (globalThis.__pineRuntime) {
+      globalThis.__pineRuntime.alerts.push({ condition, args: rest });
+    }
+    return null;
+  },
+  barcolor: function(color) { return null; },
+  bgcolor: function(color, title, editable, showLast) {
+    return null;
+  },
+  fill: function(series1, series2, color, title, editable) {
+    return null;
+  },
+  hline: function(_price, _title, _opts) {
+    return null;
+  },
   sma: function(series, length) {
     if (series === null || series === undefined) return null;
     if (!Array.isArray(series)) series = [series];
@@ -84,6 +135,13 @@ const pinescript = {
     }
     return weightSum > 0 ? sum / weightSum : null;
   },
+  swma: function(series) {
+    if (series === null || series === undefined) return null;
+    if (!Array.isArray(series)) series = [series];
+    if (series.length < 4) return null;
+    const s = series.slice(-4);
+    return (s[0] * 1 + s[1] * 2 + s[2] * 2 + s[3] * 1) / 6;
+  },
   atr: function(high, low, close, length = 14) {
     if (!Array.isArray(high) || !Array.isArray(low) || !Array.isArray(close)) return null;
     if (high.length < length + 1 || low.length < length + 1 || close.length < length + 1) return null;
@@ -113,6 +171,53 @@ const pinescript = {
     const sma = builtins.get('sma')(typicalPrice, length);
     const atr = builtins.get('atr')(high, low, close, length);
     return { middle: sma, upper: sma + mult * atr, lower: sma - mult * atr };
+  },
+  supertrend: function(factor, atrPeriod, high, low, close) {
+    if (!Array.isArray(high) || !Array.isArray(low) || !Array.isArray(close)) return [null, null];
+    if (high.length < atrPeriod + 1) return [null, null];
+    const atrVal = builtins.get('atr')(high, low, close, atrPeriod);
+    if (atrVal === null) return [null, null];
+    const lastIdx = close.length - 1;
+    const hl2 = (high[lastIdx] + low[lastIdx]) / 2;
+    const upperBand = hl2 + factor * atrVal;
+    const lowerBand = hl2 - factor * atrVal;
+    // Determine direction: 1 means downtrend (price below band), -1 means uptrend
+    const direction = close[lastIdx] > upperBand ? -1 : close[lastIdx] < lowerBand ? 1 : -1;
+    const supertrendValue = direction === -1 ? lowerBand : upperBand;
+    return [supertrendValue, direction];
+  },
+  ta_supertrend: function(factor, atrPeriod) {
+    const H = globalThis.high;
+    const L = globalThis.low;
+    const C = globalThis.close;
+    return builtins.get('supertrend')(factor, atrPeriod, H, L, C);
+  },
+  dmi: function(diLength, adxSmoothing, high, low, close) {
+    if (!Array.isArray(high) || !Array.isArray(low) || !Array.isArray(close)) return { plusDI: null, minusDI: null, adx: null };
+    if (high.length < diLength + 1) return { plusDI: null, minusDI: null, adx: null };
+    let plusDMSum = 0, minusDMSum = 0, trSum = 0;
+    for (let i = 1; i <= diLength; i++) {
+      const idx = high.length - 1 - diLength + i;
+      const upMove = high[idx] - high[idx - 1];
+      const downMove = low[idx - 1] - low[idx];
+      plusDMSum += (upMove > downMove && upMove > 0) ? upMove : 0;
+      minusDMSum += (downMove > upMove && downMove > 0) ? downMove : 0;
+      const tr = Math.max(
+        high[idx] - low[idx],
+        Math.abs(high[idx] - close[idx - 1]),
+        Math.abs(low[idx] - close[idx - 1])
+      );
+      trSum += tr;
+    }
+    const plusDI = trSum > 0 ? (plusDMSum / trSum) * 100 : 0;
+    const minusDI = trSum > 0 ? (minusDMSum / trSum) * 100 : 0;
+    const diSum = plusDI + minusDI;
+    const dx = diSum > 0 ? Math.abs(plusDI - minusDI) / diSum * 100 : 0;
+    return { plusDI, minusDI, adx: dx };
+  },
+  adx: function(diLength, adxSmoothing, high, low, close) {
+    const result = builtins.get('dmi')(diLength, adxSmoothing, high, low, close);
+    return result ? result.adx : null;
   },
   rsi: function(close, length = 14) {
     if (close === null || close === undefined) return null;
@@ -171,9 +276,7 @@ const pinescript = {
     return { macd: macdLine, signal: signalLine, histogram: histogram };
   },
   cci: function(a, b, c, d) {
-    // Pine signatures:
-    // - ta.cci(source, length)
-    // - ta.cci(high, low, close, length)
+    // Supports both ta.cci(source, length) and ta.cci(high, low, close, length) signatures
     let source;
     let length;
     if (Array.isArray(a) && typeof b === 'number' && c === undefined) {
@@ -304,6 +407,15 @@ const pinescript = {
   stdev: function(source, length) {
     return Math.sqrt(builtins.get('variance')(source, length));
   },
+  median: function(source, length) {
+    if (!source || source.length < length) return null;
+    const sorted = [...source.slice(-length)].sort((a, b) => a - b);
+    const mid = Math.floor(sorted.length / 2);
+    return sorted.length % 2 !== 0 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2;
+  },
+  ta_median: function(source, length) {
+    return builtins.get('median')(source, length);
+  },
   hl2: function(high, low) {
     return high && low ? (high[high.length - 1] + low[low.length - 1]) / 2 : null;
   },
@@ -420,6 +532,24 @@ const pinescript = {
     return (series1[i - 1] < series2[i - 1] && series1[i] >= series2[i]) ||
            (series1[i - 1] > series2[i - 1] && series1[i] <= series2[i]);
   },
+  crossover: function(series1, series2) {
+    if (series1 === null || series1 === undefined) return false;
+    if (series2 === null || series2 === undefined) return false;
+    if (!Array.isArray(series1)) series1 = [series1];
+    if (!Array.isArray(series2)) series2 = [series2];
+    if (series1.length < 2 || series2.length < 2) return false;
+    const i = series1.length - 1;
+    return series1[i - 1] < series2[i - 1] && series1[i] >= series2[i];
+  },
+  crossunder: function(series1, series2) {
+    if (series1 === null || series1 === undefined) return false;
+    if (series2 === null || series2 === undefined) return false;
+    if (!Array.isArray(series1)) series1 = [series1];
+    if (!Array.isArray(series2)) series2 = [series2];
+    if (series1.length < 2 || series2.length < 2) return false;
+    const i = series1.length - 1;
+    return series1[i - 1] > series2[i - 1] && series1[i] <= series2[i];
+  },
   offset: function(series, offset) {
     if (!Array.isArray(series)) return null;
     const idx = series.length - 1 - offset;
@@ -500,12 +630,14 @@ const pinescript = {
     return builtins.get('nz')(value, replacement);
   },
   plot: function(series, title = '', color = null, linewidth = 1) {
-    globalThis.__pineRuntime.plots.push({
-      series,
-      title,
-      color,
-      linewidth
-    });
+    const rt = globalThis.__pineRuntime;
+    if (!rt) return series;
+    const bar = rt.__barIndex | 0;
+    const ord = (rt.__plotIdx = (rt.__plotIdx | 0) + 1) - 1;
+    const key = (title && String(title)) || ('plot_' + ord);
+    let p = rt.plots[key];
+    if (!p) p = rt.plots[key] = { title: key, color, linewidth, data: [] };
+    p.data[bar] = this.__scalar(series);
     return series;
   },
   lineNew: function(x1, y1, x2, y2, opts = {}) {
@@ -514,20 +646,72 @@ const pinescript = {
   lineDelete: function(l) {
     return null;
   },
-  labelNew: function(...args) {
-    if (globalThis.__pineRuntime) {
-      globalThis.__pineRuntime.labels = globalThis.__pineRuntime.labels || [];
-      globalThis.__pineRuntime.labels.push({ args });
-    }
-    return { args };
+  lineSetXY: function(line, point, x, y) {
+    if (!line) return null;
+    if (point === 0 || point === 'x1') { line.x1 = x; line.y1 = y; }
+    else { line.x2 = x; line.y2 = y; }
+    return line;
+  },
+  lineGetX: function(line, point) {
+    if (!line) return null;
+    return point === 0 || point === 'x1' ? line.x1 : line.x2;
+  },
+  lineGetY: function(line, point) {
+    if (!line) return null;
+    return point === 0 || point === 'y1' ? line.y1 : line.y2;
+  },
+  labelNew: function(x, y, text = '', opts = {}) {
+    return { x, y, text, opts, _type: 'label' };
   },
   labelDelete: function(l) {
     return null;
   },
+  labelSetText: function(label, text) {
+    if (!label) return null;
+    label.text = text;
+    return label;
+  },
+  labelGetText: function(label) {
+    if (!label) return '';
+    return label.text || '';
+  },
+  boxNew: function(left, top, right, bottom, opts = {}) {
+    return { left, top, right, bottom, opts, _type: 'box' };
+  },
+  boxDelete: function(box) {
+    return null;
+  },
+  boxSetLeftTop: function(box, left, top) {
+    if (!box) return null;
+    box.left = left;
+    box.top = top;
+    return box;
+  },
+  boxSetRightBottom: function(box, right, bottom) {
+    if (!box) return null;
+    box.right = right;
+    box.bottom = bottom;
+    return box;
+  },
+  polylineNew: function(points, opts = {}) {
+    return { points: points || [], opts, _type: 'polyline' };
+  },
+  polylineDelete: function(poly) {
+    return null;
+  },
   plotshape: function(condition, ...rest) {
-    if (globalThis.__pineRuntime) {
-      globalThis.__pineRuntime.plotshapes.push({ condition, args: rest });
+    const rt = globalThis.__pineRuntime;
+    if (!rt) return condition;
+    const bar = rt.__barIndex | 0;
+    const ord = (rt.__shapeIdx = (rt.__shapeIdx | 0) + 1) - 1;
+    let key = 'shape_' + ord;
+    for (const r of rest) {
+      if (typeof r === 'string') { key = r; break; }
+      if (r && typeof r === 'object' && r.title) { key = String(r.title); break; }
     }
+    let s = rt.plotshapes[key];
+    if (!s) s = rt.plotshapes[key] = { title: key, data: [] };
+    s.data[bar] = !!this.__scalar(condition);
     return condition;
   },
   indicator: function(title, shorttitle, overlay, opts) {
@@ -542,26 +726,11 @@ const pinescript = {
     }
     return null;
   },
-  alertcondition: function(condition, ...rest) {
-    if (globalThis.__pineRuntime) {
-      globalThis.__pineRuntime.alerts.push({ condition, args: rest });
-    }
-    return null;
-  },
   plotbar: function(open, high, low, close, title, color, editable, showLast) {
     return { open, high, low, close };
   },
   plotcandle: function(open, high, low, close, title, color, wickColor, borderColor, editable, showLast) {
     return { open, high, low, close };
-  },
-  hline: function(_price, _title, _opts) {
-    return null;
-  },
-  bgcolor: function(color, title, editable, showLast) {
-    return null;
-  },
-  fill: function(series1, series2, color, title, editable) {
-    return null;
   },
   alert: function(condition, message, frequency) {
     console.log('Alert:', condition ? message : 'Condition not met');
@@ -828,6 +997,9 @@ const pinescript = {
   arrayIndexOf: function(arr, value) {
     return arr ? arr.indexOf(value) : -1;
   },
+  arrayLastIndexOf: function(arr, value) {
+    return arr ? arr.lastIndexOf(value) : -1;
+  },
   arraySum: function(arr) {
     return arr ? arr.reduce((a, b) => a + b, 0) : 0;
   },
@@ -839,6 +1011,42 @@ const pinescript = {
   },
   arrayMax: function(arr) {
     return arr && arr.length > 0 ? Math.max(...arr) : null;
+  },
+  arrayStdev: function(arr) {
+    if (!arr || arr.length === 0) return null;
+    const mean = arr.reduce((a, b) => a + b, 0) / arr.length;
+    const variance = arr.reduce((sum, val) => sum + Math.pow(val - mean, 2), 0) / arr.length;
+    return Math.sqrt(variance);
+  },
+  arrayVariance: function(arr) {
+    if (!arr || arr.length === 0) return null;
+    const mean = arr.reduce((a, b) => a + b, 0) / arr.length;
+    return arr.reduce((sum, val) => sum + Math.pow(val - mean, 2), 0) / arr.length;
+  },
+  arrayCovariance: function(arr1, arr2) {
+    if (!arr1 || !arr2 || arr1.length === 0 || arr1.length !== arr2.length) return null;
+    const mean1 = arr1.reduce((a, b) => a + b, 0) / arr1.length;
+    const mean2 = arr2.reduce((a, b) => a + b, 0) / arr2.length;
+    let cov = 0;
+    for (let i = 0; i < arr1.length; i++) {
+      cov += (arr1[i] - mean1) * (arr2[i] - mean2);
+    }
+    return cov / arr1.length;
+  },
+  mode: function(arr) {
+    if (!arr || arr.length === 0) return null;
+    const counts = new Map();
+    let maxCount = 0;
+    let modeVal = arr[0];
+    for (const val of arr) {
+      const c = (counts.get(val) || 0) + 1;
+      counts.set(val, c);
+      if (c > maxCount) {
+        maxCount = c;
+        modeVal = val;
+      }
+    }
+    return modeVal;
   },
   strLength: function(str) {
     return str ? str.length : 0;
@@ -895,6 +1103,84 @@ const pinescript = {
   strReverse: function(str) {
     return str ? str.split('').reverse().join('') : '';
   },
+  strFormat: function(formatStr, ...args) {
+    if (!formatStr) return '';
+    return formatStr.replace(/\{(\d+)\}/g, (match, idx) => {
+      const i = parseInt(idx, 10);
+      return i < args.length ? String(args[i]) : match;
+    });
+  },
+  input: function(defval, title, tooltip, inline, group) {
+    return defval;
+  },
+  inputInt: function(defval = 0, title, minval, maxval, step, tooltip, inline, group) {
+    return defval;
+  },
+  inputFloat: function(defval = 0.0, title, minval, maxval, step, tooltip, inline, group) {
+    return defval;
+  },
+  inputBool: function(defval = false, title, tooltip, inline, group) {
+    return defval;
+  },
+  inputString: function(defval = '', title, options, tooltip, inline, group) {
+    return defval;
+  },
+  inputSource: function(defval = null, title, tooltip, inline, group) {
+    return defval;
+  },
+  inputColor: function(defval = '#000000', title, tooltip, inline, group) {
+    return defval;
+  },
+  inputTime: function(defval = 0, title, tooltip, inline, group) {
+    return defval;
+  },
+  mathSign: function(value) {
+    return Math.sign(value);
+  },
+  mathAvg: function(...args) {
+    const valid = args.filter(v => v !== null && v !== undefined && !isNaN(v));
+    return valid.length > 0 ? valid.reduce((a, b) => a + b, 0) / valid.length : null;
+  },
+  mathSum: function(series, length) {
+    if (!series || series.length < length) return null;
+    return series.slice(-length).reduce((a, b) => a + b, 0);
+  },
+  mathRandom: function(min = 0, max = 1) {
+    return min + Math.random() * (max - min);
+  },
+  mathTodegrees: function(radians) {
+    return radians * (180 / Math.PI);
+  },
+  mathToradians: function(degrees) {
+    return degrees * (Math.PI / 180);
+  },
+  colorT: function(color, transparency) {
+    if (transparency !== undefined) {
+      return { color, transparency };
+    }
+    if (color && typeof color === 'object' && 'transparency' in color) {
+      return color.transparency;
+    }
+    return 0;
+  },
+  tableCellSetText: function(table, column, row, text) {
+    return null;
+  },
+  tableCellSetBgcolor: function(table, column, row, bgcolor) {
+    return null;
+  },
+  tableMergeCells: function(table, startColumn, startRow, endColumn, endRow) {
+    return null;
+  },
+  tableDelete: function(table) {
+    return null;
+  },
+  tableClear: function(table, startColumn, startRow, endColumn, endRow) {
+    return null;
+  },
+  maxBarsBack: function(series, length) {
+    return null;
+  },
   pi: 3.141592653589793,
   e: 2.718281828459045,
   true: true,
@@ -905,8 +1191,7 @@ const pinescript = {
     const info = { ticker: 'AAPL', tickerid: 'NASDAQ:AAPL', prefix: 'NASDAQ', root: 'AAPL', suffix: '' };
     return info[type] || '';
   },
-  time: 1771178052740,
-  timenow: 1771178052740,
+  timenow: 1781574528384,
   barstate: "LAST",
   dividends: {},
   splits: {},
@@ -923,7 +1208,7 @@ const pinescript = {
     return null;
   },
   tr: function(high, low, close) {
-    // Pine signature: ta.tr(true)
+    // Handles both the boolean shorthand ta.tr(true) and explicit high/low/close arguments
     if (typeof high === 'boolean') {
       const H = globalThis.high;
       const L = globalThis.low;
@@ -934,7 +1219,7 @@ const pinescript = {
       return Math.max(H[i] - L[i], Math.abs(H[i] - prevClose), Math.abs(L[i] - prevClose));
     }
 
-    // Fallback: treat inputs as scalars for current bar
+    // When arrays are passed, compute true range from the last bar using the previous close
     if (Array.isArray(close)) {
       const prevClose = close[close.length - 2] || close[0];
       const currHigh = Array.isArray(high) ? high[high.length - 1] : high;
@@ -944,6 +1229,92 @@ const pinescript = {
     }
 
     return Math.max(high - low, Math.abs(high - close), Math.abs(low - close));
+  },
+  arrayFirst: function(arr) {
+    if (!arr || arr.length === 0) return null;
+    return arr[0];
+  },
+  arrayLast: function(arr) {
+    if (!arr || arr.length === 0) return null;
+    return arr[arr.length - 1];
+  },
+  arrayJoin: function(arr, separator = ',') {
+    if (!arr) return '';
+    return arr.join(separator);
+  },
+  arrayConcat: function(arr1, arr2) {
+    if (!arr1) return arr2 || [];
+    if (!arr2) return arr1;
+    return arr1.concat(arr2);
+  },
+  arrayCopy: function(arr) {
+    if (!arr) return [];
+    return [...arr];
+  },
+  arrayBinarySearch: function(arr, value) {
+    if (!arr || arr.length === 0) return -1;
+    let lo = 0, hi = arr.length - 1;
+    while (lo <= hi) {
+      const mid = (lo + hi) >>> 1;
+      if (arr[mid] === value) return mid;
+      if (arr[mid] < value) lo = mid + 1;
+      else hi = mid - 1;
+    }
+    return -1;
+  },
+  arrayRange: function(arr) {
+    if (!arr || arr.length === 0) return 0;
+    return Math.max(...arr) - Math.min(...arr);
+  },
+  arrayMedian: function(arr) {
+    if (!arr || arr.length === 0) return null;
+    const sorted = [...arr].sort((a, b) => a - b);
+    const mid = Math.floor(sorted.length / 2);
+    return sorted.length % 2 !== 0 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2;
+  },
+  arrayMode: function(arr) {
+    if (!arr || arr.length === 0) return null;
+    const freq = {};
+    let maxCount = 0;
+    let mode = arr[0];
+    for (const v of arr) {
+      freq[v] = (freq[v] || 0) + 1;
+      if (freq[v] > maxCount) { maxCount = freq[v]; mode = v; }
+    }
+    return mode;
+  },
+  arrayPercentile: function(arr, percentile) {
+    if (!arr || arr.length === 0) return null;
+    const sorted = [...arr].sort((a, b) => a - b);
+    const idx = (percentile / 100) * (sorted.length - 1);
+    const lo = Math.floor(idx);
+    const hi = Math.ceil(idx);
+    if (lo === hi) return sorted[lo];
+    return sorted[lo] + (sorted[hi] - sorted[lo]) * (idx - lo);
+  },
+  arrayPercentileLinearInterpolation: function(arr, percentile) {
+    return builtins.get('arrayPercentile')(arr, percentile);
+  },
+  arrayPercentileNearestRank: function(arr, percentile) {
+    if (!arr || arr.length === 0) return null;
+    const sorted = [...arr].sort((a, b) => a - b);
+    const idx = Math.ceil((percentile / 100) * sorted.length) - 1;
+    return sorted[Math.max(0, idx)];
+  },
+  arrayAbs: function(arr) {
+    if (!arr) return [];
+    return arr.map(v => Math.abs(v));
+  },
+  arrayEvery: function(arr, callback) {
+    if (!arr) return false;
+    return arr.every(callback);
+  },
+  arraySome: function(arr, callback) {
+    if (!arr) return false;
+    return arr.some(callback);
+  },
+  requestFinancial: function() {
+    return null;
   },
 };
 
@@ -1101,6 +1472,115 @@ globalThis.barmerge = globalThis.barmerge || {
 };
 
 
+function __pineNS(real) {
+
+  const base = real || {};
+
+  return new Proxy(base, {
+
+    get(target, key) {
+
+      if (key in target) return target[key];
+
+      if (typeof key === "symbol") return target[key];
+
+      // Unknown member: usable as a value (null), a constant, or a no-op function.
+
+      const noop = function() { return null; };
+
+      noop.toString = () => "";
+
+      return noop;
+
+    }
+
+  });
+
+}
+
+globalThis.ta = globalThis.ta || __pineNS({});
+
+globalThis.math = globalThis.math || __pineNS({ pi: Math.PI, e: Math.E, phi: 1.618033988749895, rphi: 0.618033988749895 });
+
+globalThis.chart = globalThis.chart || __pineNS({ point: __pineNS({}), bg_color: null, fg_color: null });
+
+globalThis.line = globalThis.line || __pineNS({ style_solid: "solid", style_dashed: "dashed", style_dotted: "dotted" });
+
+globalThis.box = globalThis.box || __pineNS({});
+
+globalThis.label = globalThis.label || __pineNS({ style_label_down: "label_down", style_label_up: "label_up", style_none: "none" });
+
+globalThis.polyline = globalThis.polyline || __pineNS({});
+
+globalThis.linefill = globalThis.linefill || __pineNS({});
+
+globalThis.matrix = globalThis.matrix || __pineNS({});
+
+globalThis.map = globalThis.map || __pineNS({});
+
+globalThis.session = globalThis.session || __pineNS({ regular: "regular", extended: "extended" });
+
+globalThis.dayofweek = globalThis.dayofweek || __pineNS({ sunday: 1, monday: 2, tuesday: 3, wednesday: 4, thursday: 5, friday: 6, saturday: 7 });
+
+globalThis.timeframe = __pineNS(Object.assign(globalThis.timeframe || {}, { period: (globalThis.timeframe && globalThis.timeframe.period) || "D", isintraday: false, isdaily: true, multiplier: 1 }));
+
+globalThis.request = __pineNS(globalThis.request || {});
+
+globalThis.input = __pineNS(globalThis.input || {});
+
+globalThis.adjustment = globalThis.adjustment || __pineNS({});
+
+globalThis.earnings = globalThis.earnings || __pineNS({});
+
+globalThis.dividends = globalThis.dividends || __pineNS({});
+
+globalThis.splits = globalThis.splits || __pineNS({});
+
+globalThis.currency = globalThis.currency || __pineNS({});
+
+globalThis.display = globalThis.display || __pineNS({ none: "none", all: "all", pane: "pane", data_window: "data_window", status_line: "status_line", price_scale: "price_scale" });
+
+globalThis.format = globalThis.format || __pineNS({ price: "price", volume: "volume", percent: "percent", mintick: "mintick", inherit: "inherit" });
+
+globalThis.scale = globalThis.scale || __pineNS({ left: "left", right: "right", none: "none" });
+
+globalThis.font = globalThis.font || __pineNS({ family_default: "default", family_monospace: "monospace" });
+
+globalThis.xloc = globalThis.xloc || __pineNS({ bar_index: "bar_index", bar_time: "bar_time" });
+
+globalThis.yloc = globalThis.yloc || __pineNS({ price: "price", abovebar: "abovebar", belowbar: "belowbar" });
+
+globalThis.extend = globalThis.extend || __pineNS({ none: "none", left: "left", right: "right", both: "both" });
+
+globalThis.order = globalThis.order || __pineNS({ ascending: "ascending", descending: "descending" });
+
+globalThis.alert = globalThis.alert || Object.assign(function() { return null; }, { freq_once_per_bar: "once_per_bar", freq_once_per_bar_close: "once_per_bar_close", freq_all: "all" });
+
+globalThis.dayofmonth = globalThis.dayofmonth || function(t) { return new Date(t || 0).getUTCDate(); };
+
+globalThis.plot = globalThis.plot || __pineNS({ style_line: "line", style_linebr: "linebr", style_stepline: "stepline", style_histogram: "histogram", style_cross: "cross", style_area: "area", style_areabr: "areabr", style_columns: "columns", style_circles: "circles" });
+
+globalThis.int = globalThis.int || function(x) { return x == null ? null : Math.trunc(Number(x)); };
+
+globalThis.float = globalThis.float || function(x) { return x == null ? null : Number(x); };
+
+globalThis.bool = globalThis.bool || function(x) { return Boolean(x); };
+
+globalThis.string = globalThis.string || function(x) { return x == null ? null : String(x); };
+
+globalThis.dayofweek = globalThis.dayofweek || __pineNS({ sunday: 1, monday: 2, tuesday: 3, wednesday: 4, thursday: 5, friday: 6, saturday: 7 });
+
+globalThis.str = globalThis.str || __pineNS({});
+
+pinescript.math = globalThis.math;
+
+pinescript.ta = globalThis.ta;
+
+pinescript.str = globalThis.str;
+
+pinescript.array = __pineNS(globalThis.array);
+
+
 pinescript.color = {
 
   hex: function(s) {
@@ -1190,10 +1670,10 @@ pinescript.table = {
 };
 
 
-// Input parameters
+// Script input parameters and their defaults
 
 
-// Main script logic
+// The transpiled script logic, called once per bar
 
 function main() {
 
@@ -1212,30 +1692,30 @@ function main() {
   // Options: {"shorttitle":"XXX ","overlay":true,"explicit_plot_zorder":true,"pyramiding":0,"default_qty_type":null,"default_qty_value":10,"calc_on_every_tick":false,"process_orders_on_close":true}
   let G_SCRIPT01 = ("■ " + "SAIYAN OCC");
   let res = input.timeframe("15", "TIMEFRAME", ({ group: "NON REPAINT" }));
-  let useRes = input(true, "Use Alternate Signals");
-  let intRes = input(8, "Multiplier for Alernate Signals");
-  let basisType = input.string("ALMA", "MA Type: ", ({ options: ["TEMA", "HullMA", "ALMA"] }));
-  let basisLen = input.int(2, "MA Period", ({ minval: 1 }));
-  let offsetSigma = input.int(5, "Offset for LSMA / Sigma for ALMA", ({ minval: 0 }));
-  let offsetALMA = input.float(0.85, "Offset for ALMA", ({ minval: 0, step: 0.01 }));
-  let scolor = input(false, "Show coloured Bars to indicate Trend?");
-  let delayOffset = input.int(0, "Delay Open/Close MA", ({ minval: 0, step: 1, tooltip: "Forces Non-Repainting" }));
-  let tradeType = input.string("BOTH", "What trades should be taken : ", ({ options: ["LONG", "SHORT", "BOTH", "NONE"] }));
-  let h = input(false, "Signals for Heikin Ashi Candles");
-  let swing_length = input.int(10, "Swing High/Low Length", ({ group: "Settings", minval: 1, maxval: 50 }));
-  let history_of_demand_to_keep = input.int(20, "History To Keep", ({ minval: 5, maxval: 50 }));
-  let box_width = input.float(2.5, "Supply/Demand Box Width", ({ group: "Settings", minval: 1, maxval: 10, step: 0.5 }));
-  let show_zigzag = input.bool(false, "Show Zig Zag", ({ group: "Visual Settings", inline: "1" }));
-  let show_price_action_labels = input.bool(false, "Show Price Action Labels", ({ group: "Visual Settings", inline: "2" }));
-  let supply_color = input.color(pinescript.color.hex("#00000000"), "Supply", ({ group: "Visual Settings", inline: "3" }));
-  let supply_outline_color = input.color(pinescript.color.hex("#00000000"), "Outline", ({ group: "Visual Settings", inline: "3" }));
-  let demand_color = input.color(pinescript.color.hex("#00000000"), "Demand", ({ group: "Visual Settings", inline: "4" }));
-  let demand_outline_color = input.color(pinescript.color.hex("#00000000"), "Outline", ({ group: "Visual Settings", inline: "4" }));
-  let bos_label_color = input.color(pinescript.color.hex("#00000000"), "BOS Label", ({ group: "Visual Settings", inline: "5" }));
-  let poi_label_color = input.color(pinescript.color.hex("#00000000"), "POI Label", ({ group: "Visual Settings", inline: "7" }));
-  let poi_border_color = input.color(pinescript.color.hex("#00000000"), "POI border", ({ group: "Visual Settings", inline: "7" }));
-  let swing_type_color = input.color(pinescript.color.hex("#00000000"), "Price Action Label", ({ group: "Visual Settings", inline: "8" }));
-  let zigzag_color = input.color(pinescript.color.hex("#00000000"), "Zig Zag", ({ group: "Visual Settings", inline: "9" }));
+  let useRes = pinescript.input(true, "Use Alternate Signals");
+  let intRes = pinescript.input(8, "Multiplier for Alernate Signals");
+  let basisType = pinescript.inputString("ALMA", "MA Type: ", ({ options: ["TEMA", "HullMA", "ALMA"] }));
+  let basisLen = pinescript.inputInt(2, "MA Period", ({ minval: 1 }));
+  let offsetSigma = pinescript.inputInt(5, "Offset for LSMA / Sigma for ALMA", ({ minval: 0 }));
+  let offsetALMA = pinescript.inputFloat(0.85, "Offset for ALMA", ({ minval: 0, step: 0.01 }));
+  let scolor = pinescript.input(false, "Show coloured Bars to indicate Trend?");
+  let delayOffset = pinescript.inputInt(0, "Delay Open/Close MA", ({ minval: 0, step: 1, tooltip: "Forces Non-Repainting" }));
+  let tradeType = pinescript.inputString("BOTH", "What trades should be taken : ", ({ options: ["LONG", "SHORT", "BOTH", "NONE"] }));
+  let h = pinescript.input(false, "Signals for Heikin Ashi Candles");
+  let swing_length = pinescript.inputInt(10, "Swing High/Low Length", ({ group: "Settings", minval: 1, maxval: 50 }));
+  let history_of_demand_to_keep = pinescript.inputInt(20, "History To Keep", ({ minval: 5, maxval: 50 }));
+  let box_width = pinescript.inputFloat(2.5, "Supply/Demand Box Width", ({ group: "Settings", minval: 1, maxval: 10, step: 0.5 }));
+  let show_zigzag = pinescript.inputBool(false, "Show Zig Zag", ({ group: "Visual Settings", inline: "1" }));
+  let show_price_action_labels = pinescript.inputBool(false, "Show Price Action Labels", ({ group: "Visual Settings", inline: "2" }));
+  let supply_color = pinescript.inputColor(pinescript.color.hex("#00000000"), "Supply", ({ group: "Visual Settings", inline: "3" }));
+  let supply_outline_color = pinescript.inputColor(pinescript.color.hex("#00000000"), "Outline", ({ group: "Visual Settings", inline: "3" }));
+  let demand_color = pinescript.inputColor(pinescript.color.hex("#00000000"), "Demand", ({ group: "Visual Settings", inline: "4" }));
+  let demand_outline_color = pinescript.inputColor(pinescript.color.hex("#00000000"), "Outline", ({ group: "Visual Settings", inline: "4" }));
+  let bos_label_color = pinescript.inputColor(pinescript.color.hex("#00000000"), "BOS Label", ({ group: "Visual Settings", inline: "5" }));
+  let poi_label_color = pinescript.inputColor(pinescript.color.hex("#00000000"), "POI Label", ({ group: "Visual Settings", inline: "7" }));
+  let poi_border_color = pinescript.inputColor(pinescript.color.hex("#00000000"), "POI border", ({ group: "Visual Settings", inline: "7" }));
+  let swing_type_color = pinescript.inputColor(pinescript.color.hex("#00000000"), "Price Action Label", ({ group: "Visual Settings", inline: "8" }));
+  let zigzag_color = pinescript.inputColor(pinescript.color.hex("#00000000"), "Zig Zag", ({ group: "Visual Settings", inline: "9" }));
   function f_array_add_pop(array, new_value_to_add) {
     pinescript.arrayUnshift(pinescript.array, new_value_to_add);
     return pinescript.arrayPop(pinescript.array);
@@ -1298,16 +1778,16 @@ function main() {
     }
     okay_to_draw = f_check_overlapping(state.poi, box_array, atrValue);
     if (((box_type === 1) && okay_to_draw)) {
-      box.delete(pinescript.arrayGet(box_array, (pinescript.arraySize(box_array) - 1)));
-      f_array_add_pop(box_array, box.new(({ left: box_left, top: state.box_top, right: box_right, bottom: state.box_bottom, border_color: supply_outline_color, bgcolor: supply_color, extend: extend.right, text: "SUPPLY", text_halign: pinescript.text.align_center, text_valign: pinescript.text.align_center, text_color: poi_label_color, text_size: pinescript.size.small, xloc: xloc.bar_index })));
-      box.delete(pinescript.arrayGet(label_array, (pinescript.arraySize(label_array) - 1)));
-      f_array_add_pop(label_array, box.new(({ left: box_left, top: state.poi, right: box_right, bottom: state.poi, border_color: poi_border_color, bgcolor: poi_border_color, extend: extend.right, text: "POI", text_halign: pinescript.text.align_left, text_valign: pinescript.text.align_center, text_color: poi_label_color, text_size: pinescript.size.small, xloc: xloc.bar_index })));
+      pinescript.boxDelete(pinescript.arrayGet(box_array, (pinescript.arraySize(box_array) - 1)));
+      f_array_add_pop(box_array, pinescript.boxNew(({ left: box_left, top: state.box_top, right: box_right, bottom: state.box_bottom, border_color: supply_outline_color, bgcolor: supply_color, extend: extend.right, text: "SUPPLY", text_halign: pinescript.text.align_center, text_valign: pinescript.text.align_center, text_color: poi_label_color, text_size: pinescript.size.small, xloc: xloc.bar_index })));
+      pinescript.boxDelete(pinescript.arrayGet(label_array, (pinescript.arraySize(label_array) - 1)));
+      f_array_add_pop(label_array, pinescript.boxNew(({ left: box_left, top: state.poi, right: box_right, bottom: state.poi, border_color: poi_border_color, bgcolor: poi_border_color, extend: extend.right, text: "POI", text_halign: pinescript.text.align_left, text_valign: pinescript.text.align_center, text_color: poi_label_color, text_size: pinescript.size.small, xloc: xloc.bar_index })));
     } else {
       if (((box_type === -1) && okay_to_draw)) {
-        box.delete(pinescript.arrayGet(box_array, (pinescript.arraySize(box_array) - 1)));
-        f_array_add_pop(box_array, box.new(({ left: box_left, top: state.box_top, right: box_right, bottom: state.box_bottom, border_color: demand_outline_color, bgcolor: demand_color, extend: extend.right, text: "DEMAND", text_halign: pinescript.text.align_center, text_valign: pinescript.text.align_center, text_color: poi_label_color, text_size: pinescript.size.small, xloc: xloc.bar_index })));
-        box.delete(pinescript.arrayGet(label_array, (pinescript.arraySize(label_array) - 1)));
-        f_array_add_pop(label_array, box.new(({ left: box_left, top: state.poi, right: box_right, bottom: state.poi, border_color: poi_border_color, bgcolor: poi_border_color, extend: extend.right, text: "POI", text_halign: pinescript.text.align_left, text_valign: pinescript.text.align_center, text_color: poi_label_color, text_size: pinescript.size.small, xloc: xloc.bar_index })));
+        pinescript.boxDelete(pinescript.arrayGet(box_array, (pinescript.arraySize(box_array) - 1)));
+        f_array_add_pop(box_array, pinescript.boxNew(({ left: box_left, top: state.box_top, right: box_right, bottom: state.box_bottom, border_color: demand_outline_color, bgcolor: demand_color, extend: extend.right, text: "DEMAND", text_halign: pinescript.text.align_center, text_valign: pinescript.text.align_center, text_color: poi_label_color, text_size: pinescript.size.small, xloc: xloc.bar_index })));
+        pinescript.boxDelete(pinescript.arrayGet(label_array, (pinescript.arraySize(label_array) - 1)));
+        f_array_add_pop(label_array, pinescript.boxNew(({ left: box_left, top: state.poi, right: box_right, bottom: state.poi, border_color: poi_border_color, bgcolor: poi_border_color, extend: extend.right, text: "POI", text_halign: pinescript.text.align_left, text_valign: pinescript.text.align_center, text_color: poi_label_color, text_size: pinescript.size.small, xloc: xloc.bar_index })));
       }
     }
   }
@@ -1328,8 +1808,8 @@ function main() {
           box.set_text_size(pinescript.arrayGet(bos_array, 0), pinescript.size.small);
           box.set_text_halign(pinescript.arrayGet(bos_array, 0), pinescript.text.align_center);
           box.set_text_valign(pinescript.arrayGet(bos_array, 0), pinescript.text.align_center);
-          box.delete(pinescript.arrayGet(box_array, i));
-          box.delete(pinescript.arrayGet(label_array, i));
+          pinescript.boxDelete(pinescript.arrayGet(box_array, i));
+          pinescript.boxDelete(pinescript.arrayGet(label_array, i));
         }
       }
     }
@@ -1349,8 +1829,8 @@ function main() {
           box.set_text_size(pinescript.arrayGet(bos_array, 0), pinescript.size.small);
           box.set_text_halign(pinescript.arrayGet(bos_array, 0), pinescript.text.align_center);
           box.set_text_valign(pinescript.arrayGet(bos_array, 0), pinescript.text.align_center);
-          box.delete(pinescript.arrayGet(box_array, i));
-          box.delete(pinescript.arrayGet(label_array, i));
+          pinescript.boxDelete(pinescript.arrayGet(box_array, i));
+          pinescript.boxDelete(pinescript.arrayGet(label_array, i));
         }
       }
     }
@@ -1362,7 +1842,7 @@ function main() {
   }
   let stratRes = (timeframe.ismonthly ? pinescript.strToString((timeframe.multiplier * intRes), "###M") : (timeframe.isweekly ? pinescript.strToString((timeframe.multiplier * intRes), "###W") : (timeframe.isdaily ? pinescript.strToString((timeframe.multiplier * intRes), "###D") : (timeframe.isintraday ? pinescript.strToString((timeframe.multiplier * intRes), "####") : "60"))));
   let src = (h ? pinescript.requestSecurity(ticker.heikinashi(syminfo.tickerid), timeframe.period, close, ({ lookahead: barmerge.lookahead_off })) : close);
-  let atrValue = ta.atr(50);
+  let atrValue = pinescript.atr(50);
   let swing_high = ta.pivothigh(high, swing_length, swing_length);
   let swing_low = ta.pivotlow(low, swing_length, swing_length);
   if (state.swing_high_values === undefined) state.swing_high_values = pinescript.arrayNew(5, 0);
@@ -1377,7 +1857,7 @@ function main() {
   if (state.demand_bos === undefined) state.demand_bos = pinescript.arrayNew(5, null);
   if (!pinescript.na(swing_high)) {
     f_array_add_pop(state.swing_high_values, swing_high);
-    f_array_add_pop(state.swing_high_bns, pinescript.offset(bar_index, swing_length));
+    f_array_add_pop(state.swing_high_bns, pinescript.hist(0, bar_index, swing_length));
     if (show_price_action_labels) {
       f_sh_sl_labels(state.swing_high_values, 1);
     }
@@ -1385,7 +1865,7 @@ function main() {
   } else {
     if (!pinescript.na(swing_low)) {
       f_array_add_pop(state.swing_low_values, swing_low);
-      f_array_add_pop(state.swing_low_bns, pinescript.offset(bar_index, swing_length));
+      f_array_add_pop(state.swing_low_bns, pinescript.hist(1, bar_index, swing_length));
       if (show_price_action_labels) {
         f_sh_sl_labels(state.swing_low_values, -1);
       }
@@ -1396,14 +1876,14 @@ function main() {
   f_sd_to_bos(state.current_demand_box, state.demand_bos, state.current_demand_poi, -1);
   f_extend_box_endpoint(state.current_supply_box);
   f_extend_box_endpoint(state.current_demand_box);
-  let channelBal = input.bool(false, "Channel Balance", ({ group: "CHART" }));
+  let channelBal = pinescript.inputBool(false, "Channel Balance", ({ group: "CHART" }));
   function lr_slope(_src, _len) {
     let x = 0;
     let y = 0;
     let x2 = 0;
     let xy = 0;
     for (let i = 0; i <= (_len - 1); i++) {
-      let val = pinescript.offset(_src, i);
+      let val = pinescript.hist(2, _src, i);
       let per = (i + 1);
       x += per;
       y += val;
@@ -1420,35 +1900,35 @@ function main() {
     let dnDev = 0;
     val = _int;
     for (let j = 0; j <= (_len - 1); j++) {
-      let price = (pinescript.offset(high, j) - val);
+      let price = (pinescript.hist(3, high, j) - val);
       if ((price > upDev)) {
         upDev = price;
       }
-      price = (val - pinescript.offset(low, j));
+      price = (val - pinescript.hist(4, low, j));
       if ((price > dnDev)) {
         dnDev = price;
       }
-      price = pinescript.offset(_src, j);
+      price = pinescript.hist(5, _src, j);
       val += _slp;
     }
     return [upDev, dnDev];
   }
-  let [, upperKC1, lowerKC1] = ta.kc(close, 80, 10.5);
-  let [, upperKC2, lowerKC2] = ta.kc(close, 80, 9.5);
-  let [, upperKC3, lowerKC3] = ta.kc(close, 80, 8);
-  let [, upperKC4, lowerKC4] = ta.kc(close, 80, 3);
+  let [, upperKC1, lowerKC1] = pinescript.unpack(pinescript.kc(close, 80, 10.5), 3);
+  let [, upperKC2, lowerKC2] = pinescript.unpack(pinescript.kc(close, 80, 9.5), 3);
+  let [, upperKC3, lowerKC3] = pinescript.unpack(pinescript.kc(close, 80, 8), 3);
+  let [, upperKC4, lowerKC4] = pinescript.unpack(pinescript.kc(close, 80, 3), 3);
   let barsL = 10;
   let barsR = 10;
-  let pivotHigh = pinescript.fixnan(pinescript.offset(ta.pivothigh(barsL, barsR), 1));
-  let pivotLow = pinescript.fixnan(pinescript.offset(ta.pivotlow(barsL, barsR), 1));
+  let pivotHigh = pinescript.fixnan(pinescript.hist(6, ta.pivothigh(barsL, barsR), 1));
+  let pivotLow = pinescript.fixnan(pinescript.hist(7, ta.pivotlow(barsL, barsR), 1));
   let source = close;
   let period = 150;
-  let [s, a, i] = lr_slope(source, period);
-  [upDev, dnDev] = lr_dev(source, period, s, a, i);
-  let y1 = (low - (ta.atr(30) * 2));
-  let y1B = (low - ta.atr(30));
-  let y2 = (high + (ta.atr(30) * 2));
-  let y2B = (high + ta.atr(30));
+  let [s, a, i] = pinescript.unpack(lr_slope(source, period), 3);
+  [upDev, dnDev] = pinescript.unpack(lr_dev(source, period, s, a, i), 2);
+  let y1 = (low - (pinescript.atr(30) * 2));
+  let y1B = (low - pinescript.atr(30));
+  let y2 = (high + (pinescript.atr(30) * 2));
+  let y2B = (high + pinescript.atr(30));
   let x1 = ((bar_index - period) + 1);
   let _y1 = (i + (s * (period - 1)));
   x2 = bar_index;
@@ -1466,7 +1946,7 @@ function main() {
     if (state.ob_left === undefined) state.ob_left = pinescript.arrayNew(0);
     let ob = null;
     if (condition) {
-      let avg = math.avg(top, btm);
+      let avg = pinescript.avg(top, btm);
       pinescript.arrayUnshift(state.ob_top, top);
       pinescript.arrayUnshift(state.ob_btm, btm);
       pinescript.arrayUnshift(state.ob_avg, avg);
@@ -1497,21 +1977,21 @@ function main() {
   if (state.target_bull === undefined) state.target_bull = 0;
   if (state.target_bear === undefined) state.target_bear = 0;
   function rp_security(_symbol, _res, _src) {
-    return pinescript.requestSecurity(_symbol, _res, pinescript.offset(_src, (barstate.isrealtime ? 1 : 0)));
+    return pinescript.requestSecurity(_symbol, _res, pinescript.hist(8, _src, (barstate.isrealtime ? 1 : 0)));
   }
   let htfHigh = rp_security(syminfo.tickerid, res, high);
   let htfLow = rp_security(syminfo.tickerid, res, low);
   function smoothrng(x, t, m) {
     let wper = ((t * 2) - 1);
-    let avrng = pinescript.ema(pinescript.abs((x - pinescript.offset(x, 1))), t);
+    let avrng = pinescript.ema(pinescript.abs((x - pinescript.hist(9, x, 1))), t);
     let smoothrng = (pinescript.ema(avrng, wper) * m);
   }
   function rngfilt(x, r) {
     let rngfilt = x;
-    rngfilt = ((x > pinescript.nz(pinescript.offset(rngfilt, 1))) ? (((x - r) < pinescript.nz(pinescript.offset(rngfilt, 1))) ? pinescript.nz(pinescript.offset(rngfilt, 1)) : (x - r)) : (((x + r) > pinescript.nz(pinescript.offset(rngfilt, 1))) ? pinescript.nz(pinescript.offset(rngfilt, 1)) : (x + r)));
+    rngfilt = ((x > pinescript.nz(pinescript.hist(10, rngfilt, 1))) ? (((x - r) < pinescript.nz(pinescript.hist(11, rngfilt, 1))) ? pinescript.nz(pinescript.hist(12, rngfilt, 1)) : (x - r)) : (((x + r) > pinescript.nz(pinescript.hist(13, rngfilt, 1))) ? pinescript.nz(pinescript.hist(14, rngfilt, 1)) : (x + r)));
   }
   function percWidth(len, perc) {
-    return (((pinescript.highest(len) - pinescript.lowest(len)) * perc) / 100);
+    return (((pinescript.highest(pinescript.series(15, len)) - pinescript.lowest(pinescript.series(16, len))) * perc) / 100);
   }
   function securityNoRep(sym, res, src) {
     return pinescript.requestSecurity(sym, res, src, barmerge.gaps_off, barmerge.lookahead_on);
@@ -1519,8 +1999,8 @@ function main() {
   function swingPoints(prd) {
     let pivHi = ta.pivothigh(prd, prd);
     let pivLo = ta.pivotlow(prd, prd);
-    let last_pivHi = ta.valuewhen(pivHi, pivHi, 1);
-    let last_pivLo = ta.valuewhen(pivLo, pivLo, 1);
+    let last_pivHi = pinescript.valuewhen(pinescript.series(17, pivHi), pinescript.series(18, pivHi), 1);
+    let last_pivLo = pinescript.valuewhen(pinescript.series(19, pivLo), pinescript.series(20, pivLo), 1);
     let hh = ((pivHi && (pivHi > last_pivHi)) ? pivHi : null);
     let lh = ((pivHi && (pivHi < last_pivHi)) ? pivHi : null);
     let hl = ((pivLo && (pivLo > last_pivLo)) ? pivLo : null);
@@ -1532,7 +2012,7 @@ function main() {
   }
   function f_kc(src, len, sensitivity) {
     let basis = pinescript.sma(src, len);
-    let span = ta.atr(len);
+    let span = pinescript.atr(len);
     return [(basis + (span * sensitivity)), (basis - (span * sensitivity))];
   }
   function wavetrend(src, chlLen, avgLen) {
@@ -1544,10 +2024,10 @@ function main() {
     return [wt1, wt2];
   }
   function f_top_fractal(_src) {
-    return ((((pinescript.offset(_src, 4) < pinescript.offset(_src, 2)) && (pinescript.offset(_src, 3) < pinescript.offset(_src, 2))) && (pinescript.offset(_src, 2) > pinescript.offset(_src, 1))) && (pinescript.offset(_src, 2) > pinescript.offset(_src, 0)));
+    return ((((pinescript.hist(21, _src, 4) < pinescript.hist(22, _src, 2)) && (pinescript.hist(23, _src, 3) < pinescript.hist(24, _src, 2))) && (pinescript.hist(25, _src, 2) > pinescript.hist(26, _src, 1))) && (pinescript.hist(27, _src, 2) > pinescript.hist(28, _src, 0)));
   }
   function f_bot_fractal(_src) {
-    return ((((pinescript.offset(_src, 4) > pinescript.offset(_src, 2)) && (pinescript.offset(_src, 3) > pinescript.offset(_src, 2))) && (pinescript.offset(_src, 2) < pinescript.offset(_src, 1))) && (pinescript.offset(_src, 2) < pinescript.offset(_src, 0)));
+    return ((((pinescript.hist(29, _src, 4) > pinescript.hist(30, _src, 2)) && (pinescript.hist(31, _src, 3) > pinescript.hist(32, _src, 2))) && (pinescript.hist(33, _src, 2) < pinescript.hist(34, _src, 1))) && (pinescript.hist(35, _src, 2) < pinescript.hist(36, _src, 0)));
   }
   let top_fractal = f_top_fractal(src);
   let bot_fractal = f_bot_fractal(src);
@@ -1555,26 +2035,26 @@ function main() {
     return (top_fractal ? 1 : (bot_fractal ? -1 : 0));
   }
   function f_findDivs(src, topLimit, botLimit) {
-    let fractalTop = (((f_fractalize(src) > 0) && (pinescript.offset(src, 2) >= topLimit)) ? pinescript.offset(src, 2) : null);
-    let fractalBot = (((f_fractalize(src) < 0) && (pinescript.offset(src, 2) <= botLimit)) ? pinescript.offset(src, 2) : null);
-    let highPrev = pinescript.offset(ta.valuewhen(fractalTop, pinescript.offset(src, 2), 0), 2);
-    let highPrice = pinescript.offset(ta.valuewhen(fractalTop, pinescript.offset(high, 2), 0), 2);
-    let lowPrev = pinescript.offset(ta.valuewhen(fractalBot, pinescript.offset(src, 2), 0), 2);
-    let lowPrice = pinescript.offset(ta.valuewhen(fractalBot, pinescript.offset(low, 2), 0), 2);
-    let bearSignal = ((fractalTop && (pinescript.offset(high, 1) > highPrice)) && (pinescript.offset(src, 1) < highPrev));
-    let bullSignal = ((fractalBot && (pinescript.offset(low, 1) < lowPrice)) && (pinescript.offset(src, 1) > lowPrev));
+    let fractalTop = (((f_fractalize(src) > 0) && (pinescript.hist(37, src, 2) >= topLimit)) ? pinescript.hist(38, src, 2) : null);
+    let fractalBot = (((f_fractalize(src) < 0) && (pinescript.hist(39, src, 2) <= botLimit)) ? pinescript.hist(40, src, 2) : null);
+    let highPrev = pinescript.hist(41, pinescript.valuewhen(pinescript.series(43, fractalTop), pinescript.series(44, pinescript.hist(42, src, 2)), 0), 2);
+    let highPrice = pinescript.hist(45, pinescript.valuewhen(pinescript.series(47, fractalTop), pinescript.series(48, pinescript.hist(46, high, 2)), 0), 2);
+    let lowPrev = pinescript.hist(49, pinescript.valuewhen(pinescript.series(51, fractalBot), pinescript.series(52, pinescript.hist(50, src, 2)), 0), 2);
+    let lowPrice = pinescript.hist(53, pinescript.valuewhen(pinescript.series(55, fractalBot), pinescript.series(56, pinescript.hist(54, low, 2)), 0), 2);
+    let bearSignal = ((fractalTop && (pinescript.hist(57, high, 1) > highPrice)) && (pinescript.hist(58, src, 1) < highPrev));
+    let bullSignal = ((fractalBot && (pinescript.hist(59, low, 1) < lowPrice)) && (pinescript.hist(60, src, 1) > lowPrev));
     return [bearSignal, bullSignal];
   }
-  let enableSR = input(false, "SR On/Off", ({ group: "SR" }));
-  let colorSup = input(pinescript.color.hex("#00000000"), "Support Color", ({ group: "SR" }));
-  let colorRes = input(pinescript.color.hex("#00000000"), "Resistance Color", ({ group: "SR" }));
-  let strengthSR = input.int(2, "S/R Strength", 1, ({ group: "SR" }));
-  let lineStyle = input.string("Dotted", "Line Style", ["Solid", "Dotted", "Dashed"], ({ group: "SR" }));
-  let lineWidth = input.int(2, "S/R Line Width", 1, ({ group: "SR" }));
-  let useZones = input(true, "Zones On/Off", ({ group: "SR" }));
-  let useHLZones = input(true, "High Low Zones On/Off", ({ group: "SR" }));
-  let zoneWidth = input.int(2, "Zone Width %", 0, ({ tooltip: "it's calculated using % of the distance between highest/lowest in last 300 bars", group: "SR" }));
-  let expandSR = input(true, "Expand SR");
+  let enableSR = pinescript.input(false, "SR On/Off", ({ group: "SR" }));
+  let colorSup = pinescript.input(pinescript.color.hex("#00000000"), "Support Color", ({ group: "SR" }));
+  let colorRes = pinescript.input(pinescript.color.hex("#00000000"), "Resistance Color", ({ group: "SR" }));
+  let strengthSR = pinescript.inputInt(2, "S/R Strength", 1, ({ group: "SR" }));
+  let lineStyle = pinescript.inputString("Dotted", "Line Style", ["Solid", "Dotted", "Dashed"], ({ group: "SR" }));
+  let lineWidth = pinescript.inputInt(2, "S/R Line Width", 1, ({ group: "SR" }));
+  let useZones = pinescript.input(true, "Zones On/Off", ({ group: "SR" }));
+  let useHLZones = pinescript.input(true, "High Low Zones On/Off", ({ group: "SR" }));
+  let zoneWidth = pinescript.inputInt(2, "Zone Width %", 0, ({ tooltip: "it's calculated using % of the distance between highest/lowest in last 300 bars", group: "SR" }));
+  let expandSR = pinescript.input(true, "Expand SR");
   let rb = 10;
   let prd = 284;
   let ChannelW = 10;
@@ -1583,24 +2063,24 @@ function main() {
   let ph = ta.pivothigh(rb, rb);
   let pl = ta.pivotlow(rb, rb);
   let sr_levels = pinescript.arrayNew(21, null);
-  let prdhighest = pinescript.highest(prd);
-  let prdlowest = pinescript.lowest(prd);
+  let prdhighest = pinescript.highest(pinescript.series(61, prd));
+  let prdlowest = pinescript.lowest(pinescript.series(62, prd));
   let cwidth = percWidth(prd, ChannelW);
   let zonePerc = percWidth(300, zoneWidth);
   let aas = pinescript.arrayNew(41, true);
   let u1 = 0;
-  u1 = pinescript.nz(pinescript.offset(u1, 1));
+  u1 = pinescript.nz(pinescript.hist(63, u1, 1));
   let d1 = 0;
-  d1 = pinescript.nz(pinescript.offset(d1, 1));
+  d1 = pinescript.nz(pinescript.hist(64, d1, 1));
   let highestph = 0;
-  highestph = pinescript.offset(highestph, 1);
+  highestph = pinescript.hist(65, highestph, 1);
   let lowestpl = 0;
-  lowestpl = pinescript.offset(lowestpl, 1);
+  lowestpl = pinescript.hist(66, lowestpl, 1);
   if (state.sr_levs === undefined) state.sr_levs = pinescript.arrayNew(21, null);
   let hlabel = null;
-  pinescript.labelDelete(pinescript.offset(hlabel, 1));
+  pinescript.labelDelete(pinescript.hist(67, hlabel, 1));
   let llabel = null;
-  pinescript.labelDelete(pinescript.offset(llabel, 1));
+  pinescript.labelDelete(pinescript.hist(68, llabel, 1));
   if (state.sr_lines === undefined) state.sr_lines = pinescript.arrayNew(21, null);
   if (state.sr_linesH === undefined) state.sr_linesH = pinescript.arrayNew(21, null);
   if (state.sr_linesL === undefined) state.sr_linesL = pinescript.arrayNew(21, null);
@@ -1614,43 +2094,43 @@ function main() {
     lowestpl = prdhighest;
     let countpp = 0;
     for (let x = 0; x <= prd; x++) {
-      if (pinescript.na(pinescript.offset(close, x))) {
+      if (pinescript.na(pinescript.hist(69, close, x))) {
         break;
       }
-      if ((!pinescript.na(pinescript.offset(ph, x)) || !pinescript.na(pinescript.offset(pl, x)))) {
-        highestph = pinescript.max(highestph, pinescript.nz(pinescript.offset(ph, x), prdlowest), pinescript.nz(pinescript.offset(pl, x), prdlowest));
-        lowestpl = pinescript.min(lowestpl, pinescript.nz(pinescript.offset(ph, x), prdhighest), pinescript.nz(pinescript.offset(pl, x), prdhighest));
+      if ((!pinescript.na(pinescript.hist(70, ph, x)) || !pinescript.na(pinescript.hist(71, pl, x)))) {
+        highestph = pinescript.max(highestph, pinescript.nz(pinescript.hist(72, ph, x), prdlowest), pinescript.nz(pinescript.hist(73, pl, x), prdlowest));
+        lowestpl = pinescript.min(lowestpl, pinescript.nz(pinescript.hist(74, ph, x), prdhighest), pinescript.nz(pinescript.hist(75, pl, x), prdhighest));
         countpp += 1;
         if ((countpp > 40)) {
           break;
         }
         if (pinescript.arrayGet(aas, countpp)) {
-          let upl = ((pinescript.offset(ph, x) ? pinescript.offset(high, (x + rb)) : pinescript.offset(low, (x + rb))) + cwidth);
-          let dnl = ((pinescript.offset(ph, x) ? pinescript.offset(high, (x + rb)) : pinescript.offset(low, (x + rb))) - cwidth);
+          let upl = ((pinescript.hist(76, ph, x) ? pinescript.hist(77, high, (x + rb)) : pinescript.hist(78, low, (x + rb))) + cwidth);
+          let dnl = ((pinescript.hist(79, ph, x) ? pinescript.hist(80, high, (x + rb)) : pinescript.hist(81, low, (x + rb))) - cwidth);
           u1 = ((countpp === 1) ? upl : u1);
           d1 = ((countpp === 1) ? dnl : d1);
           let tmp = pinescript.arrayNew(41, true);
           let cnt = 0;
           let tpoint = 0;
           for (let xx = 0; xx <= prd; xx++) {
-            if (pinescript.na(pinescript.offset(close, xx))) {
+            if (pinescript.na(pinescript.hist(82, close, xx))) {
               break;
             }
-            if ((!pinescript.na(pinescript.offset(ph, xx)) || !pinescript.na(pinescript.offset(pl, xx)))) {
+            if ((!pinescript.na(pinescript.hist(83, ph, xx)) || !pinescript.na(pinescript.hist(84, pl, xx)))) {
               let chg = false;
               cnt += 1;
               if ((cnt > 40)) {
                 break;
               }
               if (pinescript.arrayGet(aas, cnt)) {
-                if (!pinescript.na(pinescript.offset(ph, xx))) {
-                  if (((pinescript.offset(high, (xx + rb)) <= upl) && (pinescript.offset(high, (xx + rb)) >= dnl))) {
+                if (!pinescript.na(pinescript.hist(85, ph, xx))) {
+                  if (((pinescript.hist(86, high, (xx + rb)) <= upl) && (pinescript.hist(87, high, (xx + rb)) >= dnl))) {
                     tpoint += 1;
                     chg = true;
                   }
                 }
-                if (!pinescript.na(pinescript.offset(pl, xx))) {
-                  if (((pinescript.offset(low, (xx + rb)) <= upl) && (pinescript.offset(low, (xx + rb)) >= dnl))) {
+                if (!pinescript.na(pinescript.hist(88, pl, xx))) {
+                  if (((pinescript.hist(89, low, (xx + rb)) <= upl) && (pinescript.hist(90, low, (xx + rb)) >= dnl))) {
                     tpoint += 1;
                     chg = true;
                   }
@@ -1667,11 +2147,11 @@ function main() {
                 pinescript.arraySet(aas, g, false);
               }
             }
-            if ((pinescript.offset(ph, x) && (countpp < 21))) {
-              pinescript.arraySet(sr_levels, countpp, pinescript.offset(high, (x + rb)));
+            if ((pinescript.hist(91, ph, x) && (countpp < 21))) {
+              pinescript.arraySet(sr_levels, countpp, pinescript.hist(92, high, (x + rb)));
             }
-            if ((pinescript.offset(pl, x) && (countpp < 21))) {
-              pinescript.arraySet(sr_levels, countpp, pinescript.offset(low, (x + rb)));
+            if ((pinescript.hist(93, pl, x) && (countpp < 21))) {
+              pinescript.arraySet(sr_levels, countpp, pinescript.hist(94, low, (x + rb)));
             }
           }
         }
@@ -1732,14 +2212,14 @@ function main() {
       pinescript.arraySet(state.sr_labels, x, pinescript.labelNew((bar_index + label_loc), pinescript.arrayGet(state.sr_levs, x), pinescript.strToString(math.round_to_mintick(pinescript.arrayGet(state.sr_levs, x))), ({ color: lab_col, textcolor: pinescript.color.hex("#000000"), style: lab_loc })));
     }
   }
-  hlabel = (enableSR ? pinescript.labelNew(((bar_index + label_loc) + (pinescript.round(math.sign(label_loc)) * 20)), highestph, ("High Level : " + pinescript.strToString(highestph)), ({ color: hi_col, textcolor: pinescript.color.hex("#000000"), style: label.style_label_down })) : null);
-  llabel = (enableSR ? pinescript.labelNew(((bar_index + label_loc) + (pinescript.round(math.sign(label_loc)) * 20)), lowestpl, ("Low  Level : " + pinescript.strToString(lowestpl)), ({ color: lo_col, textcolor: pinescript.color.hex("#000000"), style: label.style_label_up })) : null);
-  let rsi = ta.rsi(close, 28);
+  hlabel = (enableSR ? pinescript.labelNew(((bar_index + label_loc) + (pinescript.round(pinescript.sign(label_loc)) * 20)), highestph, ("High Level : " + pinescript.strToString(highestph)), ({ color: hi_col, textcolor: pinescript.color.hex("#000000"), style: label.style_label_down })) : null);
+  llabel = (enableSR ? pinescript.labelNew(((bar_index + label_loc) + (pinescript.round(pinescript.sign(label_loc)) * 20)), lowestpl, ("Low  Level : " + pinescript.strToString(lowestpl)), ({ color: lo_col, textcolor: pinescript.color.hex("#000000"), style: label.style_label_up })) : null);
+  let rsi = pinescript.rsi(close, 28);
   let rsiOb = ((rsi > 65) && (rsi > pinescript.ema(rsi, 10)));
   let rsiOs = ((rsi < 35) && (rsi < pinescript.ema(rsi, 10)));
-  let dHigh = securityNoRep(syminfo.tickerid, "D", pinescript.offset(high, 1));
-  let dLow = securityNoRep(syminfo.tickerid, "D", pinescript.offset(low, 1));
-  let dClose = securityNoRep(syminfo.tickerid, "D", pinescript.offset(close, 1));
+  let dHigh = securityNoRep(syminfo.tickerid, "D", pinescript.hist(95, high, 1));
+  let dLow = securityNoRep(syminfo.tickerid, "D", pinescript.hist(96, low, 1));
+  let dClose = securityNoRep(syminfo.tickerid, "D", pinescript.hist(97, close, 1));
   let ema = pinescript.ema(close, 144);
   let emaBull = (close > ema);
   function equal_tf(res) {
@@ -1771,32 +2251,32 @@ function main() {
     let v6 = pinescript.vwma(src, len);
     let v7 = 0;
     let sma_1 = pinescript.sma(src, len);
-    v7 = (pinescript.na(pinescript.offset(v7, 1)) ? sma_1 : (((pinescript.offset(v7, 1) * (len - 1)) + src) / len));
+    v7 = (pinescript.na(pinescript.hist(98, v7, 1)) ? sma_1 : (((pinescript.hist(99, v7, 1) * (len - 1)) + src) / len));
     let v8 = pinescript.wma(((2 * pinescript.wma(src, (len / 2))) - pinescript.wma(src, len)), pinescript.round(pinescript.sqrt(len)));
     let v9 = pinescript.linreg(src, len, offSig);
     let v10 = pinescript.alma(src, len, offALMA, offSig);
     let v11 = pinescript.sma(v1, len);
-    let a1 = math.exp(((-1.414 * 3.14159) / len));
-    let b1 = ((2 * a1) * math.cos(((1.414 * 3.14159) / len)));
+    let a1 = pinescript.exp(((-1.414 * 3.14159) / len));
+    let b1 = ((2 * a1) * pinescript.cos(((1.414 * 3.14159) / len)));
     let c2 = b1;
     let c3 = (-a1 * a1);
     let c1 = ((1 - c2) - c3);
     let v12 = 0;
-    v12 = ((((c1 * (src + pinescript.nz(pinescript.offset(src, 1)))) / 2) + (c2 * pinescript.nz(pinescript.offset(v12, 1)))) + (c3 * pinescript.nz(pinescript.offset(v12, 2))));
+    v12 = ((((c1 * (src + pinescript.nz(pinescript.hist(100, src, 1)))) / 2) + (c2 * pinescript.nz(pinescript.hist(101, v12, 1)))) + (c3 * pinescript.nz(pinescript.hist(102, v12, 2))));
     return ((type === "EMA") ? v2 : ((type === "DEMA") ? v3 : ((type === "TEMA") ? v4 : ((type === "WMA") ? v5 : ((type === "VWMA") ? v6 : ((type === "SMMA") ? v7 : ((type === "HullMA") ? v8 : ((type === "LSMA") ? v9 : ((type === "ALMA") ? v10 : ((type === "TMA") ? v11 : ((type === "SSMA") ? v12 : v1)))))))))));
   }
   function reso(exp, use, res) {
     let security_1 = pinescript.requestSecurity(syminfo.tickerid, res, exp, ({ gaps: barmerge.gaps_off, lookahead: barmerge.lookahead_on }));
     return (use ? security_1 : exp);
   }
-  let closeSeries = variant(basisType, pinescript.offset(close, delayOffset), basisLen, offsetSigma, offsetALMA);
-  let openSeries = variant(basisType, pinescript.offset(open, delayOffset), basisLen, offsetSigma, offsetALMA);
+  let closeSeries = variant(basisType, pinescript.hist(103, close, delayOffset), basisLen, offsetSigma, offsetALMA);
+  let openSeries = variant(basisType, pinescript.hist(104, open, delayOffset), basisLen, offsetSigma, offsetALMA);
   let closeSeriesAlt = reso(closeSeries, useRes, stratRes);
   let openSeriesAlt = reso(openSeries, useRes, stratRes);
   let lxTrigger = false;
   let sxTrigger = false;
-  let leTrigger = pinescript.cross(closeSeriesAlt, openSeriesAlt);
-  let seTrigger = pinescript.cross(closeSeriesAlt, openSeriesAlt);
+  let leTrigger = pinescript.crossover(pinescript.series(105, closeSeriesAlt), pinescript.series(106, openSeriesAlt));
+  let seTrigger = pinescript.crossunder(pinescript.series(107, closeSeriesAlt), pinescript.series(108, openSeriesAlt));
   let G_RISK = ("■ " + "Risk Management");
   let T_LVL = "(%) Exit Level";
   let T_QTY = "(%) Adjust trade exit volume";
@@ -1813,13 +2293,13 @@ function main() {
   let O_SXMSGB = "Short TP2";
   let O_SXMSGC = "Short TP3";
   let O_SXMSGX = "Short Exit";
-  let i_lxLvlTP1 = input.float(1, "Level TP1", ({ group: G_RISK, tooltip: T_LVL }));
-  let i_lxQtyTP1 = input.float(50, "Qty   TP1", ({ group: G_RISK, tooltip: T_QTY }));
-  let i_lxLvlTP2 = input.float(1.5, "Level TP2", ({ group: G_RISK, tooltip: T_LVL }));
-  let i_lxQtyTP2 = input.float(30, "Qty   TP2", ({ group: G_RISK, tooltip: T_QTY }));
-  let i_lxLvlTP3 = input.float(2, "Level TP3", ({ group: G_RISK, tooltip: T_LVL }));
-  let i_lxQtyTP3 = input.float(20, "Qty   TP3", ({ group: G_RISK, tooltip: T_QTY }));
-  let i_lxLvlSL = input.float(0.5, "Stop Loss", ({ group: G_RISK, tooltip: T_LVL }));
+  let i_lxLvlTP1 = pinescript.inputFloat(1, "Level TP1", ({ group: G_RISK, tooltip: T_LVL }));
+  let i_lxQtyTP1 = pinescript.inputFloat(50, "Qty   TP1", ({ group: G_RISK, tooltip: T_QTY }));
+  let i_lxLvlTP2 = pinescript.inputFloat(1.5, "Level TP2", ({ group: G_RISK, tooltip: T_LVL }));
+  let i_lxQtyTP2 = pinescript.inputFloat(30, "Qty   TP2", ({ group: G_RISK, tooltip: T_QTY }));
+  let i_lxLvlTP3 = pinescript.inputFloat(2, "Level TP3", ({ group: G_RISK, tooltip: T_LVL }));
+  let i_lxQtyTP3 = pinescript.inputFloat(20, "Qty   TP3", ({ group: G_RISK, tooltip: T_QTY }));
+  let i_lxLvlSL = pinescript.inputFloat(0.5, "Stop Loss", ({ group: G_RISK, tooltip: T_LVL }));
   let i_sxLvlTP1 = i_lxLvlTP1;
   let i_sxQtyTP1 = i_lxQtyTP1;
   let i_sxLvlTP2 = i_lxLvlTP2;
@@ -1828,98 +2308,98 @@ function main() {
   let i_sxQtyTP3 = i_lxQtyTP3;
   let i_sxLvlSL = i_lxLvlSL;
   let G_MSG = ("■ " + "Webhook Message");
-  let i_leMsg = input.string(O_LEMSG, "Long Entry", ({ group: G_MSG, tooltip: T_MSG }));
-  let i_lxMsgSL = input.string(O_LXMSGSL, "Long SL", ({ group: G_MSG, tooltip: T_MSG }));
-  let i_lxMsgTP1 = input.string(O_LXMSGTP1, "Long TP1", ({ group: G_MSG, tooltip: T_MSG }));
-  let i_lxMsgTP2 = input.string(O_LXMSGTP2, "Long TP2", ({ group: G_MSG, tooltip: T_MSG }));
-  let i_lxMsgTP3 = input.string(O_LXMSGTP3, "Long TP3", ({ group: G_MSG, tooltip: T_MSG }));
-  let i_lxMsg = input.string(O_LXMSG, "Long Exit", ({ group: G_MSG, tooltip: T_MSG }));
-  let i_seMsg = input.string(O_SEMSG, "Short Entry", ({ group: G_MSG, tooltip: T_MSG }));
-  let i_sxMsgSL = input.string(O_SXMSGSL, "Short SL", ({ group: G_MSG, tooltip: T_MSG }));
-  let i_sxMsgTP1 = input.string(O_SXMSGA, "Short TP1", ({ group: G_MSG, tooltip: T_MSG }));
-  let i_sxMsgTP2 = input.string(O_SXMSGB, "Short TP2", ({ group: G_MSG, tooltip: T_MSG }));
-  let i_sxMsgTP3 = input.string(O_SXMSGC, "Short TP3", ({ group: G_MSG, tooltip: T_MSG }));
-  let i_sxMsg = input.string(O_SXMSGX, "Short Exit", ({ group: G_MSG, tooltip: T_MSG }));
+  let i_leMsg = pinescript.inputString(O_LEMSG, "Long Entry", ({ group: G_MSG, tooltip: T_MSG }));
+  let i_lxMsgSL = pinescript.inputString(O_LXMSGSL, "Long SL", ({ group: G_MSG, tooltip: T_MSG }));
+  let i_lxMsgTP1 = pinescript.inputString(O_LXMSGTP1, "Long TP1", ({ group: G_MSG, tooltip: T_MSG }));
+  let i_lxMsgTP2 = pinescript.inputString(O_LXMSGTP2, "Long TP2", ({ group: G_MSG, tooltip: T_MSG }));
+  let i_lxMsgTP3 = pinescript.inputString(O_LXMSGTP3, "Long TP3", ({ group: G_MSG, tooltip: T_MSG }));
+  let i_lxMsg = pinescript.inputString(O_LXMSG, "Long Exit", ({ group: G_MSG, tooltip: T_MSG }));
+  let i_seMsg = pinescript.inputString(O_SEMSG, "Short Entry", ({ group: G_MSG, tooltip: T_MSG }));
+  let i_sxMsgSL = pinescript.inputString(O_SXMSGSL, "Short SL", ({ group: G_MSG, tooltip: T_MSG }));
+  let i_sxMsgTP1 = pinescript.inputString(O_SXMSGA, "Short TP1", ({ group: G_MSG, tooltip: T_MSG }));
+  let i_sxMsgTP2 = pinescript.inputString(O_SXMSGB, "Short TP2", ({ group: G_MSG, tooltip: T_MSG }));
+  let i_sxMsgTP3 = pinescript.inputString(O_SXMSGC, "Short TP3", ({ group: G_MSG, tooltip: T_MSG }));
+  let i_sxMsg = pinescript.inputString(O_SXMSGX, "Short Exit", ({ group: G_MSG, tooltip: T_MSG }));
   let i_src = close;
   let G_DISPLAY = "Display";
-  let i_alertOn = input.bool(true, "Alert Labels On/Off", ({ group: G_DISPLAY }));
-  let i_barColOn = input.bool(true, "Bar Color On/Off", ({ group: G_DISPLAY }));
+  let i_alertOn = pinescript.inputBool(true, "Alert Labels On/Off", ({ group: G_DISPLAY }));
+  let i_barColOn = pinescript.inputBool(true, "Bar Color On/Off", ({ group: G_DISPLAY }));
   function f_tp(_condition, _conditionValue, _leTrigger, _seTrigger, _src, _lxLvlTP, _sxLvlTP) {
     if (state._tpLine === undefined) state._tpLine = 0;
     let _topLvl = (_src + (_src * (_lxLvlTP / 100)));
     let _botLvl = (_src - (_src * (_sxLvlTP / 100)));
-    state._tpLine = (((pinescript.offset(_condition, 1) !== _conditionValue) && _leTrigger) ? _topLvl : (((pinescript.offset(_condition, 1) !== -_conditionValue) && _seTrigger) ? _botLvl : pinescript.nz(pinescript.offset(state._tpLine, 1))));
+    state._tpLine = (((pinescript.hist(109, _condition, 1) !== _conditionValue) && _leTrigger) ? _topLvl : (((pinescript.hist(110, _condition, 1) !== -_conditionValue) && _seTrigger) ? _botLvl : pinescript.nz(pinescript.hist(111, state._tpLine, 1))));
     return [state._tpLine];
   }
   function f_cross(_scr1, _scr2, _over) {
-    let _cross = (_over ? ((_scr1 > _scr2) && (pinescript.offset(_scr1, 1) < pinescript.offset(_scr2, 1))) : ((_scr1 < _scr2) && (pinescript.offset(_scr1, 1) > pinescript.offset(_scr2, 1))));
+    let _cross = (_over ? ((_scr1 > _scr2) && (pinescript.hist(112, _scr1, 1) < pinescript.hist(113, _scr2, 1))) : ((_scr1 < _scr2) && (pinescript.hist(114, _scr1, 1) > pinescript.hist(115, _scr2, 1))));
   }
   if (state.condition === undefined) state.condition = 0;
   if (state.slLine === undefined) state.slLine = 0;
   if (state.entryLine === undefined) state.entryLine = 0;
-  state.entryLine = ((leTrigger && (pinescript.offset(state.condition, 1) <= 0)) ? close : ((seTrigger && (pinescript.offset(state.condition, 1) >= 0)) ? close : pinescript.nz(pinescript.offset(state.entryLine, 1))));
+  state.entryLine = ((leTrigger && (pinescript.hist(116, state.condition, 1) <= 0)) ? close : ((seTrigger && (pinescript.hist(117, state.condition, 1) >= 0)) ? close : pinescript.nz(pinescript.hist(118, state.entryLine, 1))));
   let slTopLvl = (i_src + (i_src * (i_lxLvlSL / 100)));
   let slBotLvl = (i_src - (i_src * (i_sxLvlSL / 100)));
-  state.slLine = (((pinescript.offset(state.condition, 1) <= 0) && leTrigger) ? slBotLvl : (((pinescript.offset(state.condition, 1) >= 0) && seTrigger) ? slTopLvl : pinescript.nz(pinescript.offset(state.slLine, 1))));
+  state.slLine = (((pinescript.hist(119, state.condition, 1) <= 0) && leTrigger) ? slBotLvl : (((pinescript.hist(120, state.condition, 1) >= 0) && seTrigger) ? slTopLvl : pinescript.nz(pinescript.hist(121, state.slLine, 1))));
   let slLong = f_cross(low, state.slLine, false);
   let slShort = f_cross(high, state.slLine, true);
-  let [tp3Line] = f_tp(state.condition, 1.2, leTrigger, seTrigger, i_src, i_lxLvlTP3, i_sxLvlTP3);
-  let [tp2Line] = f_tp(state.condition, 1.1, leTrigger, seTrigger, i_src, i_lxLvlTP2, i_sxLvlTP2);
-  let [tp1Line] = f_tp(state.condition, 1, leTrigger, seTrigger, i_src, i_lxLvlTP1, i_sxLvlTP1);
+  let [tp3Line] = pinescript.unpack(f_tp(state.condition, 1.2, leTrigger, seTrigger, i_src, i_lxLvlTP3, i_sxLvlTP3), 1);
+  let [tp2Line] = pinescript.unpack(f_tp(state.condition, 1.1, leTrigger, seTrigger, i_src, i_lxLvlTP2, i_sxLvlTP2), 1);
+  let [tp1Line] = pinescript.unpack(f_tp(state.condition, 1, leTrigger, seTrigger, i_src, i_lxLvlTP1, i_sxLvlTP1), 1);
   let tp3Long = f_cross(high, tp3Line, true);
   let tp3Short = f_cross(low, tp3Line, false);
   let tp2Long = f_cross(high, tp2Line, true);
   let tp2Short = f_cross(low, tp2Line, false);
   let tp1Long = f_cross(high, tp1Line, true);
   let tp1Short = f_cross(low, tp1Line, false);
-  if ((leTrigger && (pinescript.offset(state.condition, 1) <= 0))) {
+  if ((leTrigger && (pinescript.hist(122, state.condition, 1) <= 0))) {
     state.condition = 1;
   }
-  else if ((seTrigger && (pinescript.offset(state.condition, 1) >= 0))) {
+  else if ((seTrigger && (pinescript.hist(123, state.condition, 1) >= 0))) {
     state.condition = -1;
   }
-  else if ((tp3Long && (pinescript.offset(state.condition, 1) === 1.2))) {
+  else if ((tp3Long && (pinescript.hist(124, state.condition, 1) === 1.2))) {
     state.condition = 1.3;
   }
-  else if ((tp3Short && (pinescript.offset(state.condition, 1) === -1.2))) {
+  else if ((tp3Short && (pinescript.hist(125, state.condition, 1) === -1.2))) {
     state.condition = -1.3;
   }
-  else if ((tp2Long && (pinescript.offset(state.condition, 1) === 1.1))) {
+  else if ((tp2Long && (pinescript.hist(126, state.condition, 1) === 1.1))) {
     state.condition = 1.2;
   }
-  else if ((tp2Short && (pinescript.offset(state.condition, 1) === -1.1))) {
+  else if ((tp2Short && (pinescript.hist(127, state.condition, 1) === -1.1))) {
     state.condition = -1.2;
   }
-  else if ((tp1Long && (pinescript.offset(state.condition, 1) === 1))) {
+  else if ((tp1Long && (pinescript.hist(128, state.condition, 1) === 1))) {
     state.condition = 1.1;
   }
-  else if ((tp1Short && (pinescript.offset(state.condition, 1) === -1))) {
+  else if ((tp1Short && (pinescript.hist(129, state.condition, 1) === -1))) {
     state.condition = -1.1;
   }
-  else if ((slLong && (pinescript.offset(state.condition, 1) >= 1))) {
+  else if ((slLong && (pinescript.hist(130, state.condition, 1) >= 1))) {
     state.condition = 0;
   }
-  else if ((slShort && (pinescript.offset(state.condition, 1) <= -1))) {
+  else if ((slShort && (pinescript.hist(131, state.condition, 1) <= -1))) {
     state.condition = 0;
   }
-  else if ((lxTrigger && (pinescript.offset(state.condition, 1) >= 1))) {
+  else if ((lxTrigger && (pinescript.hist(132, state.condition, 1) >= 1))) {
     state.condition = 0;
   }
-  else if ((sxTrigger && (pinescript.offset(state.condition, 1) <= -1))) {
+  else if ((sxTrigger && (pinescript.hist(133, state.condition, 1) <= -1))) {
     state.condition = 0;
   }
-  let longE = ((leTrigger && (pinescript.offset(state.condition, 1) <= 0)) && (state.condition === 1));
-  let shortE = ((seTrigger && (pinescript.offset(state.condition, 1) >= 0)) && (state.condition === -1));
-  let longX = ((lxTrigger && (pinescript.offset(state.condition, 1) >= 1)) && (state.condition === 0));
-  let shortX = ((sxTrigger && (pinescript.offset(state.condition, 1) <= -1)) && (state.condition === 0));
-  let longSL = ((slLong && (pinescript.offset(state.condition, 1) >= 1)) && (state.condition === 0));
-  let shortSL = ((slShort && (pinescript.offset(state.condition, 1) <= -1)) && (state.condition === 0));
-  let longTP3 = ((tp3Long && (pinescript.offset(state.condition, 1) === 1.2)) && (state.condition === 1.3));
-  let shortTP3 = ((tp3Short && (pinescript.offset(state.condition, 1) === -1.2)) && (state.condition === -1.3));
-  let longTP2 = ((tp2Long && (pinescript.offset(state.condition, 1) === 1.1)) && (state.condition === 1.2));
-  let shortTP2 = ((tp2Short && (pinescript.offset(state.condition, 1) === -1.1)) && (state.condition === -1.2));
-  let longTP1 = ((tp1Long && (pinescript.offset(state.condition, 1) === 1)) && (state.condition === 1.1));
-  let shortTP1 = ((tp1Short && (pinescript.offset(state.condition, 1) === -1)) && (state.condition === -1.1));
+  let longE = ((leTrigger && (pinescript.hist(134, state.condition, 1) <= 0)) && (state.condition === 1));
+  let shortE = ((seTrigger && (pinescript.hist(135, state.condition, 1) >= 0)) && (state.condition === -1));
+  let longX = ((lxTrigger && (pinescript.hist(136, state.condition, 1) >= 1)) && (state.condition === 0));
+  let shortX = ((sxTrigger && (pinescript.hist(137, state.condition, 1) <= -1)) && (state.condition === 0));
+  let longSL = ((slLong && (pinescript.hist(138, state.condition, 1) >= 1)) && (state.condition === 0));
+  let shortSL = ((slShort && (pinescript.hist(139, state.condition, 1) <= -1)) && (state.condition === 0));
+  let longTP3 = ((tp3Long && (pinescript.hist(140, state.condition, 1) === 1.2)) && (state.condition === 1.3));
+  let shortTP3 = ((tp3Short && (pinescript.hist(141, state.condition, 1) === -1.2)) && (state.condition === -1.3));
+  let longTP2 = ((tp2Long && (pinescript.hist(142, state.condition, 1) === 1.1)) && (state.condition === 1.2));
+  let shortTP2 = ((tp2Short && (pinescript.hist(143, state.condition, 1) === -1.1)) && (state.condition === -1.2));
+  let longTP1 = ((tp1Long && (pinescript.hist(144, state.condition, 1) === 1)) && (state.condition === 1.1));
+  let shortTP1 = ((tp1Short && (pinescript.hist(145, state.condition, 1) === -1)) && (state.condition === -1.1));
   if ((((pinescript.strategy.position_size <= 0) && longE) && barstate.isconfirmed)) {
     pinescript.strategyEntry("Long", pinescript.strategy.long, ({ alert_message: i_leMsg, comment: "LE" }));
   }
@@ -1988,7 +2468,7 @@ function main() {
   if (state.a_entryLabel === undefined) state.a_entryLabel = pinescript.arrayNew(1);
   let newEntry = (longE || shortE);
   let entryIndex = 1;
-  entryIndex = (newEntry ? bar_index : pinescript.nz(pinescript.offset(entryIndex, 1)));
+  entryIndex = (newEntry ? bar_index : pinescript.nz(pinescript.hist(146, entryIndex, 1)));
   let lasTrade = (bar_index >= entryIndex);
   let l_right = 10;
   pinescript.lineDelete(f_qDq(state.a_slLine, pinescript.lineNew(entryIndex, state.slLine, (last_bar_index + l_right), state.slLine, ({ style: line.style_solid, color: c_sl }))));
@@ -2002,7 +2482,7 @@ function main() {
   pinescript.labelDelete(f_qDq(state.a_tp2label, pinescript.labelNew((last_bar_index + l_right), tp2Line, ("TP2: " + pinescript.strToString(tp2Line, "##.###")), ({ style: label.style_label_left, textcolor: pinescript.color.white, color: c_tp }))));
   pinescript.labelDelete(f_qDq(state.a_tp1label, pinescript.labelNew((last_bar_index + l_right), tp1Line, ("TP1: " + pinescript.strToString(tp1Line, "##.###")), ({ style: label.style_label_left, textcolor: pinescript.color.white, color: c_tp }))));
   let c_barCol = ((close > open) ? pinescript.color.rgb(120, 9, 139) : pinescript.color.rgb(69, 155, 225));
-  barcolor((i_barColOn ? c_barCol : null));
+  pinescript.barcolor((i_barColOn ? c_barCol : null));
   if ((((longE || shortE) || longX) || shortX)) {
     pinescript.alert(({ message: "Any Alert", freq: alert.freq_once_per_bar_close }));
   }
@@ -2021,7 +2501,67 @@ function main() {
 }
 
 
-// Export for use
 
-export { main
+// The bar-by-bar engine: runs main() once per bar over the dataset.
+function run(data, options = {}) {
+  data = data || {};
+  const inClose = (data.close || []).map(Number);
+  const n = inClose.length;
+  const inOpen = (data.open || inClose).map(Number);
+  const inHigh = (data.high || inClose).map(Number);
+  const inLow = (data.low || inClose).map(Number);
+  const inVol = (data.volume || new Array(n).fill(0)).map(Number);
+  const inTime = (data.time || inClose.map((_, i) => i)).map(Number);
+
+  // Reset all persistent and per-run state so repeated runs are independent.
+  globalThis.__pineState = {};
+  globalThis.__pineRuntime = { plots: {}, plotshapes: {}, alerts: [], bars: n, inputs: options.inputs || {} };
+  pinescript.__rt = {};
+  pinescript.__bar = 0;
+
+  // Growing OHLCV windows: each is a SeriesArray that gains one element per bar,
+  // so window built-ins like sma and highest see history up to the current bar.
+  const O = pinescript.asSeries([]), H = pinescript.asSeries([]), L = pinescript.asSeries([]);
+  const C = pinescript.asSeries([]), V = pinescript.asSeries([]), T = pinescript.asSeries([]);
+  const HL2 = pinescript.asSeries([]), HLC3 = pinescript.asSeries([]), OHLC4 = pinescript.asSeries([]);
+  globalThis.open = O; globalThis.high = H; globalThis.low = L; globalThis.close = C;
+  globalThis.volume = V; globalThis.time = T;
+  globalThis.hl2 = HL2; globalThis.hlc3 = HLC3; globalThis.ohlc4 = OHLC4;
+  globalThis.syminfo = globalThis.syminfo || { tickerid: 'SYNTHETIC', ticker: 'SYNTHETIC', mintick: 0.01 };
+
+  const rt = globalThis.__pineRuntime;
+  for (let i = 0; i < n; i++) {
+    O.push(inOpen[i]); H.push(inHigh[i]); L.push(inLow[i]); C.push(inClose[i]); V.push(inVol[i]); T.push(inTime[i]);
+    HL2.push((inHigh[i] + inLow[i]) / 2);
+    HLC3.push((inHigh[i] + inLow[i] + inClose[i]) / 3);
+    OHLC4.push((inOpen[i] + inHigh[i] + inLow[i] + inClose[i]) / 4);
+
+    pinescript.__bar = i;
+    rt.__barIndex = i;
+    rt.__plotIdx = 0;
+    rt.__shapeIdx = 0;
+    globalThis.bar_index = i;
+    globalThis.last_bar_index = n - 1;
+    globalThis.barstate = {
+      isfirst: i === 0, islast: i === n - 1, isrealtime: false, ishistory: true,
+      isconfirmed: true, isnew: true, islastconfirmedhistory: i === n - 1,
+    };
+
+    main();
+  }
+
+  // Backfill skipped bars so every output series has exactly n entries.
+  for (const k of Object.keys(rt.plots)) {
+    const d = rt.plots[k].data;
+    for (let i = 0; i < n; i++) if (d[i] === undefined) d[i] = null;
+  }
+  for (const k of Object.keys(rt.plotshapes)) {
+    const d = rt.plotshapes[k].data;
+    for (let i = 0; i < n; i++) if (d[i] === undefined) d[i] = false;
+  }
+  return rt;
+}
+
+
+export { main, run
 };

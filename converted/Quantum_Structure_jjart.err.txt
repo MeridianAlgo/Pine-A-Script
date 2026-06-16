@@ -1,1 +1,4 @@
-Error: Unexpected token: ) at line 489
+Error: Unexpected token ")" at line 489, column 143 while parsing if statement
+
+Command failed: node src/cli.js "examples\Quantum_Structure_jjart.pine" "converted\Quantum_Structure_jjart.js"
+Error: Unexpected token ")" at line 489, column 143 while parsing if statement

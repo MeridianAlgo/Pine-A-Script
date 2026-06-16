@@ -421,7 +421,9 @@ export async function reviewGeneratedCode(code, opts = {}) {
   const used = extractPinescriptMembers(code);
   const builtinKeys = new Set(Array.from(runtimeBuiltins.keys()));
   const allowed = allowedMembers();
-  const missing = used.filter((m) => !builtinKeys.has(m) && !allowed.has(m));
+  // Names starting with "__" are internal engine state (pinescript.__rt,
+  // pinescript.__bar), not built-in functions, so don't flag them as missing.
+  const missing = used.filter((m) => !m.startsWith('__') && !builtinKeys.has(m) && !allowed.has(m));
   if (missing.length) {
     report.warnings.push(
       `Possibly missing runtime builtins/mappings: ${missing.slice(0, 30).join(', ')}${missing.length > 30 ? ' ...' : ''}`

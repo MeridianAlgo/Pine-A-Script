@@ -268,26 +268,45 @@ Note: Small models can produce repetitive or low-quality output. The reviewer sa
 | `strategy.entry`, `strategy.close`, `strategy.exit`, `strategy.order` | Logged but not backtested |
 | `strategy.long`, `strategy.short` | Direction constants |
 
-### How Series Semantics Work
+### How the Execution Engine Works
 
-PineScript treats data as series -- arrays where the last element is the current bar. This transpiler preserves that behavior:
+This is the heart of correct PineScript behavior. PineScript does **not** run a script once over a whole dataset -- it runs the entire script **once per bar**, building up time series as it goes. On bar `i`, `close` is that bar's close, `close[1]` is the previous bar, `ta.sma(close, 20)` is the moving average *at bar i*, and a variable like `fast = ta.sma(close, 20)` is itself a series whose history (`fast[1]`) is available on later bars.
 
-- **History indexing**: `x[1]` in Pine becomes `pinescript.offset(x, 1)` in JavaScript. This safely grabs the value from one bar ago.
-- **Current bar arithmetic**: When you write `close + open` in Pine, both operands use the most recent bar value. The runtime wraps OHLCV arrays in a `SeriesArray` class whose `valueOf()` returns the last element, so arithmetic just works.
-- **Null safety**: `na(x)` checks for null/undefined/NaN. `nz(x, default)` replaces bad values. These work exactly like their Pine counterparts.
+The generated code reproduces this exactly:
+
+- Every converted file exports a **`run(data)`** function. It loops over the bars, growing the OHLCV series one bar at a time, and calls the script body (`main()`) for each bar.
+- **Series, not scalars.** Because the body runs per bar, window built-ins (`ta.sma`, `ta.highest`, ...) compute the correct value *at each bar*, and plotting a value collects a full output series -- one value per bar -- instead of a single final number.
+- **History indexing**: `x[n]` is compiled to `pinescript.hist(id, x, n)`. The runtime records the current-bar value of `x` at a unique call-site `id` and reads back `n` bars, so lookback works even when `x` is computed on the current bar.
+- **Crossover / change / lookback**: functions like `ta.crossover`, `ta.change`, `ta.rising`, `ta.barssince` have their series arguments wrapped in `pinescript.series(id, expr)`, which accumulates per-bar history. This is what makes them actually fire on the right bar rather than always returning `false`.
+- **Current-bar arithmetic**: `close + open` uses each bar's value. OHLCV are `SeriesArray` objects whose `valueOf()` returns the current bar, so plain arithmetic works.
+- **Null safety**: `na(x)` checks for null/undefined/NaN; `nz(x, default)` replaces bad values, just like Pine.
+
+#### Running converted output
+
+```javascript
+import { run } from './converted/my_indicator.js';
+
+// data is an object of equal-length OHLCV arrays
+const result = run({
+  open, high, low, close, volume, time,
+});
+
+// result.plots and result.plotshapes are named series, one value per bar
+console.log(result.plots['Fast MA'].data);   // [na, na, 2, 3, 4, ...]
+```
 
 ### How State Persistence Works
 
-Variables declared with `var` or `varip` keep their values across bar executions:
+Variables declared with `var` or `varip` keep their values across bars. Because `run()` calls `main()` once per bar without resetting state between bars, accumulation works naturally:
 
 ```javascript
-// What the transpiler generates for: var float lastCross = na
-if (state.lastCross === undefined) state.lastCross = null;
-// Reads become: state.lastCross
-// Writes become: state.lastCross = newValue;
+// What the transpiler generates for: var float total = 0.0
+if (state.total === undefined) state.total = 0.0;
+// Reads become: state.total
+// Writes become: state.total = newValue;
 ```
 
-The `state` object is stored in `globalThis.__pineState` so it survives across calls to `main()`.
+The `state` object lives in `globalThis.__pineState` and is reset once at the start of each `run()` call, so repeated runs are independent.
 
 ### How Multi-Timeframe Works
 
@@ -307,15 +326,20 @@ The `state` object is stored in `globalThis.__pineState` so it survives across c
 These PineScript features are not yet fully implemented. The transpiler will handle scripts that use them, but the runtime behavior may not match TradingView exactly.
 
 ### Not yet implemented
+- **Function-scope hoisting**: PineScript variables are function-scoped, but the generator currently declares them with `let` at first use. A variable first assigned inside an `if`/`for` block and read outside it can become a JS block-scope error. This is the top priority for the next release.
+- **`if`/`switch` as a function's return value**: when the last statement of a user function is an `if`/`else` (or `switch`), its value isn't returned yet -- such helpers currently return `undefined`.
 - **Strategy backtesting**: Entry/exit functions log actions but do not simulate trades or generate equity curves
+- **Unimplemented stdlib degrades gracefully**: unmapped namespaces (e.g. `matrix.*`, `chart.*`, exotic `request.*`) resolve to safe no-ops that return `null` rather than crashing, so scripts run end-to-end. The reviewer reports which builtins are missing.
 - **Pine v6 maps**: `map.new`, `map.get`, `map.set` have basic Map-backed implementations but are not battle-tested
 - **User-defined type methods**: `type Foo` with `method` blocks has limited support
 - **Library imports**: `import` statements are parsed but the imported functions are not resolved
 - **Session calendars**: `timeframe.session` and session-based resampling
-- **Polyline animations**: `polyline.set_*` methods
-- **Line fills**: `linefill.new` and related functions
-- **Tooltip formatting**: `format.*` options for `plot`
-- **Plot/CSV export**: No built-in way to export plotted values
+- **Drawings**: `line`/`box`/`label`/`polyline`/`linefill` objects are created but not rendered or fully updated
+- **Plot/CSV export**: `run()` returns plot series in memory; there is no file export helper yet
+
+### Verified working
+
+The bar-by-bar engine is covered by a numeric test suite (`npm run test:engine`) that runs generated code over known data and asserts the full output series against hand-computed values: `ta.sma`, `ta.ema`, `ta.change`, `ta.highest`, `x[1]` lookback, `var` accumulation, `bar_index`, and `ta.crossover` firing on the exact bar.
 
 ## CLI Reference
 
@@ -404,11 +428,21 @@ alertcondition(ta.crossover(fastMA, slowMA), "MA Crossover", "Fast crossed above
 alertcondition(ta.crossunder(fastMA, slowMA), "MA Crossunder", "Fast crossed below slow")
 ```
 
-Convert and run:
+Convert it:
 
 ```bash
 node src/cli.js test_script.pine test_script.js
-node test_script.js   # Needs OHLCV data loaded into globalThis
+```
+
+Then run it bar-by-bar over your OHLCV data:
+
+```javascript
+import { run } from './test_script.js';
+
+const result = run({ open, high, low, close, volume, time });
+// result.plots['Fast MA'].data  -> full per-bar series
+// result.plotshapes['Crossover'].data -> per-bar booleans
+// result.alerts -> alertcondition() hits with their bar index
 ```
 
 ## Contributing
