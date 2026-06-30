@@ -42,6 +42,80 @@ const pinescript = {
     if (value != null && typeof value[Symbol.iterator] === 'function') return Array.from(value);
     return new Array(count || 0).fill(null);
   },
+  __decArr: function(arr) {
+    if (!Array.isArray(arr) || arr.__pineDecorated) return arr;
+    const self = this;
+    const def = (name, fn) => Object.defineProperty(arr, name, { value: fn, writable: true, configurable: true });
+    Object.defineProperty(arr, '__pineDecorated', { value: true, configurable: true });
+    def('get', (i) => (arr[i] === undefined ? null : arr[i]));
+    def('set', (i, v) => { arr[i] = v; return v; });
+    def('size', () => arr.length);
+    def('clear', () => { arr.length = 0; });
+    def('insert', (i, v) => { arr.splice(i, 0, v); });
+    def('remove', (i) => arr.splice(i, 1)[0]);
+    def('contains', (v) => arr.includes(v));
+    def('indexof', (v) => arr.indexOf(v));
+    def('lastindexof', (v) => arr.lastIndexOf(v));
+    def('first', () => (arr.length ? arr[0] : null));
+    def('last', () => (arr.length ? arr[arr.length - 1] : null));
+    def('sum', () => arr.reduce((a, b) => a + b, 0));
+    def('avg', () => (arr.length ? arr.reduce((a, b) => a + b, 0) / arr.length : 0));
+    def('min', () => (arr.length ? Math.min(...arr) : null));
+    def('max', () => (arr.length ? Math.max(...arr) : null));
+    def('range', () => (arr.length ? Math.max(...arr) - Math.min(...arr) : null));
+    // Statistical methods that route to the array.* built-ins (these names are not
+    // native to JS arrays, so attaching them here is safe from recursion).
+    def('median', () => self.arrayMedian(arr));
+    def('mode', () => self.arrayMode(arr));
+    def('stdev', () => self.arrayStdev(arr));
+    def('variance', () => self.arrayVariance(arr));
+    def('covariance', (other) => self.arrayCovariance(arr, other));
+    def('percentile_linear_interpolation', (p) => self.arrayPercentileLinearInterpolation(arr, p));
+    def('percentile_nearest_rank', (p) => self.arrayPercentileNearestRank(arr, p));
+    def('abs', () => self.__decArr(self.arrayAbs(arr)));
+    def('binary_search', (v) => self.arrayBinarySearch(arr, v));
+    // Pine's array.sort takes an order string, not a comparator. Use the native
+    // sort via .call so we don't recurse through this overridden method.
+    def('sort', (order) => { Array.prototype.sort.call(arr, (a, b) => (order === 'descending' ? b - a : a - b)); return arr; });
+    def('sort_indices', (order) => self.__decArr(arr.map((_, i) => i).sort((a, b) => (order === 'descending' ? arr[b] - arr[a] : arr[a] - arr[b]))));
+    // join/slice/reverse/concat/includes/fill already exist natively on Array with
+    // compatible semantics, so we deliberately leave them to the native methods.
+    return arr;
+  },
+  __decMap: function(m) {
+    if (!(m instanceof Map) || m.__pineDecorated) return m;
+    const def = (name, fn) => Object.defineProperty(m, name, { value: fn, writable: true, configurable: true });
+    Object.defineProperty(m, '__pineDecorated', { value: true, configurable: true });
+    def('put', (k, v) => { m.set(k, v); return v; });
+    def('contains', (k) => m.has(k));
+    def('remove', (k) => m.delete(k));
+    def('keys', () => Array.from(Map.prototype.keys.call(m)));
+    def('values', () => Array.from(Map.prototype.values.call(m)));
+    def('size_', () => m.size);
+    return m;
+  },
+  __decMatrix: function(m) {
+    if (!m || typeof m !== 'object' || m.__pineDecorated) return m;
+    const self = this;
+    const def = (name, fn) => Object.defineProperty(m, name, { value: fn, writable: true, configurable: true });
+    Object.defineProperty(m, '__pineDecorated', { value: true, configurable: true });
+    def('get', (r, c) => self.matrixGet(m, r, c));
+    def('set', (r, c, v) => self.matrixSet(m, r, c, v));
+    def('rows_', () => m.rows);
+    def('columns', () => m.cols);
+    def('fill', (v) => self.matrixFill(m, v));
+    return m;
+  },
+  __decDraw: function(obj) {
+    if (!obj || typeof obj !== 'object') return obj;
+    const p = new Proxy(obj, {
+      get(t, k) {
+        if (k in t || typeof k === 'symbol') return t[k];
+        return function() { return p; };
+      },
+    });
+    return p;
+  },
   alertcondition: function(condition, ...rest) {
     if (globalThis.__pineRuntime) {
       globalThis.__pineRuntime.alerts.push({ condition, args: rest });
@@ -49,6 +123,32 @@ const pinescript = {
     return null;
   },
   barcolor: function(color) { return null; },
+  plotchar: function(series, ...rest) {
+    const rt = globalThis.__pineRuntime;
+    if (!rt) return series;
+    const bar = rt.__barIndex | 0;
+    const ord = (rt.__shapeIdx = (rt.__shapeIdx | 0) + 1) - 1;
+    let key = 'char_' + ord;
+    for (const r of rest) {
+      if (typeof r === 'string') { key = r; break; }
+      if (r && typeof r === 'object' && r.title) { key = String(r.title); break; }
+    }
+    let s = rt.plotshapes[key];
+    if (!s) s = rt.plotshapes[key] = { title: key, data: [] };
+    s.data[bar] = this.__scalar(series);
+    return series;
+  },
+  plotarrow: function(series, ...rest) {
+    const rt = globalThis.__pineRuntime;
+    if (!rt) return series;
+    const bar = rt.__barIndex | 0;
+    const ord = (rt.__plotIdx = (rt.__plotIdx | 0) + 1) - 1;
+    const key = 'arrow_' + ord;
+    let p = rt.plots[key];
+    if (!p) p = rt.plots[key] = { title: key, data: [] };
+    p.data[bar] = this.__scalar(series);
+    return series;
+  },
   bgcolor: function(color, title, editable, showLast) {
     return null;
   },
@@ -470,6 +570,12 @@ const pinescript = {
   atan: function(value) {
     return Math.atan(value);
   },
+  todegrees: function(radians) {
+    return radians * (180 / Math.PI);
+  },
+  toradians: function(degrees) {
+    return degrees * (Math.PI / 180);
+  },
   floor: function(value) {
     return Math.floor(value);
   },
@@ -641,7 +747,7 @@ const pinescript = {
     return series;
   },
   lineNew: function(x1, y1, x2, y2, opts = {}) {
-    return { x1, y1, x2, y2, opts, _type: 'line' };
+    return this.__decDraw({ x1, y1, x2, y2, opts, _type: 'line' });
   },
   lineDelete: function(l) {
     return null;
@@ -661,7 +767,7 @@ const pinescript = {
     return point === 0 || point === 'y1' ? line.y1 : line.y2;
   },
   labelNew: function(x, y, text = '', opts = {}) {
-    return { x, y, text, opts, _type: 'label' };
+    return this.__decDraw({ x, y, text, opts, _type: 'label' });
   },
   labelDelete: function(l) {
     return null;
@@ -676,7 +782,7 @@ const pinescript = {
     return label.text || '';
   },
   boxNew: function(left, top, right, bottom, opts = {}) {
-    return { left, top, right, bottom, opts, _type: 'box' };
+    return this.__decDraw({ left, top, right, bottom, opts, _type: 'box' });
   },
   boxDelete: function(box) {
     return null;
@@ -694,7 +800,7 @@ const pinescript = {
     return box;
   },
   polylineNew: function(points, opts = {}) {
-    return { points: points || [], opts, _type: 'polyline' };
+    return this.__decDraw({ points: points || [], opts, _type: 'polyline' });
   },
   polylineDelete: function(poly) {
     return null;
@@ -765,7 +871,7 @@ const pinescript = {
     return { time: _time ?? null, price: _price ?? null };
   },
   mapNew: function() {
-    return new Map();
+    return this.__decMap(new Map());
   },
   mapSize: function(m) {
     return m instanceof Map ? m.size : 0;
@@ -800,7 +906,7 @@ const pinescript = {
     const r = Math.max(0, rows ?? 0);
     const c = Math.max(0, cols ?? 0);
     const data = Array.from({ length: r }, () => Array.from({ length: c }, () => initialValue));
-    return { rows: r, cols: c, data };
+    return this.__decMatrix({ rows: r, cols: c, data });
   },
   matrixRows: function(m) {
     return m?.rows ?? 0;
@@ -923,11 +1029,62 @@ const pinescript = {
     }
     return null;
   },
+  __jacobiEigen: function(m) {
+    if (!m || !Array.isArray(m.data)) return null;
+    const n = m.rows ?? 0;
+    if (n === 0 || n !== (m.cols ?? 0)) return null;
+    // Work on a copy so the input matrix is untouched.
+    const a = m.data.map(row => row.slice());
+    const v = Array.from({ length: n }, (_, i) => Array.from({ length: n }, (_, j) => (i === j ? 1 : 0)));
+    for (let sweep = 0; sweep < 100; sweep++) {
+      let off = 0;
+      for (let p = 0; p < n; p++) for (let q = p + 1; q < n; q++) off += a[p][q] * a[p][q];
+      if (off < 1e-20) break;
+      for (let p = 0; p < n; p++) {
+        for (let q = p + 1; q < n; q++) {
+          if (Math.abs(a[p][q]) < 1e-18) continue;
+          const theta = (a[q][q] - a[p][p]) / (2 * a[p][q]);
+          const t = Math.sign(theta || 1) / (Math.abs(theta) + Math.sqrt(theta * theta + 1));
+          const cos = 1 / Math.sqrt(t * t + 1);
+          const sin = t * cos;
+          for (let k = 0; k < n; k++) {
+            const akp = a[k][p], akq = a[k][q];
+            a[k][p] = cos * akp - sin * akq;
+            a[k][q] = sin * akp + cos * akq;
+          }
+          for (let k = 0; k < n; k++) {
+            const apk = a[p][k], aqk = a[q][k];
+            a[p][k] = cos * apk - sin * aqk;
+            a[q][k] = sin * apk + cos * aqk;
+          }
+          for (let k = 0; k < n; k++) {
+            const vkp = v[k][p], vkq = v[k][q];
+            v[k][p] = cos * vkp - sin * vkq;
+            v[k][q] = sin * vkp + cos * vkq;
+          }
+        }
+      }
+    }
+    // Sort eigenpairs by eigenvalue, descending.
+    const order = Array.from({ length: n }, (_, i) => i).sort((i, j) => a[j][j] - a[i][i]);
+    const values = order.map(i => a[i][i]);
+    const vectors = Array.from({ length: n }, (_, r) => order.map(c => v[r][c]));
+    return { values, vectors };
+  },
+  matrixEigenvalues: function(m) {
+    const e = this.__jacobiEigen(m);
+    return this.__decArr(e ? e.values : []);
+  },
+  matrixEigenvectors: function(m) {
+    const e = this.__jacobiEigen(m);
+    if (!e) return this.__decMatrix({ rows: 0, cols: 0, data: [] });
+    return this.__decMatrix({ rows: e.vectors.length, cols: e.vectors.length, data: e.vectors });
+  },
   requestSecurity: function(symbol, timeframe, expression) {
     return expression;
   },
   arrayNew: function(initialSize = 0, initialValue = 0) {
-    return Array(initialSize).fill(initialValue);
+    return this.__decArr(Array(initialSize).fill(initialValue));
   },
   arraySize: function(arr) {
     return arr ? arr.length : 0;
@@ -978,10 +1135,10 @@ const pinescript = {
     return arr;
   },
   arraySlice: function(arr, startIndex = 0, endIndex = null) {
-    if (!arr) return [];
+    if (!arr) return this.__decArr([]);
     const start = Number(startIndex) || 0;
     const end = endIndex === null || endIndex === undefined ? arr.length : Number(endIndex) || 0;
-    return arr.slice(start, end);
+    return this.__decArr(arr.slice(start, end));
   },
   arraySort: function(arr, order = 'ascending') {
     if (arr) arr.sort((a, b) => order === 'ascending' ? a - b : b - a);
@@ -1191,7 +1348,7 @@ const pinescript = {
     const info = { ticker: 'AAPL', tickerid: 'NASDAQ:AAPL', prefix: 'NASDAQ', root: 'AAPL', suffix: '' };
     return info[type] || '';
   },
-  timenow: 1781574526555,
+  timenow: 1782783575854,
   barstate: "LAST",
   dividends: {},
   splits: {},
@@ -1245,11 +1402,11 @@ const pinescript = {
   arrayConcat: function(arr1, arr2) {
     if (!arr1) return arr2 || [];
     if (!arr2) return arr1;
-    return arr1.concat(arr2);
+    return this.__decArr(arr1.concat(arr2));
   },
   arrayCopy: function(arr) {
-    if (!arr) return [];
-    return [...arr];
+    if (!arr) return this.__decArr([]);
+    return this.__decArr([...arr]);
   },
   arrayBinarySearch: function(arr, value) {
     if (!arr || arr.length === 0) return -1;
@@ -1339,7 +1496,7 @@ globalThis.input.timeframe = globalThis.input.timeframe || ((defval) => defval);
 
 globalThis.array = globalThis.array || {
 
-  from: (...items) => items,
+  from: (...items) => pinescript.__decArr(items),
 
   size: (arr) => pinescript.arraySize(arr),
 
@@ -1508,6 +1665,8 @@ globalThis.line = globalThis.line || __pineNS({ style_solid: "solid", style_dash
 
 globalThis.box = globalThis.box || __pineNS({});
 
+globalThis.color = globalThis.color || __pineNS(Object.assign(function(c) { return c; }, { new: function(c, t) { return c; }, rgb: function(r, g, b, t) { return "#rgb(" + [r, g, b].join(",") + ")"; }, from_gradient: function(v, lo, hi, c1, c2) { return c1; }, r: function() { return 0; }, g: function() { return 0; }, b: function() { return 0; }, t: function() { return 0; }, aqua: "#00BCD4", black: "#363A45", blue: "#2962FF", fuchsia: "#E040FB", gray: "#787B86", green: "#4CAF50", lime: "#00E676", maroon: "#880E4F", navy: "#311B92", olive: "#808000", orange: "#FF9800", purple: "#9C27B0", red: "#FF5252", silver: "#B2B5BE", teal: "#00897B", white: "#FFFFFF", yellow: "#FFEB3B" }));
+
 globalThis.label = globalThis.label || __pineNS({ style_label_down: "label_down", style_label_up: "label_up", style_none: "none" });
 
 globalThis.polyline = globalThis.polyline || __pineNS({});
@@ -1520,7 +1679,9 @@ globalThis.map = globalThis.map || __pineNS({});
 
 globalThis.session = globalThis.session || __pineNS({ regular: "regular", extended: "extended" });
 
-globalThis.dayofweek = globalThis.dayofweek || __pineNS({ sunday: 1, monday: 2, tuesday: 3, wednesday: 4, thursday: 5, friday: 6, saturday: 7 });
+globalThis.ticker = globalThis.ticker || __pineNS({});
+
+globalThis.dayofweek = globalThis.dayofweek || __pineNS(Object.assign(function(t) { return new Date(t != null ? t : (globalThis.time || 0)).getUTCDay() + 1; }, { sunday: 1, monday: 2, tuesday: 3, wednesday: 4, thursday: 5, friday: 6, saturday: 7 }));
 
 globalThis.timeframe = __pineNS(Object.assign(globalThis.timeframe || {}, { period: (globalThis.timeframe && globalThis.timeframe.period) || "D", isintraday: false, isdaily: true, multiplier: 1 }));
 
@@ -1567,8 +1728,6 @@ globalThis.float = globalThis.float || function(x) { return x == null ? null : N
 globalThis.bool = globalThis.bool || function(x) { return Boolean(x); };
 
 globalThis.string = globalThis.string || function(x) { return x == null ? null : String(x); };
-
-globalThis.dayofweek = globalThis.dayofweek || __pineNS({ sunday: 1, monday: 2, tuesday: 3, wednesday: 4, thursday: 5, friday: 6, saturday: 7 });
 
 globalThis.str = globalThis.str || __pineNS({});
 
@@ -1655,7 +1814,7 @@ pinescript.text = { align_center: "center" };
 
 pinescript.table = {
 
-  new: function(position, columns, rows, opts) { return { position, columns, rows, opts: opts || {}, cells: [] }; },
+  new: function(position, columns, rows, opts) { return pinescript.__decDraw({ position, columns, rows, opts: opts || {}, cells: [] }); },
 
   cell: function(table, column, row, text, opts) {
 
@@ -1688,68 +1847,68 @@ function main() {
   null;
   // Study: Asset Drift Model
   // Options: {"shorttitle":"ADM","overlay":false,"max_bars_back":800}
-  let HORIZON = 60;
-  let SAMPLE_TOTAL = 756;
-  let MIN_OBS_STRICT = 10;
-  let MIN_OBS_ROBUST = 20;
-  let T_CRIT_95 = 2;
-  let T_CRIT_90 = 1.65;
-  let MIN_DRIFT_ECON = 0.03;
-  let MAX_DEV_SD = 1.5;
-  let SIGN_Z_CRIT = 1.65;
-  let ANN_FACTOR = (252 / HORIZON);
-  let i_bgMode = pinescript.inputString("On", "Background", ({ options: ["Off", "On"], group: "Display", tooltip: "Background color based on drift classification" }));
-  let i_bgInt = pinescript.inputInt(75, "BG Intensity", ({ minval: 70, maxval: 95, group: "Display", tooltip: "Transparency of background color" }));
-  let i_barColor = pinescript.inputBool(true, "Bar Coloring", ({ group: "Display", tooltip: "Color bars based on drift direction" }));
-  let i_showDash = pinescript.inputBool(true, "Dashboard", ({ group: "Dashboard", tooltip: "Show statistical details panel" }));
-  let i_dashPos = pinescript.inputString("Top Right", "Position", ({ options: ["Top Right", "Top Left", "Bottom Right", "Bottom Left"], group: "Dashboard" }));
-  let i_dashSize = pinescript.inputString("Small", "Size", ({ options: ["Tiny", "Small", "Normal"], group: "Dashboard", tooltip: "Text size of dashboard" }));
-  let i_showWM = pinescript.inputBool(true, "Watermark", ({ group: "Watermark", tooltip: "Show ticker and classification summary" }));
-  let i_wmPos = pinescript.inputString("Bottom Right", "Position", ({ options: ["Top Right", "Top Left", "Bottom Right", "Bottom Left"], group: "Watermark" }));
-  let i_wmSize = pinescript.inputString("Normal", "Size", ({ options: ["Small", "Normal", "Large"], group: "Watermark", tooltip: "Text size of watermark" }));
-  let i_dark = pinescript.inputBool(true, "Dark Mode", ({ group: "Style", tooltip: "Optimize colors for dark charts" }));
-  let i_alerts = pinescript.inputBool(false, "Alerts", ({ group: "Alerts", tooltip: "Trigger alerts on classification changes" }));
-  let cBull = (i_dark ? pinescript.color.hex("#22c55e") : pinescript.color.hex("#16a34a"));
-  let cBear = (i_dark ? pinescript.color.hex("#ef4444") : pinescript.color.hex("#dc2626"));
-  let cWeak = (i_dark ? pinescript.color.hex("#f59e0b") : pinescript.color.hex("#d97706"));
-  let cNeut = (i_dark ? pinescript.color.hex("#737373") : pinescript.color.hex("#525252"));
-  let cPrim = (i_dark ? pinescript.color.hex("#3b82f6") : pinescript.color.hex("#2563eb"));
-  let cText = (i_dark ? pinescript.color.hex("#fafafa") : pinescript.color.hex("#0a0a0a"));
-  let cTblBg = (i_dark ? pinescript.color.hex("#171717") : pinescript.color.hex("#f5f5f5"));
-  let cHdrBg = (i_dark ? pinescript.color.hex("#262626") : pinescript.color.hex("#e5e5e5"));
+  var HORIZON = 60;
+  var SAMPLE_TOTAL = 756;
+  var MIN_OBS_STRICT = 10;
+  var MIN_OBS_ROBUST = 20;
+  var T_CRIT_95 = 2;
+  var T_CRIT_90 = 1.65;
+  var MIN_DRIFT_ECON = 0.03;
+  var MAX_DEV_SD = 1.5;
+  var SIGN_Z_CRIT = 1.65;
+  var ANN_FACTOR = (252 / HORIZON);
+  var i_bgMode = pinescript.inputString("On", "Background", ({ options: ["Off", "On"], group: "Display", tooltip: "Background color based on drift classification" }));
+  var i_bgInt = pinescript.inputInt(75, "BG Intensity", ({ minval: 70, maxval: 95, group: "Display", tooltip: "Transparency of background color" }));
+  var i_barColor = pinescript.inputBool(true, "Bar Coloring", ({ group: "Display", tooltip: "Color bars based on drift direction" }));
+  var i_showDash = pinescript.inputBool(true, "Dashboard", ({ group: "Dashboard", tooltip: "Show statistical details panel" }));
+  var i_dashPos = pinescript.inputString("Top Right", "Position", ({ options: ["Top Right", "Top Left", "Bottom Right", "Bottom Left"], group: "Dashboard" }));
+  var i_dashSize = pinescript.inputString("Small", "Size", ({ options: ["Tiny", "Small", "Normal"], group: "Dashboard", tooltip: "Text size of dashboard" }));
+  var i_showWM = pinescript.inputBool(true, "Watermark", ({ group: "Watermark", tooltip: "Show ticker and classification summary" }));
+  var i_wmPos = pinescript.inputString("Bottom Right", "Position", ({ options: ["Top Right", "Top Left", "Bottom Right", "Bottom Left"], group: "Watermark" }));
+  var i_wmSize = pinescript.inputString("Normal", "Size", ({ options: ["Small", "Normal", "Large"], group: "Watermark", tooltip: "Text size of watermark" }));
+  var i_dark = pinescript.inputBool(true, "Dark Mode", ({ group: "Style", tooltip: "Optimize colors for dark charts" }));
+  var i_alerts = pinescript.inputBool(false, "Alerts", ({ group: "Alerts", tooltip: "Trigger alerts on classification changes" }));
+  var cBull = (i_dark ? pinescript.color.hex("#22c55e") : pinescript.color.hex("#16a34a"));
+  var cBear = (i_dark ? pinescript.color.hex("#ef4444") : pinescript.color.hex("#dc2626"));
+  var cWeak = (i_dark ? pinescript.color.hex("#f59e0b") : pinescript.color.hex("#d97706"));
+  var cNeut = (i_dark ? pinescript.color.hex("#737373") : pinescript.color.hex("#525252"));
+  var cPrim = (i_dark ? pinescript.color.hex("#3b82f6") : pinescript.color.hex("#2563eb"));
+  var cText = (i_dark ? pinescript.color.hex("#fafafa") : pinescript.color.hex("#0a0a0a"));
+  var cTblBg = (i_dark ? pinescript.color.hex("#171717") : pinescript.color.hex("#f5f5f5"));
+  var cHdrBg = (i_dark ? pinescript.color.hex("#262626") : pinescript.color.hex("#e5e5e5"));
   function f_pos(p) {
     return ((p === "Top Right") ? pinescript.position.top_right : ((p === "Top Left") ? pinescript.position.top_left : ((p === "Bottom Right") ? pinescript.position.bottom_right : pinescript.position.bottom_left)));
   }
   function f_size(s) {
     return ((s === "Tiny") ? pinescript.size.tiny : ((s === "Small") ? pinescript.size.small : ((s === "Normal") ? pinescript.size.normal : ((s === "Large") ? pinescript.size.large : pinescript.size.small))));
   }
-  let dashSizeH = f_size(((i_dashSize === "Tiny") ? "Small" : i_dashSize));
-  let dashSizeD = f_size(i_dashSize);
-  let dashSizeF = f_size(((i_dashSize === "Normal") ? "Small" : "Tiny"));
-  let wmSizeT = f_size(((i_wmSize === "Small") ? "Normal" : ((i_wmSize === "Normal") ? "Large" : "Large")));
-  let wmSizeM = f_size(i_wmSize);
-  let wmSizeS = f_size(((i_wmSize === "Large") ? "Small" : "Tiny"));
+  var dashSizeH = f_size(((i_dashSize === "Tiny") ? "Small" : i_dashSize));
+  var dashSizeD = f_size(i_dashSize);
+  var dashSizeF = f_size(((i_dashSize === "Normal") ? "Small" : "Tiny"));
+  var wmSizeT = f_size(((i_wmSize === "Small") ? "Normal" : ((i_wmSize === "Normal") ? "Large" : "Large")));
+  var wmSizeM = f_size(i_wmSize);
+  var wmSizeS = f_size(((i_wmSize === "Large") ? "Small" : "Tiny"));
   function f_median(arr) {
-    let n = pinescript.arraySize(arr);
+    var n = pinescript.arraySize(arr);
     if ((n === 0)) {
-      0;
+      return 0;
     } else {
-      let s = pinescript.arrayCopy(arr);
+      var s = pinescript.arrayCopy(arr);
       pinescript.arraySort(s);
-      let m = (n / 2);
-      (((n % 2) === 0) ? ((pinescript.arrayGet(s, (m - 1)) + pinescript.arrayGet(s, m)) / 2) : pinescript.arrayGet(s, m));
+      var m = (n / 2);
+      return (((n % 2) === 0) ? ((pinescript.arrayGet(s, (m - 1)) + pinescript.arrayGet(s, m)) / 2) : pinescript.arrayGet(s, m));
     }
   }
   function f_collectAllReturns(src, horizon, maxBars) {
     if (state.arr === undefined) state.arr = pinescript.arrayNew(0);
     pinescript.arrayClear(state.arr);
-    let nPeriods = pinescript.floor((maxBars / horizon));
+    var nPeriods = pinescript.floor((maxBars / horizon));
     for (let i = 0; i <= (nPeriods - 1); i++) {
-      let recentBar = (i * horizon);
-      let pastBar = ((i + 1) * horizon);
+      var recentBar = (i * horizon);
+      var pastBar = ((i + 1) * horizon);
       if ((pastBar <= maxBars)) {
-        let pRecent = pinescript.nz(pinescript.hist(0, src, recentBar), src);
-        let pPast = pinescript.nz(pinescript.hist(1, src, pastBar), src);
+        var pRecent = pinescript.nz(pinescript.hist(0, src, recentBar), src);
+        var pPast = pinescript.nz(pinescript.hist(1, src, pastBar), src);
         if (((pPast > 0) && (pRecent > 0))) {
           pinescript.arrayPush(state.arr, pinescript.log((pRecent / pPast)));
         }
@@ -1758,55 +1917,55 @@ function main() {
     return state.arr;
   }
   function f_arrayStats(arr) {
-    n = pinescript.arraySize(state.arr);
+    var n = pinescript.arraySize(state.arr);
     if ((n < 3)) {
-      [0, 0, 0, 0, 0];
+      return [0, 0, 0, 0, 0];
     } else {
-      let mean = pinescript.arrayAvg(state.arr);
-      let med = f_median(state.arr);
-      let sumSq = 0;
-      let posCount = 0;
+      var mean = pinescript.arrayAvg(state.arr);
+      var med = f_median(state.arr);
+      var sumSq = 0;
+      var posCount = 0;
       for (let i = 0; i <= (n - 1); i++) {
-        let v = pinescript.arrayGet(state.arr, i);
+        var v = pinescript.arrayGet(state.arr, i);
         sumSq += ((v - mean) * (v - mean));
         if ((v > 0)) {
           posCount += 1;
         }
       }
-      let sd = pinescript.sqrt((sumSq / (n - 1)));
-      [mean, med, sd, n, posCount];
+      var sd = pinescript.sqrt((sumSq / (n - 1)));
+      return [mean, med, sd, n, posCount];
     }
   }
   function f_hacSE(arr, mean) {
-    n = pinescript.arraySize(state.arr);
+    var n = pinescript.arraySize(state.arr);
     if ((n < 3)) {
-      0;
+      return 0;
     } else {
-      let g0 = 0;
+      var g0 = 0;
       for (let i = 0; i <= (n - 1); i++) {
-        let d = (pinescript.arrayGet(state.arr, i) - mean);
+        var d = (pinescript.arrayGet(state.arr, i) - mean);
         g0 += (d * d);
       }
       g0 = (g0 / n);
-      let g1 = 0;
+      var g1 = 0;
       for (let i = 1; i <= (n - 1); i++) {
-        let di = (pinescript.arrayGet(state.arr, i) - mean);
-        let dj = (pinescript.arrayGet(state.arr, (i - 1)) - mean);
+        var di = (pinescript.arrayGet(state.arr, i) - mean);
+        var dj = (pinescript.arrayGet(state.arr, (i - 1)) - mean);
         g1 += (di * dj);
       }
       g1 = (g1 / n);
-      let hV = (g0 + g1);
-      pinescript.sqrt(pinescript.max((hV / n), 1e-14));
+      var hV = (g0 + g1);
+      return pinescript.sqrt(pinescript.max((hV / n), 1e-14));
     }
   }
   function f_splitArray(arr, isFirstHalf) {
-    n = pinescript.arraySize(state.arr);
+    var n = pinescript.arraySize(state.arr);
     if (state.result === undefined) state.result = pinescript.arrayNew(0);
     pinescript.arrayClear(state.result);
     if ((n < 2)) {
-      state.result;
+      return state.result;
     } else {
-      let halfN = pinescript.floor((n / 2));
+      var halfN = pinescript.floor((n / 2));
       if (isFirstHalf) {
         for (let i = 0; i <= (halfN - 1); i++) {
           pinescript.arrayPush(state.result, pinescript.arrayGet(state.arr, i));
@@ -1816,24 +1975,24 @@ function main() {
           pinescript.arrayPush(state.result, pinescript.arrayGet(state.arr, i));
         }
       }
-      state.result;
+      return state.result;
     }
   }
   function f_vrTest(src, horizon, k, sampleBars) {
-    let arr1 = f_collectAllReturns(src, horizon, sampleBars);
-    let arrK = f_collectAllReturns(src, (horizon * k), sampleBars);
-    let [m1, md1, sd1, n1, pc1] = pinescript.unpack(f_arrayStats(arr1), 5);
-    let [mK, mdK, sdK, nK, pcK] = pinescript.unpack(f_arrayStats(arrK), 5);
+    var arr1 = f_collectAllReturns(src, horizon, sampleBars);
+    var arrK = f_collectAllReturns(src, (horizon * k), sampleBars);
+    var [m1, md1, sd1, n1, pc1] = pinescript.unpack(f_arrayStats(arr1), 5);
+    var [mK, mdK, sdK, nK, pcK] = pinescript.unpack(f_arrayStats(arrK), 5);
     if ((((sd1 < 1e-10) || (n1 < MIN_OBS_STRICT)) || (nK < 3))) {
-      [1, 0, false];
+      return [1, 0, false];
     } else {
-      let var1 = (sd1 * sd1);
-      let varK = (sdK * sdK);
-      let vr = (varK / (k * var1));
-      let vrSE = pinescript.sqrt((((2 * ((2 * k) - 1)) * (k - 1)) / ((3 * k) * nK)));
-      let zVR = ((vrSE > 1e-10) ? (pinescript.abs((vr - 1)) / vrSE) : 0);
-      let vrSig = (zVR > T_CRIT_90);
-      [vr, zVR, vrSig];
+      var var1 = (sd1 * sd1);
+      var varK = (sdK * sdK);
+      var vr = (varK / (k * var1));
+      var vrSE = pinescript.sqrt((((2 * ((2 * k) - 1)) * (k - 1)) / ((3 * k) * nK)));
+      var zVR = ((vrSE > 1e-10) ? (pinescript.abs((vr - 1)) / vrSE) : 0);
+      var vrSig = (zVR > T_CRIT_90);
+      return [vr, zVR, vrSig];
     }
   }
   function f_mde(sd, n, tCrit) {
@@ -1842,42 +2001,42 @@ function main() {
   function f_signTestZ(posCount, n) {
     return ((n < MIN_OBS_STRICT) ? 0 : ((float(posCount) - (float(n) / 2)) / pinescript.sqrt((float(n) / 4))));
   }
-  let allReturns = f_collectAllReturns(close, HORIZON, SAMPLE_TOTAL);
-  let [mF, mdF, sdF, nF, pcF] = pinescript.unpack(f_arrayStats(allReturns), 5);
-  let seF = f_hacSE(allReturns, mF);
-  let tF = ((seF > 1e-10) ? (mF / seF) : 0);
-  arr1 = f_splitArray(allReturns, true);
-  let arr2 = f_splitArray(allReturns, false);
-  [m1, md1, sd1, n1, pc1] = pinescript.unpack(f_arrayStats(arr1), 5);
-  let se1 = f_hacSE(arr1, m1);
-  let t1 = ((se1 > 1e-10) ? (m1 / se1) : 0);
-  let [m2, md2, sd2, n2, pc2] = pinescript.unpack(f_arrayStats(arr2), 5);
-  let se2 = f_hacSE(arr2, m2);
-  let t2 = ((se2 > 1e-10) ? (m2 / se2) : 0);
-  [vr, zVR, vrSig] = pinescript.unpack(f_vrTest(close, HORIZON, 5, SAMPLE_TOTAL), 3);
-  let mde95 = f_mde(sdF, nF, T_CRIT_95);
-  let annDrift = (mF * ANN_FACTOR);
-  let zSign = f_signTestZ(pcF, nF);
-  let hitRate = ((nF > 0) ? (float(pcF) / float(nF)) : 0.5);
-  let inferenceAllowed = (((nF >= MIN_OBS_STRICT) && (n1 >= pinescript.floor((MIN_OBS_STRICT / 2)))) && (n2 >= pinescript.floor((MIN_OBS_STRICT / 2))));
-  let isRobust = (nF >= MIN_OBS_ROBUST);
-  let statSig = (inferenceAllowed && (pinescript.abs(tF) > T_CRIT_95));
-  let econSig = (inferenceAllowed && (pinescript.abs(annDrift) >= MIN_DRIFT_ECON));
-  let powerOK = (inferenceAllowed && (pinescript.na(mde95) ? false : (pinescript.abs(annDrift) >= mde95)));
-  let medianSig = (inferenceAllowed && (pinescript.abs(zSign) > SIGN_Z_CRIT));
-  let medianDir = ((zSign > 0) ? 1 : ((zSign < 0) ? -1 : 0));
-  let meanDir = ((mF > 0) ? 1 : ((mF < 0) ? -1 : 0));
-  let signTestOK = (inferenceAllowed && (!medianSig || (medianDir === meanDir)));
-  let meanMedOK = (inferenceAllowed && ((((mF > 0) && (mdF > 0)) || ((mF < 0) && (mdF < 0))) || (pinescript.abs(mF) < 1e-10)));
-  let sameSignMean = (((m1 > 0) && (m2 > 0)) || ((m1 < 0) && (m2 < 0)));
-  let pooledSD = pinescript.sqrt((((sd1 * sd1) + (sd2 * sd2)) / 2));
-  let levelDevSD = ((pooledSD > 1e-10) ? (pinescript.abs((m1 - m2)) / pooledSD) : 0);
-  let levelOK = (levelDevSD <= MAX_DEV_SD);
-  let sameSignT = ((((t1 > 0) && (t2 > 0)) && (tF > 0)) || (((t1 < 0) && (t2 < 0)) && (tF < 0)));
-  let structOK = (((inferenceAllowed && sameSignMean) && levelOK) && sameSignT);
-  let isMeanRev = ((vr < 1) && vrSig);
-  let vrOK = (inferenceAllowed && !isMeanRev);
-  let direction = ((mF > 0) ? 1 : ((mF < 0) ? -1 : 0));
+  var allReturns = f_collectAllReturns(close, HORIZON, SAMPLE_TOTAL);
+  var [mF, mdF, sdF, nF, pcF] = pinescript.unpack(f_arrayStats(allReturns), 5);
+  var seF = f_hacSE(allReturns, mF);
+  var tF = ((seF > 1e-10) ? (mF / seF) : 0);
+  var arr1 = f_splitArray(allReturns, true);
+  var arr2 = f_splitArray(allReturns, false);
+  var [m1, md1, sd1, n1, pc1] = pinescript.unpack(f_arrayStats(arr1), 5);
+  var se1 = f_hacSE(arr1, m1);
+  var t1 = ((se1 > 1e-10) ? (m1 / se1) : 0);
+  var [m2, md2, sd2, n2, pc2] = pinescript.unpack(f_arrayStats(arr2), 5);
+  var se2 = f_hacSE(arr2, m2);
+  var t2 = ((se2 > 1e-10) ? (m2 / se2) : 0);
+  var [vr, zVR, vrSig] = pinescript.unpack(f_vrTest(close, HORIZON, 5, SAMPLE_TOTAL), 3);
+  var mde95 = f_mde(sdF, nF, T_CRIT_95);
+  var annDrift = (mF * ANN_FACTOR);
+  var zSign = f_signTestZ(pcF, nF);
+  var hitRate = ((nF > 0) ? (float(pcF) / float(nF)) : 0.5);
+  var inferenceAllowed = (((nF >= MIN_OBS_STRICT) && (n1 >= pinescript.floor((MIN_OBS_STRICT / 2)))) && (n2 >= pinescript.floor((MIN_OBS_STRICT / 2))));
+  var isRobust = (nF >= MIN_OBS_ROBUST);
+  var statSig = (inferenceAllowed && (pinescript.abs(tF) > T_CRIT_95));
+  var econSig = (inferenceAllowed && (pinescript.abs(annDrift) >= MIN_DRIFT_ECON));
+  var powerOK = (inferenceAllowed && (pinescript.na(mde95) ? false : (pinescript.abs(annDrift) >= mde95)));
+  var medianSig = (inferenceAllowed && (pinescript.abs(zSign) > SIGN_Z_CRIT));
+  var medianDir = ((zSign > 0) ? 1 : ((zSign < 0) ? -1 : 0));
+  var meanDir = ((mF > 0) ? 1 : ((mF < 0) ? -1 : 0));
+  var signTestOK = (inferenceAllowed && (!medianSig || (medianDir === meanDir)));
+  var meanMedOK = (inferenceAllowed && ((((mF > 0) && (mdF > 0)) || ((mF < 0) && (mdF < 0))) || (pinescript.abs(mF) < 1e-10)));
+  var sameSignMean = (((m1 > 0) && (m2 > 0)) || ((m1 < 0) && (m2 < 0)));
+  var pooledSD = pinescript.sqrt((((sd1 * sd1) + (sd2 * sd2)) / 2));
+  var levelDevSD = ((pooledSD > 1e-10) ? (pinescript.abs((m1 - m2)) / pooledSD) : 0);
+  var levelOK = (levelDevSD <= MAX_DEV_SD);
+  var sameSignT = ((((t1 > 0) && (t2 > 0)) && (tF > 0)) || (((t1 < 0) && (t2 < 0)) && (tF < 0)));
+  var structOK = (((inferenceAllowed && sameSignMean) && levelOK) && sameSignT);
+  var isMeanRev = ((vr < 1) && vrSig);
+  var vrOK = (inferenceAllowed && !isMeanRev);
+  var direction = ((mF > 0) ? 1 : ((mF < 0) ? -1 : 0));
   if (state.classReason === undefined) state.classReason = "";
   if (state.classCode === undefined) state.classCode = 0;
   if (!inferenceAllowed) {
@@ -1922,29 +2081,29 @@ function main() {
       }
     }
   }
-  let strongEvidence = (state.classCode === 2);
-  let weakEvidence = (state.classCode === 1);
-  let classification = ((state.classCode === 2) ? (direction * 2) : ((state.classCode === 1) ? direction : 0));
-  let evidenceStr = (strongEvidence ? "STRONG" : (weakEvidence ? "WEAK" : "NONE"));
-  let biasStr = ((classification === 2) ? "Positive Drift" : ((classification === -2) ? "Negative Drift" : ((classification === 1) ? "Positive (weak)" : ((classification === -1) ? "Negative (weak)" : "No Drift"))));
-  let regimeStr = (isMeanRev ? "Mean-Rev" : "Neutral");
-  let bgClr = null;
+  var strongEvidence = (state.classCode === 2);
+  var weakEvidence = (state.classCode === 1);
+  var classification = ((state.classCode === 2) ? (direction * 2) : ((state.classCode === 1) ? direction : 0));
+  var evidenceStr = (strongEvidence ? "STRONG" : (weakEvidence ? "WEAK" : "NONE"));
+  var biasStr = ((classification === 2) ? "Positive Drift" : ((classification === -2) ? "Negative Drift" : ((classification === 1) ? "Positive (weak)" : ((classification === -1) ? "Negative (weak)" : "No Drift"))));
+  var regimeStr = (isMeanRev ? "Mean-Rev" : "Neutral");
+  var bgClr = null;
   if ((i_bgMode === "On")) {
     bgClr = ((classification >= 2) ? cBull : ((classification <= -2) ? cBear : ((pinescript.abs(classification) === 1) ? cWeak : null)));
   }
   pinescript.bgcolor(((i_bgMode === "On") ? pinescript.color.new(bgClr, i_bgInt) : null));
-  let cBarLong = pinescript.color.hex("#22c55e");
-  let cBarShort = pinescript.color.hex("#ef4444");
-  let cBarNeut = pinescript.color.hex("#a3a3a3");
-  let barClr = null;
+  var cBarLong = pinescript.color.hex("#22c55e");
+  var cBarShort = pinescript.color.hex("#ef4444");
+  var cBarNeut = pinescript.color.hex("#a3a3a3");
+  var barClr = null;
   if (i_barColor) {
     barClr = ((classification >= 2) ? cBarLong : ((classification <= -2) ? cBarShort : ((pinescript.abs(classification) === 1) ? ((direction > 0) ? cBarLong : cBarShort) : cBarNeut)));
   }
   pinescript.barcolor(barClr);
   if (state.wm === undefined) state.wm = pinescript.table.new(f_pos(i_wmPos), 1, 5, ({ bgcolor: pinescript.color.new(pinescript.color.black, 100) }));
   if ((i_showWM && barstate.islast)) {
-    let evClr = (!inferenceAllowed ? cNeut : (strongEvidence ? cBull : (weakEvidence ? cWeak : cNeut)));
-    let wmClr = pinescript.color.new((i_dark ? pinescript.color.white : pinescript.color.black), 30);
+    var evClr = (!inferenceAllowed ? cNeut : (strongEvidence ? cBull : (weakEvidence ? cWeak : cNeut)));
+    var wmClr = pinescript.color.new((i_dark ? pinescript.color.white : pinescript.color.black), 30);
     pinescript.table.cell(state.wm, 0, 0, syminfo.ticker, ({ text_color: wmClr, text_size: wmSizeT, text_halign: pinescript.text.align_right }));
     pinescript.table.cell(state.wm, 0, 1, (((inferenceAllowed ? ("t=" + pinescript.strToString(tF, "#.##")) : ("n<" + pinescript.strToString(MIN_OBS_STRICT))) + " | n=") + pinescript.strToString(nF)), ({ text_color: wmClr, text_size: wmSizeS, text_halign: pinescript.text.align_right }));
     pinescript.table.cell(state.wm, 0, 2, (evidenceStr + ((state.classReason !== "") ? ((" (" + state.classReason) + ")") : "")), ({ text_color: evClr, text_size: wmSizeM, text_halign: pinescript.text.align_right }));
@@ -1953,7 +2112,7 @@ function main() {
   }
   if ((i_showDash && barstate.islast)) {
     if (state.d === undefined) state.d = pinescript.table.new(f_pos(i_dashPos), 2, 18, ({ border_width: 1, bgcolor: pinescript.color.new(cTblBg, 80) }));
-    let hB = pinescript.color.new(cHdrBg, 20);
+    var hB = pinescript.color.new(cHdrBg, 20);
     evClr = (!inferenceAllowed ? cNeut : (strongEvidence ? cBull : (weakEvidence ? cWeak : cNeut)));
     pinescript.table.cell(state.d, 0, 0, "ADM", ({ text_color: cText, bgcolor: hB, text_size: dashSizeH }));
     pinescript.table.cell(state.d, 1, 0, "Retrospective", ({ text_color: pinescript.color.new(cText, 50), bgcolor: hB, text_size: dashSizeF }));
@@ -1961,16 +2120,16 @@ function main() {
     pinescript.table.cell(state.d, 1, 1, biasStr, ({ text_color: evClr, bgcolor: pinescript.color.new(evClr, 80), text_size: dashSizeH }));
     pinescript.table.cell(state.d, 0, 2, "Evidence", ({ text_color: cText, bgcolor: pinescript.color.new(evClr, 90), text_size: dashSizeD }));
     pinescript.table.cell(state.d, 1, 2, (evidenceStr + ((state.classReason !== "") ? ((" (" + state.classReason) + ")") : "")), ({ text_color: evClr, bgcolor: pinescript.color.new(evClr, 90), text_size: dashSizeD }));
-    let infClr = (inferenceAllowed ? cBull : cBear);
+    var infClr = (inferenceAllowed ? cBull : cBear);
     pinescript.table.cell(state.d, 0, 3, "Inference", ({ text_color: cText, bgcolor: pinescript.color.new(infClr, 90), text_size: dashSizeD }));
     pinescript.table.cell(state.d, 1, 3, (inferenceAllowed ? (isRobust ? "Allowed" : "Heuristic") : "Blocked"), ({ text_color: infClr, bgcolor: pinescript.color.new(infClr, 90), text_size: dashSizeD }));
-    let tClr = (statSig ? cBull : cNeut);
+    var tClr = (statSig ? cBull : cNeut);
     pinescript.table.cell(state.d, 0, 4, ("t(full) n=" + pinescript.strToString(nF)), ({ text_color: cText, bgcolor: pinescript.color.new(tClr, 90), text_size: dashSizeD }));
     pinescript.table.cell(state.d, 1, 4, (pinescript.strToString(tF, "#.##") + (statSig ? "**" : "")), ({ text_color: tClr, bgcolor: pinescript.color.new(tClr, 90), text_size: dashSizeD }));
-    let t1Clr = ((t1 > 0) ? cBull : cBear);
+    var t1Clr = ((t1 > 0) ? cBull : cBear);
     pinescript.table.cell(state.d, 0, 5, ("t(H1) n=" + pinescript.strToString(n1)), ({ text_color: cText, bgcolor: pinescript.color.new(t1Clr, 90), text_size: dashSizeD }));
     pinescript.table.cell(state.d, 1, 5, pinescript.strToString(t1, "#.##"), ({ text_color: t1Clr, bgcolor: pinescript.color.new(t1Clr, 90), text_size: dashSizeD }));
-    let t2Clr = ((t2 > 0) ? cBull : cBear);
+    var t2Clr = ((t2 > 0) ? cBull : cBear);
     pinescript.table.cell(state.d, 0, 6, ("t(H2) n=" + pinescript.strToString(n2)), ({ text_color: cText, bgcolor: pinescript.color.new(t2Clr, 90), text_size: dashSizeD }));
     pinescript.table.cell(state.d, 1, 6, pinescript.strToString(t2, "#.##"), ({ text_color: t2Clr, bgcolor: pinescript.color.new(t2Clr, 90), text_size: dashSizeD }));
     pinescript.table.cell(state.d, 0, 7, "Power", ({ text_color: cText, bgcolor: pinescript.color.new((powerOK ? cBull : cBear), 90), text_size: dashSizeD }));
@@ -1987,7 +2146,7 @@ function main() {
     pinescript.table.cell(state.d, 1, 12, (((pinescript.strToString(vr, "#.##") + " z=") + pinescript.strToString(zVR, "#.#")) + (vrSig ? "*" : "")), ({ text_color: (vrOK ? cBull : cBear), bgcolor: pinescript.color.new((vrOK ? cBull : cBear), 90), text_size: dashSizeD }));
     pinescript.table.cell(state.d, 0, 13, "Econ. Sig.", ({ text_color: cText, bgcolor: pinescript.color.new((econSig ? cBull : cWeak), 90), text_size: dashSizeD }));
     pinescript.table.cell(state.d, 1, 13, (econSig ? "Yes" : (("<" + pinescript.strToString((MIN_DRIFT_ECON * 100), "#")) + "%")), ({ text_color: (econSig ? cBull : cWeak), bgcolor: pinescript.color.new((econSig ? cBull : cWeak), 90), text_size: dashSizeD }));
-    let dClr = ((annDrift > 0) ? cBull : cBear);
+    var dClr = ((annDrift > 0) ? cBull : cBear);
     pinescript.table.cell(state.d, 0, 14, "Drift (ann.)", ({ text_color: cText, bgcolor: pinescript.color.new(dClr, 90), text_size: dashSizeD }));
     pinescript.table.cell(state.d, 1, 14, (pinescript.strToString((annDrift * 100), "#.#") + "%"), ({ text_color: dClr, bgcolor: pinescript.color.new(dClr, 90), text_size: dashSizeD }));
     pinescript.table.cell(state.d, 0, 15, "Regime", ({ text_color: cText, bgcolor: pinescript.color.new(cPrim, 90), text_size: dashSizeD }));
@@ -1997,7 +2156,7 @@ function main() {
     pinescript.table.cell(state.d, 0, 17, "**p<.05 *p<.10", ({ text_color: pinescript.color.new(cText, 50), bgcolor: pinescript.color.new(cNeut, 95), text_size: dashSizeF }));
     pinescript.table.cell(state.d, 1, 17, (isRobust ? "" : "Heuristic"), ({ text_color: pinescript.color.new(cWeak, 30), bgcolor: pinescript.color.new(cNeut, 95), text_size: dashSizeF }));
   }
-  let changed = (classification !== pinescript.hist(2, classification, 1));
+  var changed = (classification !== pinescript.hist(2, classification, 1));
   if ((changed && i_alerts)) {
     pinescript.alert((((("ADM: " + biasStr) + " (") + evidenceStr) + ")"), alert.freq_once_per_bar);
   }
@@ -2049,6 +2208,10 @@ function run(data, options = {}) {
     rt.__shapeIdx = 0;
     globalThis.bar_index = i;
     globalThis.last_bar_index = n - 1;
+    globalThis.time_tradingday = inTime[i];
+    globalThis.time_close = inTime[i];
+    globalThis.last_bar_time = inTime[n - 1];
+    globalThis.timenow = inTime[n - 1];
     globalThis.barstate = {
       isfirst: i === 0, islast: i === n - 1, isrealtime: false, ishistory: true,
       isconfirmed: true, isnew: true, islastconfirmedhistory: i === n - 1,

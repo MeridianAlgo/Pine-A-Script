@@ -42,6 +42,80 @@ const pinescript = {
     if (value != null && typeof value[Symbol.iterator] === 'function') return Array.from(value);
     return new Array(count || 0).fill(null);
   },
+  __decArr: function(arr) {
+    if (!Array.isArray(arr) || arr.__pineDecorated) return arr;
+    const self = this;
+    const def = (name, fn) => Object.defineProperty(arr, name, { value: fn, writable: true, configurable: true });
+    Object.defineProperty(arr, '__pineDecorated', { value: true, configurable: true });
+    def('get', (i) => (arr[i] === undefined ? null : arr[i]));
+    def('set', (i, v) => { arr[i] = v; return v; });
+    def('size', () => arr.length);
+    def('clear', () => { arr.length = 0; });
+    def('insert', (i, v) => { arr.splice(i, 0, v); });
+    def('remove', (i) => arr.splice(i, 1)[0]);
+    def('contains', (v) => arr.includes(v));
+    def('indexof', (v) => arr.indexOf(v));
+    def('lastindexof', (v) => arr.lastIndexOf(v));
+    def('first', () => (arr.length ? arr[0] : null));
+    def('last', () => (arr.length ? arr[arr.length - 1] : null));
+    def('sum', () => arr.reduce((a, b) => a + b, 0));
+    def('avg', () => (arr.length ? arr.reduce((a, b) => a + b, 0) / arr.length : 0));
+    def('min', () => (arr.length ? Math.min(...arr) : null));
+    def('max', () => (arr.length ? Math.max(...arr) : null));
+    def('range', () => (arr.length ? Math.max(...arr) - Math.min(...arr) : null));
+    // Statistical methods that route to the array.* built-ins (these names are not
+    // native to JS arrays, so attaching them here is safe from recursion).
+    def('median', () => self.arrayMedian(arr));
+    def('mode', () => self.arrayMode(arr));
+    def('stdev', () => self.arrayStdev(arr));
+    def('variance', () => self.arrayVariance(arr));
+    def('covariance', (other) => self.arrayCovariance(arr, other));
+    def('percentile_linear_interpolation', (p) => self.arrayPercentileLinearInterpolation(arr, p));
+    def('percentile_nearest_rank', (p) => self.arrayPercentileNearestRank(arr, p));
+    def('abs', () => self.__decArr(self.arrayAbs(arr)));
+    def('binary_search', (v) => self.arrayBinarySearch(arr, v));
+    // Pine's array.sort takes an order string, not a comparator. Use the native
+    // sort via .call so we don't recurse through this overridden method.
+    def('sort', (order) => { Array.prototype.sort.call(arr, (a, b) => (order === 'descending' ? b - a : a - b)); return arr; });
+    def('sort_indices', (order) => self.__decArr(arr.map((_, i) => i).sort((a, b) => (order === 'descending' ? arr[b] - arr[a] : arr[a] - arr[b]))));
+    // join/slice/reverse/concat/includes/fill already exist natively on Array with
+    // compatible semantics, so we deliberately leave them to the native methods.
+    return arr;
+  },
+  __decMap: function(m) {
+    if (!(m instanceof Map) || m.__pineDecorated) return m;
+    const def = (name, fn) => Object.defineProperty(m, name, { value: fn, writable: true, configurable: true });
+    Object.defineProperty(m, '__pineDecorated', { value: true, configurable: true });
+    def('put', (k, v) => { m.set(k, v); return v; });
+    def('contains', (k) => m.has(k));
+    def('remove', (k) => m.delete(k));
+    def('keys', () => Array.from(Map.prototype.keys.call(m)));
+    def('values', () => Array.from(Map.prototype.values.call(m)));
+    def('size_', () => m.size);
+    return m;
+  },
+  __decMatrix: function(m) {
+    if (!m || typeof m !== 'object' || m.__pineDecorated) return m;
+    const self = this;
+    const def = (name, fn) => Object.defineProperty(m, name, { value: fn, writable: true, configurable: true });
+    Object.defineProperty(m, '__pineDecorated', { value: true, configurable: true });
+    def('get', (r, c) => self.matrixGet(m, r, c));
+    def('set', (r, c, v) => self.matrixSet(m, r, c, v));
+    def('rows_', () => m.rows);
+    def('columns', () => m.cols);
+    def('fill', (v) => self.matrixFill(m, v));
+    return m;
+  },
+  __decDraw: function(obj) {
+    if (!obj || typeof obj !== 'object') return obj;
+    const p = new Proxy(obj, {
+      get(t, k) {
+        if (k in t || typeof k === 'symbol') return t[k];
+        return function() { return p; };
+      },
+    });
+    return p;
+  },
   alertcondition: function(condition, ...rest) {
     if (globalThis.__pineRuntime) {
       globalThis.__pineRuntime.alerts.push({ condition, args: rest });
@@ -49,6 +123,32 @@ const pinescript = {
     return null;
   },
   barcolor: function(color) { return null; },
+  plotchar: function(series, ...rest) {
+    const rt = globalThis.__pineRuntime;
+    if (!rt) return series;
+    const bar = rt.__barIndex | 0;
+    const ord = (rt.__shapeIdx = (rt.__shapeIdx | 0) + 1) - 1;
+    let key = 'char_' + ord;
+    for (const r of rest) {
+      if (typeof r === 'string') { key = r; break; }
+      if (r && typeof r === 'object' && r.title) { key = String(r.title); break; }
+    }
+    let s = rt.plotshapes[key];
+    if (!s) s = rt.plotshapes[key] = { title: key, data: [] };
+    s.data[bar] = this.__scalar(series);
+    return series;
+  },
+  plotarrow: function(series, ...rest) {
+    const rt = globalThis.__pineRuntime;
+    if (!rt) return series;
+    const bar = rt.__barIndex | 0;
+    const ord = (rt.__plotIdx = (rt.__plotIdx | 0) + 1) - 1;
+    const key = 'arrow_' + ord;
+    let p = rt.plots[key];
+    if (!p) p = rt.plots[key] = { title: key, data: [] };
+    p.data[bar] = this.__scalar(series);
+    return series;
+  },
   bgcolor: function(color, title, editable, showLast) {
     return null;
   },
@@ -470,6 +570,12 @@ const pinescript = {
   atan: function(value) {
     return Math.atan(value);
   },
+  todegrees: function(radians) {
+    return radians * (180 / Math.PI);
+  },
+  toradians: function(degrees) {
+    return degrees * (Math.PI / 180);
+  },
   floor: function(value) {
     return Math.floor(value);
   },
@@ -641,7 +747,7 @@ const pinescript = {
     return series;
   },
   lineNew: function(x1, y1, x2, y2, opts = {}) {
-    return { x1, y1, x2, y2, opts, _type: 'line' };
+    return this.__decDraw({ x1, y1, x2, y2, opts, _type: 'line' });
   },
   lineDelete: function(l) {
     return null;
@@ -661,7 +767,7 @@ const pinescript = {
     return point === 0 || point === 'y1' ? line.y1 : line.y2;
   },
   labelNew: function(x, y, text = '', opts = {}) {
-    return { x, y, text, opts, _type: 'label' };
+    return this.__decDraw({ x, y, text, opts, _type: 'label' });
   },
   labelDelete: function(l) {
     return null;
@@ -676,7 +782,7 @@ const pinescript = {
     return label.text || '';
   },
   boxNew: function(left, top, right, bottom, opts = {}) {
-    return { left, top, right, bottom, opts, _type: 'box' };
+    return this.__decDraw({ left, top, right, bottom, opts, _type: 'box' });
   },
   boxDelete: function(box) {
     return null;
@@ -694,7 +800,7 @@ const pinescript = {
     return box;
   },
   polylineNew: function(points, opts = {}) {
-    return { points: points || [], opts, _type: 'polyline' };
+    return this.__decDraw({ points: points || [], opts, _type: 'polyline' });
   },
   polylineDelete: function(poly) {
     return null;
@@ -765,7 +871,7 @@ const pinescript = {
     return { time: _time ?? null, price: _price ?? null };
   },
   mapNew: function() {
-    return new Map();
+    return this.__decMap(new Map());
   },
   mapSize: function(m) {
     return m instanceof Map ? m.size : 0;
@@ -800,7 +906,7 @@ const pinescript = {
     const r = Math.max(0, rows ?? 0);
     const c = Math.max(0, cols ?? 0);
     const data = Array.from({ length: r }, () => Array.from({ length: c }, () => initialValue));
-    return { rows: r, cols: c, data };
+    return this.__decMatrix({ rows: r, cols: c, data });
   },
   matrixRows: function(m) {
     return m?.rows ?? 0;
@@ -923,11 +1029,62 @@ const pinescript = {
     }
     return null;
   },
+  __jacobiEigen: function(m) {
+    if (!m || !Array.isArray(m.data)) return null;
+    const n = m.rows ?? 0;
+    if (n === 0 || n !== (m.cols ?? 0)) return null;
+    // Work on a copy so the input matrix is untouched.
+    const a = m.data.map(row => row.slice());
+    const v = Array.from({ length: n }, (_, i) => Array.from({ length: n }, (_, j) => (i === j ? 1 : 0)));
+    for (let sweep = 0; sweep < 100; sweep++) {
+      let off = 0;
+      for (let p = 0; p < n; p++) for (let q = p + 1; q < n; q++) off += a[p][q] * a[p][q];
+      if (off < 1e-20) break;
+      for (let p = 0; p < n; p++) {
+        for (let q = p + 1; q < n; q++) {
+          if (Math.abs(a[p][q]) < 1e-18) continue;
+          const theta = (a[q][q] - a[p][p]) / (2 * a[p][q]);
+          const t = Math.sign(theta || 1) / (Math.abs(theta) + Math.sqrt(theta * theta + 1));
+          const cos = 1 / Math.sqrt(t * t + 1);
+          const sin = t * cos;
+          for (let k = 0; k < n; k++) {
+            const akp = a[k][p], akq = a[k][q];
+            a[k][p] = cos * akp - sin * akq;
+            a[k][q] = sin * akp + cos * akq;
+          }
+          for (let k = 0; k < n; k++) {
+            const apk = a[p][k], aqk = a[q][k];
+            a[p][k] = cos * apk - sin * aqk;
+            a[q][k] = sin * apk + cos * aqk;
+          }
+          for (let k = 0; k < n; k++) {
+            const vkp = v[k][p], vkq = v[k][q];
+            v[k][p] = cos * vkp - sin * vkq;
+            v[k][q] = sin * vkp + cos * vkq;
+          }
+        }
+      }
+    }
+    // Sort eigenpairs by eigenvalue, descending.
+    const order = Array.from({ length: n }, (_, i) => i).sort((i, j) => a[j][j] - a[i][i]);
+    const values = order.map(i => a[i][i]);
+    const vectors = Array.from({ length: n }, (_, r) => order.map(c => v[r][c]));
+    return { values, vectors };
+  },
+  matrixEigenvalues: function(m) {
+    const e = this.__jacobiEigen(m);
+    return this.__decArr(e ? e.values : []);
+  },
+  matrixEigenvectors: function(m) {
+    const e = this.__jacobiEigen(m);
+    if (!e) return this.__decMatrix({ rows: 0, cols: 0, data: [] });
+    return this.__decMatrix({ rows: e.vectors.length, cols: e.vectors.length, data: e.vectors });
+  },
   requestSecurity: function(symbol, timeframe, expression) {
     return expression;
   },
   arrayNew: function(initialSize = 0, initialValue = 0) {
-    return Array(initialSize).fill(initialValue);
+    return this.__decArr(Array(initialSize).fill(initialValue));
   },
   arraySize: function(arr) {
     return arr ? arr.length : 0;
@@ -978,10 +1135,10 @@ const pinescript = {
     return arr;
   },
   arraySlice: function(arr, startIndex = 0, endIndex = null) {
-    if (!arr) return [];
+    if (!arr) return this.__decArr([]);
     const start = Number(startIndex) || 0;
     const end = endIndex === null || endIndex === undefined ? arr.length : Number(endIndex) || 0;
-    return arr.slice(start, end);
+    return this.__decArr(arr.slice(start, end));
   },
   arraySort: function(arr, order = 'ascending') {
     if (arr) arr.sort((a, b) => order === 'ascending' ? a - b : b - a);
@@ -1191,7 +1348,7 @@ const pinescript = {
     const info = { ticker: 'AAPL', tickerid: 'NASDAQ:AAPL', prefix: 'NASDAQ', root: 'AAPL', suffix: '' };
     return info[type] || '';
   },
-  timenow: 1781574527577,
+  timenow: 1782783576746,
   barstate: "LAST",
   dividends: {},
   splits: {},
@@ -1245,11 +1402,11 @@ const pinescript = {
   arrayConcat: function(arr1, arr2) {
     if (!arr1) return arr2 || [];
     if (!arr2) return arr1;
-    return arr1.concat(arr2);
+    return this.__decArr(arr1.concat(arr2));
   },
   arrayCopy: function(arr) {
-    if (!arr) return [];
-    return [...arr];
+    if (!arr) return this.__decArr([]);
+    return this.__decArr([...arr]);
   },
   arrayBinarySearch: function(arr, value) {
     if (!arr || arr.length === 0) return -1;
@@ -1339,7 +1496,7 @@ globalThis.input.timeframe = globalThis.input.timeframe || ((defval) => defval);
 
 globalThis.array = globalThis.array || {
 
-  from: (...items) => items,
+  from: (...items) => pinescript.__decArr(items),
 
   size: (arr) => pinescript.arraySize(arr),
 
@@ -1508,6 +1665,8 @@ globalThis.line = globalThis.line || __pineNS({ style_solid: "solid", style_dash
 
 globalThis.box = globalThis.box || __pineNS({});
 
+globalThis.color = globalThis.color || __pineNS(Object.assign(function(c) { return c; }, { new: function(c, t) { return c; }, rgb: function(r, g, b, t) { return "#rgb(" + [r, g, b].join(",") + ")"; }, from_gradient: function(v, lo, hi, c1, c2) { return c1; }, r: function() { return 0; }, g: function() { return 0; }, b: function() { return 0; }, t: function() { return 0; }, aqua: "#00BCD4", black: "#363A45", blue: "#2962FF", fuchsia: "#E040FB", gray: "#787B86", green: "#4CAF50", lime: "#00E676", maroon: "#880E4F", navy: "#311B92", olive: "#808000", orange: "#FF9800", purple: "#9C27B0", red: "#FF5252", silver: "#B2B5BE", teal: "#00897B", white: "#FFFFFF", yellow: "#FFEB3B" }));
+
 globalThis.label = globalThis.label || __pineNS({ style_label_down: "label_down", style_label_up: "label_up", style_none: "none" });
 
 globalThis.polyline = globalThis.polyline || __pineNS({});
@@ -1520,7 +1679,9 @@ globalThis.map = globalThis.map || __pineNS({});
 
 globalThis.session = globalThis.session || __pineNS({ regular: "regular", extended: "extended" });
 
-globalThis.dayofweek = globalThis.dayofweek || __pineNS({ sunday: 1, monday: 2, tuesday: 3, wednesday: 4, thursday: 5, friday: 6, saturday: 7 });
+globalThis.ticker = globalThis.ticker || __pineNS({});
+
+globalThis.dayofweek = globalThis.dayofweek || __pineNS(Object.assign(function(t) { return new Date(t != null ? t : (globalThis.time || 0)).getUTCDay() + 1; }, { sunday: 1, monday: 2, tuesday: 3, wednesday: 4, thursday: 5, friday: 6, saturday: 7 }));
 
 globalThis.timeframe = __pineNS(Object.assign(globalThis.timeframe || {}, { period: (globalThis.timeframe && globalThis.timeframe.period) || "D", isintraday: false, isdaily: true, multiplier: 1 }));
 
@@ -1567,8 +1728,6 @@ globalThis.float = globalThis.float || function(x) { return x == null ? null : N
 globalThis.bool = globalThis.bool || function(x) { return Boolean(x); };
 
 globalThis.string = globalThis.string || function(x) { return x == null ? null : String(x); };
-
-globalThis.dayofweek = globalThis.dayofweek || __pineNS({ sunday: 1, monday: 2, tuesday: 3, wednesday: 4, thursday: 5, friday: 6, saturday: 7 });
 
 globalThis.str = globalThis.str || __pineNS({});
 
@@ -1655,7 +1814,7 @@ pinescript.text = { align_center: "center" };
 
 pinescript.table = {
 
-  new: function(position, columns, rows, opts) { return { position, columns, rows, opts: opts || {}, cells: [] }; },
+  new: function(position, columns, rows, opts) { return pinescript.__decDraw({ position, columns, rows, opts: opts || {}, cells: [] }); },
 
   cell: function(table, column, row, text, opts) {
 
@@ -1688,103 +1847,103 @@ function main() {
   null;
   // Study: Manias, Panics and Crashes
   // Options: {"shorttitle":"MPC","overlay":false,"max_labels_count":500}
-  let color_green_bright = pinescript.color.hex("#00ff00");
-  let color_green_soft = pinescript.color.hex("#26a69a");
-  let color_yellow_bright = pinescript.color.hex("#ffd700");
-  let color_orange_alert = pinescript.color.hex("#ff6b35");
-  let color_red_danger = pinescript.color.hex("#ff1744");
-  let color_purple_composite = pinescript.color.hex("#ab47bc");
-  let color_gray_neutral = pinescript.color.hex("#78909c");
-  let color_dark_bg = pinescript.color.hex("#1e1e1e");
-  let display_mode = pinescript.inputString("Smoothed All Lines", "Display Mode", ({ options: ["Smoothed All Lines", "Single Dominant Line", "Both"], group: "Display" }));
-  let smooth_period = pinescript.inputInt(3, "Smoothing Period", ({ minval: 1, maxval: 20, group: "Display" }));
-  let show_zones = pinescript.inputBool(true, "Show Background Phase Zones", ({ group: "Display" }));
-  let show_phase_labels = pinescript.inputBool(true, "Show Phase Change Labels", ({ group: "Display" }));
-  let show_historical_context = pinescript.inputBool(true, "Show Historical Context", ({ group: "Display" }));
-  let dashboard_position = pinescript.inputString("Top Right", "Dashboard Position", ({ options: ["Top Left", "Top Center", "Top Right", "Middle Left", "Middle Right", "Bottom Left", "Bottom Right"], group: "Dashboard" }));
-  let dashboard_size = pinescript.inputString("Normal", "Dashboard Size", ({ options: ["Small", "Normal", "Large", "Extra Large"], group: "Dashboard" }));
-  let show_components = pinescript.inputBool(true, "Show Component Health Panel", ({ group: "Dashboard" }));
-  let show_action_hints = pinescript.inputBool(true, "Show Action Guidance", ({ group: "Dashboard" }));
-  let mania_threshold = pinescript.inputInt(75, "Mania Alert Threshold", ({ minval: 0, maxval: 100, group: "Alert Thresholds" }));
-  let panic_threshold = pinescript.inputInt(60, "Panic Alert Threshold", ({ minval: 0, maxval: 100, group: "Alert Thresholds" }));
-  let crash_threshold = pinescript.inputInt(70, "Crash Alert Threshold", ({ minval: 0, maxval: 100, group: "Alert Thresholds" }));
-  let ma_period = pinescript.inputInt(200, "Long-term MA Period", ({ minval: 50, maxval: 300, group: "Technical Parameters" }));
-  let rsi_period = pinescript.inputInt(14, "RSI Period", ({ minval: 5, maxval: 30, group: "Technical Parameters" }));
-  let vol_period = pinescript.inputInt(20, "Volume Average Period", ({ minval: 10, maxval: 50, group: "Technical Parameters" }));
-  let show_credit = pinescript.inputBool(true, "Include Credit Risk Indicators", ({ group: "Components" }));
-  let show_breadth = pinescript.inputBool(true, "Include Market Breadth", ({ group: "Components" }));
-  let show_vix = pinescript.inputBool(true, "Include VIX Analysis", ({ group: "Components" }));
-  let vix = (show_vix ? pinescript.requestSecurity("TVC:VIX", timeframe.period, close) : null);
-  let vix_5 = (show_vix ? pinescript.requestSecurity("TVC:VIX", timeframe.period, pinescript.hist(0, close, 5)) : null);
-  let hyg = (show_credit ? pinescript.requestSecurity("AMEX:HYG", timeframe.period, close) : null);
-  let lqd = (show_credit ? pinescript.requestSecurity("AMEX:LQD", timeframe.period, close) : null);
-  let tlt = (show_credit ? pinescript.requestSecurity("NASDAQ:TLT", timeframe.period, close) : null);
-  let xlf = (show_credit ? pinescript.requestSecurity("AMEX:XLF", timeframe.period, close) : null);
-  let spy = (show_credit ? pinescript.requestSecurity("AMEX:SPY", timeframe.period, close) : null);
-  let adv_dec = (show_breadth ? pinescript.requestSecurity("INDEX:ADDN", timeframe.period, close) : null);
-  let hyg_lqd_ratio = (((show_credit && !pinescript.na(hyg)) && !pinescript.na(lqd)) ? (lqd / hyg) : null);
-  let hyg_lqd_spread = hyg_lqd_ratio;
-  let hyg_lqd_baseline = pinescript.sma(hyg_lqd_spread, 60);
-  let hyg_lqd_stress = (((show_credit && !pinescript.na(hyg_lqd_spread)) && !pinescript.na(hyg_lqd_baseline)) ? (((hyg_lqd_spread - hyg_lqd_baseline) / hyg_lqd_baseline) * 100) : 0);
-  let tlt_spy_ratio = (((show_credit && !pinescript.na(tlt)) && !pinescript.na(spy)) ? (tlt / spy) : null);
-  let tlt_spy_baseline = pinescript.sma(tlt_spy_ratio, 60);
-  let tlt_spy_flight = (((show_credit && !pinescript.na(tlt_spy_ratio)) && !pinescript.na(tlt_spy_baseline)) ? (((tlt_spy_ratio - tlt_spy_baseline) / tlt_spy_baseline) * 100) : 0);
-  let xlf_spy_ratio = (((show_credit && !pinescript.na(xlf)) && !pinescript.na(spy)) ? (xlf / spy) : null);
-  let xlf_spy_baseline = pinescript.sma(xlf_spy_ratio, 60);
-  let xlf_spy_weakness = (((show_credit && !pinescript.na(xlf_spy_ratio)) && !pinescript.na(xlf_spy_baseline)) ? (((xlf_spy_baseline - xlf_spy_ratio) / xlf_spy_baseline) * 100) : 0);
-  let credit_stress_raw = (show_credit ? (((hyg_lqd_stress * 0.4) + (tlt_spy_flight * 0.3)) + (xlf_spy_weakness * 0.3)) : 0);
-  let credit_stress = pinescript.max(0, pinescript.min(100, (credit_stress_raw * 5)));
-  let ma_long = pinescript.sma(close, ma_period);
-  let price_deviation = (((close - ma_long) / ma_long) * 100);
-  let rsi = pinescript.rsi(close, rsi_period);
-  let rsi_overbought_days = pinescript.barssince(pinescript.series(1, (rsi < 70)));
-  let rsi_oversold = (rsi < 30);
-  let roc = pinescript.roc(close, 20);
-  let roc_ma = pinescript.sma(roc, 20);
-  let roc_accelerating = (roc > roc_ma);
-  let vol_avg = pinescript.sma(volume, vol_period);
-  let vol_spike = (volume / vol_avg);
-  let high_vol_down = ((vol_spike > 1.5) && (close < open));
-  let [macd_line, signal_line, ] = pinescript.unpack(pinescript.macd(close, 12, 26, 9), 3);
-  let macd_bearish = pinescript.crossunder(pinescript.series(2, macd_line), pinescript.series(3, signal_line));
-  let vix_spike = (((show_vix && !pinescript.na(vix)) && !pinescript.na(vix_5)) ? ((vix > (vix_5 * 1.3)) || (vix > 25)) : false);
-  let vix_extreme = ((show_vix && !pinescript.na(vix)) ? (vix > 40) : false);
-  let vix_low = ((show_vix && !pinescript.na(vix)) ? (vix < 20) : false);
-  let peak_20 = pinescript.highest(pinescript.series(4, close), 20);
-  let peak_60 = pinescript.highest(pinescript.series(5, close), 60);
-  let decline_20 = (((close - peak_20) / peak_20) * 100);
-  let decline_60 = (((close - peak_60) / peak_60) * 100);
-  let price_above_50ma = (close > pinescript.sma(close, 50));
-  let breadth_proxy = (show_breadth ? (pinescript.sma((price_above_50ma ? 1 : 0), 20) * 100) : 50);
-  let correlation_proxy = (pinescript.abs(ta.correlation(close, ma_long, 20)) * 100);
-  let mania_price = ((price_deviation > 15) ? 25 : ((price_deviation > 10) ? 15 : 0));
-  let mania_rsi = (((rsi > 70) && (rsi_overbought_days > 10)) ? 25 : ((rsi > 70) ? 15 : 0));
-  let mania_breadth = ((breadth_proxy > 60) ? 20 : ((breadth_proxy > 50) ? 10 : 0));
-  let mania_vix = (vix_low ? 15 : 0);
-  let mania_momentum = ((roc_accelerating && (roc > 0)) ? 15 : 0);
-  let mania_score_raw = ((((mania_price + mania_rsi) + mania_breadth) + mania_vix) + mania_momentum);
-  let panic_decline = (((decline_20 < -5) && (decline_20 > -15)) ? 20 : 0);
-  let panic_vix_spike = (vix_spike ? 20 : 0);
-  let panic_volume = (high_vol_down ? 15 : 0);
-  let panic_breadth = ((breadth_proxy < 40) ? 15 : 0);
-  let panic_credit = ((credit_stress > 30) ? 15 : 0);
-  let panic_momentum = (macd_bearish ? 15 : 0);
-  let panic_score_raw = (((((panic_decline + panic_vix_spike) + panic_volume) + panic_breadth) + panic_credit) + panic_momentum);
-  let crash_extreme_decline = ((decline_60 < -15) ? 25 : ((decline_60 < -10) ? 15 : 0));
-  let crash_vix_extreme = (vix_extreme ? 20 : 0);
-  let crash_volume_climax = (((vol_spike > 2) && (close < open)) ? 15 : 0);
-  let crash_breadth_collapse = ((breadth_proxy < 20) ? 15 : 0);
-  let crash_correlation = ((correlation_proxy > 80) ? 15 : 0);
-  let crash_credit_freeze = ((credit_stress > 60) ? 10 : 0);
-  let crash_score_raw = (((((crash_extreme_decline + crash_vix_extreme) + crash_volume_climax) + crash_breadth_collapse) + crash_correlation) + crash_credit_freeze);
-  let mania_score = pinescript.sma(mania_score_raw, smooth_period);
-  let panic_score = pinescript.sma(panic_score_raw, smooth_period);
-  let crash_score = pinescript.sma(crash_score_raw, smooth_period);
-  let composite_risk = pinescript.max(mania_score, pinescript.max(panic_score, crash_score));
+  var color_green_bright = pinescript.color.hex("#00ff00");
+  var color_green_soft = pinescript.color.hex("#26a69a");
+  var color_yellow_bright = pinescript.color.hex("#ffd700");
+  var color_orange_alert = pinescript.color.hex("#ff6b35");
+  var color_red_danger = pinescript.color.hex("#ff1744");
+  var color_purple_composite = pinescript.color.hex("#ab47bc");
+  var color_gray_neutral = pinescript.color.hex("#78909c");
+  var color_dark_bg = pinescript.color.hex("#1e1e1e");
+  var display_mode = pinescript.inputString("Smoothed All Lines", "Display Mode", ({ options: ["Smoothed All Lines", "Single Dominant Line", "Both"], group: "Display" }));
+  var smooth_period = pinescript.inputInt(3, "Smoothing Period", ({ minval: 1, maxval: 20, group: "Display" }));
+  var show_zones = pinescript.inputBool(true, "Show Background Phase Zones", ({ group: "Display" }));
+  var show_phase_labels = pinescript.inputBool(true, "Show Phase Change Labels", ({ group: "Display" }));
+  var show_historical_context = pinescript.inputBool(true, "Show Historical Context", ({ group: "Display" }));
+  var dashboard_position = pinescript.inputString("Top Right", "Dashboard Position", ({ options: ["Top Left", "Top Center", "Top Right", "Middle Left", "Middle Right", "Bottom Left", "Bottom Right"], group: "Dashboard" }));
+  var dashboard_size = pinescript.inputString("Normal", "Dashboard Size", ({ options: ["Small", "Normal", "Large", "Extra Large"], group: "Dashboard" }));
+  var show_components = pinescript.inputBool(true, "Show Component Health Panel", ({ group: "Dashboard" }));
+  var show_action_hints = pinescript.inputBool(true, "Show Action Guidance", ({ group: "Dashboard" }));
+  var mania_threshold = pinescript.inputInt(75, "Mania Alert Threshold", ({ minval: 0, maxval: 100, group: "Alert Thresholds" }));
+  var panic_threshold = pinescript.inputInt(60, "Panic Alert Threshold", ({ minval: 0, maxval: 100, group: "Alert Thresholds" }));
+  var crash_threshold = pinescript.inputInt(70, "Crash Alert Threshold", ({ minval: 0, maxval: 100, group: "Alert Thresholds" }));
+  var ma_period = pinescript.inputInt(200, "Long-term MA Period", ({ minval: 50, maxval: 300, group: "Technical Parameters" }));
+  var rsi_period = pinescript.inputInt(14, "RSI Period", ({ minval: 5, maxval: 30, group: "Technical Parameters" }));
+  var vol_period = pinescript.inputInt(20, "Volume Average Period", ({ minval: 10, maxval: 50, group: "Technical Parameters" }));
+  var show_credit = pinescript.inputBool(true, "Include Credit Risk Indicators", ({ group: "Components" }));
+  var show_breadth = pinescript.inputBool(true, "Include Market Breadth", ({ group: "Components" }));
+  var show_vix = pinescript.inputBool(true, "Include VIX Analysis", ({ group: "Components" }));
+  var vix = (show_vix ? pinescript.requestSecurity("TVC:VIX", timeframe.period, close) : null);
+  var vix_5 = (show_vix ? pinescript.requestSecurity("TVC:VIX", timeframe.period, pinescript.hist(0, close, 5)) : null);
+  var hyg = (show_credit ? pinescript.requestSecurity("AMEX:HYG", timeframe.period, close) : null);
+  var lqd = (show_credit ? pinescript.requestSecurity("AMEX:LQD", timeframe.period, close) : null);
+  var tlt = (show_credit ? pinescript.requestSecurity("NASDAQ:TLT", timeframe.period, close) : null);
+  var xlf = (show_credit ? pinescript.requestSecurity("AMEX:XLF", timeframe.period, close) : null);
+  var spy = (show_credit ? pinescript.requestSecurity("AMEX:SPY", timeframe.period, close) : null);
+  var adv_dec = (show_breadth ? pinescript.requestSecurity("INDEX:ADDN", timeframe.period, close) : null);
+  var hyg_lqd_ratio = (((show_credit && !pinescript.na(hyg)) && !pinescript.na(lqd)) ? (lqd / hyg) : null);
+  var hyg_lqd_spread = hyg_lqd_ratio;
+  var hyg_lqd_baseline = pinescript.sma(pinescript.series(1, hyg_lqd_spread), 60);
+  var hyg_lqd_stress = (((show_credit && !pinescript.na(hyg_lqd_spread)) && !pinescript.na(hyg_lqd_baseline)) ? (((hyg_lqd_spread - hyg_lqd_baseline) / hyg_lqd_baseline) * 100) : 0);
+  var tlt_spy_ratio = (((show_credit && !pinescript.na(tlt)) && !pinescript.na(spy)) ? (tlt / spy) : null);
+  var tlt_spy_baseline = pinescript.sma(pinescript.series(2, tlt_spy_ratio), 60);
+  var tlt_spy_flight = (((show_credit && !pinescript.na(tlt_spy_ratio)) && !pinescript.na(tlt_spy_baseline)) ? (((tlt_spy_ratio - tlt_spy_baseline) / tlt_spy_baseline) * 100) : 0);
+  var xlf_spy_ratio = (((show_credit && !pinescript.na(xlf)) && !pinescript.na(spy)) ? (xlf / spy) : null);
+  var xlf_spy_baseline = pinescript.sma(pinescript.series(3, xlf_spy_ratio), 60);
+  var xlf_spy_weakness = (((show_credit && !pinescript.na(xlf_spy_ratio)) && !pinescript.na(xlf_spy_baseline)) ? (((xlf_spy_baseline - xlf_spy_ratio) / xlf_spy_baseline) * 100) : 0);
+  var credit_stress_raw = (show_credit ? (((hyg_lqd_stress * 0.4) + (tlt_spy_flight * 0.3)) + (xlf_spy_weakness * 0.3)) : 0);
+  var credit_stress = pinescript.max(0, pinescript.min(100, (credit_stress_raw * 5)));
+  var ma_long = pinescript.sma(pinescript.series(4, close), ma_period);
+  var price_deviation = (((close - ma_long) / ma_long) * 100);
+  var rsi = pinescript.rsi(pinescript.series(5, close), rsi_period);
+  var rsi_overbought_days = pinescript.barssince(pinescript.series(6, (rsi < 70)));
+  var rsi_oversold = (rsi < 30);
+  var roc = pinescript.roc(pinescript.series(7, close), 20);
+  var roc_ma = pinescript.sma(pinescript.series(8, roc), 20);
+  var roc_accelerating = (roc > roc_ma);
+  var vol_avg = pinescript.sma(pinescript.series(9, volume), vol_period);
+  var vol_spike = (volume / vol_avg);
+  var high_vol_down = ((vol_spike > 1.5) && (close < open));
+  var [macd_line, signal_line, ] = pinescript.unpack(pinescript.macd(close, 12, 26, 9), 3);
+  var macd_bearish = pinescript.crossunder(pinescript.series(10, macd_line), pinescript.series(11, signal_line));
+  var vix_spike = (((show_vix && !pinescript.na(vix)) && !pinescript.na(vix_5)) ? ((vix > (vix_5 * 1.3)) || (vix > 25)) : false);
+  var vix_extreme = ((show_vix && !pinescript.na(vix)) ? (vix > 40) : false);
+  var vix_low = ((show_vix && !pinescript.na(vix)) ? (vix < 20) : false);
+  var peak_20 = pinescript.highest(pinescript.series(12, close), 20);
+  var peak_60 = pinescript.highest(pinescript.series(13, close), 60);
+  var decline_20 = (((close - peak_20) / peak_20) * 100);
+  var decline_60 = (((close - peak_60) / peak_60) * 100);
+  var price_above_50ma = (close > pinescript.sma(pinescript.series(14, close), 50));
+  var breadth_proxy = (show_breadth ? (pinescript.sma(pinescript.series(15, (price_above_50ma ? 1 : 0)), 20) * 100) : 50);
+  var correlation_proxy = (pinescript.abs(pinescript.ta.correlation(close, ma_long, 20)) * 100);
+  var mania_price = ((price_deviation > 15) ? 25 : ((price_deviation > 10) ? 15 : 0));
+  var mania_rsi = (((rsi > 70) && (rsi_overbought_days > 10)) ? 25 : ((rsi > 70) ? 15 : 0));
+  var mania_breadth = ((breadth_proxy > 60) ? 20 : ((breadth_proxy > 50) ? 10 : 0));
+  var mania_vix = (vix_low ? 15 : 0);
+  var mania_momentum = ((roc_accelerating && (roc > 0)) ? 15 : 0);
+  var mania_score_raw = ((((mania_price + mania_rsi) + mania_breadth) + mania_vix) + mania_momentum);
+  var panic_decline = (((decline_20 < -5) && (decline_20 > -15)) ? 20 : 0);
+  var panic_vix_spike = (vix_spike ? 20 : 0);
+  var panic_volume = (high_vol_down ? 15 : 0);
+  var panic_breadth = ((breadth_proxy < 40) ? 15 : 0);
+  var panic_credit = ((credit_stress > 30) ? 15 : 0);
+  var panic_momentum = (macd_bearish ? 15 : 0);
+  var panic_score_raw = (((((panic_decline + panic_vix_spike) + panic_volume) + panic_breadth) + panic_credit) + panic_momentum);
+  var crash_extreme_decline = ((decline_60 < -15) ? 25 : ((decline_60 < -10) ? 15 : 0));
+  var crash_vix_extreme = (vix_extreme ? 20 : 0);
+  var crash_volume_climax = (((vol_spike > 2) && (close < open)) ? 15 : 0);
+  var crash_breadth_collapse = ((breadth_proxy < 20) ? 15 : 0);
+  var crash_correlation = ((correlation_proxy > 80) ? 15 : 0);
+  var crash_credit_freeze = ((credit_stress > 60) ? 10 : 0);
+  var crash_score_raw = (((((crash_extreme_decline + crash_vix_extreme) + crash_volume_climax) + crash_breadth_collapse) + crash_correlation) + crash_credit_freeze);
+  var mania_score = pinescript.sma(pinescript.series(16, mania_score_raw), smooth_period);
+  var panic_score = pinescript.sma(pinescript.series(17, panic_score_raw), smooth_period);
+  var crash_score = pinescript.sma(pinescript.series(18, crash_score_raw), smooth_period);
+  var composite_risk = pinescript.max(mania_score, pinescript.max(panic_score, crash_score));
   if (state.phase === undefined) state.phase = "NORMAL";
   if (state.phase_color === undefined) state.phase_color = color_green_soft;
   if (state.phase_start_bar === undefined) state.phase_start_bar = null;
-  let new_phase = "NORMAL";
+  var new_phase = "NORMAL";
   if ((crash_score > crash_threshold)) {
     new_phase = "CRASH";
   } else {
@@ -1796,13 +1955,13 @@ function main() {
       }
     }
   }
-  let phase_changed = (new_phase !== state.phase);
+  var phase_changed = (new_phase !== state.phase);
   if (phase_changed) {
     state.phase = new_phase;
     state.phase_start_bar = bar_index;
   }
   state.phase_color = ((state.phase === "CRASH") ? color_red_danger : ((state.phase === "PANIC") ? color_orange_alert : ((state.phase === "MANIA") ? color_yellow_bright : color_green_soft)));
-  let days_in_phase = (!pinescript.na(state.phase_start_bar) ? ((bar_index - state.phase_start_bar) + 1) : 0);
+  var days_in_phase = (!pinescript.na(state.phase_start_bar) ? ((bar_index - state.phase_start_bar) + 1) : 0);
   if (state.historical_context === undefined) state.historical_context = "";
   if (show_historical_context) {
     if ((state.phase === "CRASH")) {
@@ -1855,38 +2014,38 @@ function main() {
       }
     }
   }
-  let vix_status = ((show_vix && !pinescript.na(vix)) ? ((vix > 40) ? "🔴 EXTREME" : ((vix > 25) ? "🟠 HIGH" : ((vix < 20) ? "🟢 LOW" : "🟡 MODERATE"))) : "N/A");
-  let credit_status = (show_credit ? ((credit_stress > 70) ? "🔴 FREEZE" : ((credit_stress > 40) ? "🟠 STRESS" : ((credit_stress > 20) ? "🟡 ELEVATED" : "🟢 NORMAL"))) : "N/A");
-  let breadth_status = (show_breadth ? ((breadth_proxy < 20) ? "🔴 COLLAPSE" : ((breadth_proxy < 40) ? "🟠 WEAK" : ((breadth_proxy > 60) ? "🟢 STRONG" : "🟡 NEUTRAL"))) : "N/A");
-  let momentum_status = ((rsi > 70) ? "🔴 OVERBOUGHT" : ((rsi < 30) ? "🟢 OVERSOLD" : ((roc > 5) ? "🟢 BULLISH" : ((roc < -5) ? "🔴 BEARISH" : "🟡 NEUTRAL"))));
+  var vix_status = ((show_vix && !pinescript.na(vix)) ? ((vix > 40) ? "🔴 EXTREME" : ((vix > 25) ? "🟠 HIGH" : ((vix < 20) ? "🟢 LOW" : "🟡 MODERATE"))) : "N/A");
+  var credit_status = (show_credit ? ((credit_stress > 70) ? "🔴 FREEZE" : ((credit_stress > 40) ? "🟠 STRESS" : ((credit_stress > 20) ? "🟡 ELEVATED" : "🟢 NORMAL"))) : "N/A");
+  var breadth_status = (show_breadth ? ((breadth_proxy < 20) ? "🔴 COLLAPSE" : ((breadth_proxy < 40) ? "🟠 WEAK" : ((breadth_proxy > 60) ? "🟢 STRONG" : "🟡 NEUTRAL"))) : "N/A");
+  var momentum_status = ((rsi > 70) ? "🔴 OVERBOUGHT" : ((rsi < 30) ? "🟢 OVERSOLD" : ((roc > 5) ? "🟢 BULLISH" : ((roc < -5) ? "🔴 BEARISH" : "🟡 NEUTRAL"))));
   if (((show_phase_labels && phase_changed) && barstate.isconfirmed)) {
     if ((state.phase !== "NORMAL")) {
-      let label_text = ((state.phase === "CRASH") ? "🔴 CRASH" : ((state.phase === "PANIC") ? "🟠 PANIC" : ((state.phase === "MANIA") ? "🟡 MANIA" : "")));
-      let label_color = ((state.phase === "CRASH") ? pinescript.color.new(color_red_danger, 0) : ((state.phase === "PANIC") ? pinescript.color.new(color_orange_alert, 0) : ((state.phase === "MANIA") ? pinescript.color.new(color_yellow_bright, 0) : null)));
+      var label_text = ((state.phase === "CRASH") ? "🔴 CRASH" : ((state.phase === "PANIC") ? "🟠 PANIC" : ((state.phase === "MANIA") ? "🟡 MANIA" : "")));
+      var label_color = ((state.phase === "CRASH") ? pinescript.color.new(color_red_danger, 0) : ((state.phase === "PANIC") ? pinescript.color.new(color_orange_alert, 0) : ((state.phase === "MANIA") ? pinescript.color.new(color_yellow_bright, 0) : null)));
       if ((label_text !== "")) {
         pinescript.labelNew(bar_index, composite_risk, label_text, ({ style: label.style_label_down, color: label_color, textcolor: pinescript.color.white, size: pinescript.size.large, textalign: pinescript.text.align_center }));
       }
     }
   }
-  let show_all_lines = ((display_mode === "Smoothed All Lines") || (display_mode === "Both"));
-  let show_dominant_only = ((display_mode === "Single Dominant Line") || (display_mode === "Both"));
+  var show_all_lines = ((display_mode === "Smoothed All Lines") || (display_mode === "Both"));
+  var show_dominant_only = ((display_mode === "Single Dominant Line") || (display_mode === "Both"));
   pinescript.plot((show_all_lines ? mania_score : null), ({ title: "Mania Score", color: pinescript.color.new(color_yellow_bright, 0), linewidth: 2 }));
   pinescript.plot((show_all_lines ? panic_score : null), ({ title: "Panic Score", color: pinescript.color.new(color_orange_alert, 0), linewidth: 2 }));
   pinescript.plot((show_all_lines ? crash_score : null), ({ title: "Crash Score", color: pinescript.color.new(color_red_danger, 0), linewidth: 2 }));
-  let dominant_color = ((state.phase === "CRASH") ? color_red_danger : ((state.phase === "PANIC") ? color_orange_alert : ((state.phase === "MANIA") ? color_yellow_bright : color_gray_neutral)));
+  var dominant_color = ((state.phase === "CRASH") ? color_red_danger : ((state.phase === "PANIC") ? color_orange_alert : ((state.phase === "MANIA") ? color_yellow_bright : color_gray_neutral)));
   pinescript.plot((show_dominant_only ? composite_risk : null), ({ title: "Dominant Risk", color: pinescript.color.new(dominant_color, 0), linewidth: 4, style: plot.style_line }));
-  let bg_color = (show_zones ? ((state.phase === "CRASH") ? pinescript.color.new(color_red_danger, 88) : ((state.phase === "PANIC") ? pinescript.color.new(color_orange_alert, 92) : ((state.phase === "MANIA") ? pinescript.color.new(color_yellow_bright, 94) : pinescript.color.new(color_green_soft, 96)))) : null);
+  var bg_color = (show_zones ? ((state.phase === "CRASH") ? pinescript.color.new(color_red_danger, 88) : ((state.phase === "PANIC") ? pinescript.color.new(color_orange_alert, 92) : ((state.phase === "MANIA") ? pinescript.color.new(color_yellow_bright, 94) : pinescript.color.new(color_green_soft, 96)))) : null);
   pinescript.bgcolor(bg_color, ({ title: "Phase Background" }));
   pinescript.hline(100, "Max", ({ color: pinescript.color.new(color_gray_neutral, 70), linestyle: hline.style_solid }));
   pinescript.hline(crash_threshold, "Crash Threshold", ({ color: pinescript.color.new(color_red_danger, 50), linestyle: hline.style_dashed, linewidth: 2 }));
   pinescript.hline(panic_threshold, "Panic Threshold", ({ color: pinescript.color.new(color_orange_alert, 50), linestyle: hline.style_dashed, linewidth: 2 }));
   pinescript.hline(mania_threshold, "Mania Threshold", ({ color: pinescript.color.new(color_yellow_bright, 50), linestyle: hline.style_dashed, linewidth: 2 }));
   pinescript.hline(0, "Min", ({ color: pinescript.color.new(color_gray_neutral, 70), linestyle: hline.style_solid }));
-  let h100 = pinescript.hline(100, ({ color: pinescript.color.new(pinescript.color.gray, 100) }));
-  let h85 = pinescript.hline(85, ({ color: pinescript.color.new(pinescript.color.gray, 100) }));
-  let h60 = pinescript.hline(60, ({ color: pinescript.color.new(pinescript.color.gray, 100) }));
-  let h30 = pinescript.hline(30, ({ color: pinescript.color.new(pinescript.color.gray, 100) }));
-  let h0 = pinescript.hline(0, ({ color: pinescript.color.new(pinescript.color.gray, 100) }));
+  var h100 = pinescript.hline(100, ({ color: pinescript.color.new(pinescript.color.gray, 100) }));
+  var h85 = pinescript.hline(85, ({ color: pinescript.color.new(pinescript.color.gray, 100) }));
+  var h60 = pinescript.hline(60, ({ color: pinescript.color.new(pinescript.color.gray, 100) }));
+  var h30 = pinescript.hline(30, ({ color: pinescript.color.new(pinescript.color.gray, 100) }));
+  var h0 = pinescript.hline(0, ({ color: pinescript.color.new(pinescript.color.gray, 100) }));
   pinescript.fill(h85, h100, ({ color: pinescript.color.new(color_red_danger, 92), title: "Extreme Risk" }));
   pinescript.fill(h60, h85, ({ color: pinescript.color.new(color_orange_alert, 92), title: "High Risk" }));
   pinescript.fill(h30, h60, ({ color: pinescript.color.new(color_yellow_bright, 95), title: "Elevated Risk" }));
@@ -1939,21 +2098,21 @@ function main() {
       }
     }
   }
-  let title_rows = 1;
-  let base_rows = 4;
-  let component_rows = (show_components ? 5 : 0);
-  let total_rows = ((title_rows + base_rows) + component_rows);
+  var title_rows = 1;
+  var base_rows = 4;
+  var component_rows = (show_components ? 5 : 0);
+  var total_rows = ((title_rows + base_rows) + component_rows);
   if (state.dashboard === undefined) state.dashboard = pinescript.table.new(state.h_position, 2, total_rows, ({ bgcolor: pinescript.color.new(color_dark_bg, 80), border_width: 3, border_color: state.phase_color }));
   if (barstate.islast) {
-    let row = 0;
+    var row = 0;
     pinescript.table.cell(state.dashboard, 0, row, "", ({ bgcolor: pinescript.color.new(state.phase_color, 20) }));
     pinescript.table.cell(state.dashboard, 1, row, "🟡 Manias, 🟠 Panics and 🔴 Crashes", ({ text_color: pinescript.color.white, text_size: state.text_size_header, text_halign: pinescript.text.align_center, bgcolor: pinescript.color.new(state.phase_color, 20) }));
     row = (row + 1);
     pinescript.table.cell(state.dashboard, 0, row, "PHASE", ({ text_color: pinescript.color.white, text_size: state.text_size_normal, bgcolor: pinescript.color.new(color_gray_neutral, 60) }));
     pinescript.table.cell(state.dashboard, 1, row, state.phase, ({ text_color: state.phase_color, text_size: state.text_size_header, bgcolor: pinescript.color.new(color_dark_bg, 50) }));
     row = (row + 1);
-    let risk_display = (pinescript.strToString(pinescript.round(composite_risk)) + " / 100");
-    let risk_label = ((composite_risk > 85) ? "🔴 EXTREME RISK" : ((composite_risk > 60) ? "🟠 HIGH RISK" : ((composite_risk > 30) ? "🟡 ELEVATED RISK" : "🟢 LOW RISK")));
+    var risk_display = (pinescript.strToString(pinescript.round(composite_risk)) + " / 100");
+    var risk_label = ((composite_risk > 85) ? "🔴 EXTREME RISK" : ((composite_risk > 60) ? "🟠 HIGH RISK" : ((composite_risk > 30) ? "🟡 ELEVATED RISK" : "🟢 LOW RISK")));
     pinescript.table.cell(state.dashboard, 0, row, "RISK", ({ text_color: pinescript.color.white, text_size: state.text_size_normal, bgcolor: pinescript.color.new(color_gray_neutral, 60) }));
     pinescript.table.cell(state.dashboard, 1, row, ((risk_display + "n") + risk_label), ({ text_color: state.phase_color, text_size: state.text_size_normal, bgcolor: pinescript.color.new(color_dark_bg, 50) }));
     row = (row + 1);
@@ -1971,42 +2130,42 @@ function main() {
       pinescript.table.cell(state.dashboard, 0, row, "COMPONENTS", ({ text_color: pinescript.color.white, text_size: state.text_size_normal, bgcolor: pinescript.color.new(color_purple_composite, 40) }));
       pinescript.table.cell(state.dashboard, 1, row, "STATUS", ({ text_color: pinescript.color.white, text_size: state.text_size_normal, bgcolor: pinescript.color.new(color_purple_composite, 40) }));
       row = (row + 1);
-      let vix_value = ((show_vix && !pinescript.na(vix)) ? pinescript.strToString((pinescript.round((vix * 10)) / 10)) : "N/A");
+      var vix_value = ((show_vix && !pinescript.na(vix)) ? pinescript.strToString((pinescript.round((vix * 10)) / 10)) : "N/A");
       pinescript.table.cell(state.dashboard, 0, row, ("VIX (Fear): " + vix_value), ({ text_color: pinescript.color.white, text_size: state.text_size_normal, bgcolor: pinescript.color.new(color_dark_bg, 65) }));
       pinescript.table.cell(state.dashboard, 1, row, vix_status, ({ text_color: pinescript.color.white, text_size: state.text_size_normal, bgcolor: pinescript.color.new(color_dark_bg, 65) }));
       row = (row + 1);
-      let credit_value = (show_credit ? pinescript.strToString(pinescript.round(credit_stress)) : "N/A");
+      var credit_value = (show_credit ? pinescript.strToString(pinescript.round(credit_stress)) : "N/A");
       pinescript.table.cell(state.dashboard, 0, row, ("Credit (Bonds): " + credit_value), ({ text_color: pinescript.color.white, text_size: state.text_size_normal, bgcolor: pinescript.color.new(color_dark_bg, 65) }));
       pinescript.table.cell(state.dashboard, 1, row, credit_status, ({ text_color: pinescript.color.white, text_size: state.text_size_normal, bgcolor: pinescript.color.new(color_dark_bg, 65) }));
       row = (row + 1);
-      let breadth_value = (show_breadth ? (pinescript.strToString(pinescript.round(breadth_proxy)) + "%") : "N/A");
+      var breadth_value = (show_breadth ? (pinescript.strToString(pinescript.round(breadth_proxy)) + "%") : "N/A");
       pinescript.table.cell(state.dashboard, 0, row, ("Breadth (Participation): " + breadth_value), ({ text_color: pinescript.color.white, text_size: state.text_size_normal, bgcolor: pinescript.color.new(color_dark_bg, 65) }));
       pinescript.table.cell(state.dashboard, 1, row, breadth_status, ({ text_color: pinescript.color.white, text_size: state.text_size_normal, bgcolor: pinescript.color.new(color_dark_bg, 65) }));
       row = (row + 1);
-      let rsi_value = pinescript.strToString(pinescript.round(rsi));
+      var rsi_value = pinescript.strToString(pinescript.round(rsi));
       pinescript.table.cell(state.dashboard, 0, row, ("Momentum (RSI): " + rsi_value), ({ text_color: pinescript.color.white, text_size: state.text_size_normal, bgcolor: pinescript.color.new(color_dark_bg, 65) }));
       pinescript.table.cell(state.dashboard, 1, row, momentum_status, ({ text_color: pinescript.color.white, text_size: state.text_size_normal, bgcolor: pinescript.color.new(color_dark_bg, 65) }));
     }
   }
-  let mania_alert = ((state.phase === "MANIA") && (pinescript.hist(6, state.phase, 1) !== "MANIA"));
-  let panic_alert = ((state.phase === "PANIC") && (pinescript.hist(7, state.phase, 1) !== "PANIC"));
-  let crash_alert = ((state.phase === "CRASH") && (pinescript.hist(8, state.phase, 1) !== "CRASH"));
-  let breadth_collapse_alert = ((breadth_proxy < 30) && (pinescript.hist(9, breadth_proxy, 1) >= 30));
-  let vix_spike_alert = ((((show_vix && !pinescript.na(vix)) && !pinescript.na(vix_5)) && (vix > (vix_5 * 1.3))) && (pinescript.hist(10, vix, 1) <= (pinescript.hist(11, vix_5, 1) * 1.3)));
-  let credit_freeze_alert = ((credit_stress > 70) && (pinescript.hist(12, credit_stress, 1) <= 70));
+  var mania_alert = ((state.phase === "MANIA") && (pinescript.hist(19, state.phase, 1) !== "MANIA"));
+  var panic_alert = ((state.phase === "PANIC") && (pinescript.hist(20, state.phase, 1) !== "PANIC"));
+  var crash_alert = ((state.phase === "CRASH") && (pinescript.hist(21, state.phase, 1) !== "CRASH"));
+  var breadth_collapse_alert = ((breadth_proxy < 30) && (pinescript.hist(22, breadth_proxy, 1) >= 30));
+  var vix_spike_alert = ((((show_vix && !pinescript.na(vix)) && !pinescript.na(vix_5)) && (vix > (vix_5 * 1.3))) && (pinescript.hist(23, vix, 1) <= (pinescript.hist(24, vix_5, 1) * 1.3)));
+  var credit_freeze_alert = ((credit_stress > 70) && (pinescript.hist(25, credit_stress, 1) <= 70));
   pinescript.alertcondition(mania_alert, ({ title: "🟡 Mania Phase Detected", message: "🟡 MANIA PHASE: Elevated crash risk detected. Consider reducing exposure and taking profits." }));
   pinescript.alertcondition(panic_alert, ({ title: "🟠 Panic Phase Detected", message: "🟠 PANIC PHASE: Severe market stress detected. Consider raising cash and avoiding buying dips." }));
   pinescript.alertcondition(crash_alert, ({ title: "🔴 CRASH DETECTED", message: "🔴 CRASH PHASE: Capitulation event detected. Extreme risk - prepare to buy quality after capitulation." }));
   pinescript.alertcondition(breadth_collapse_alert, ({ title: "⚠️ Breadth Collapse", message: "⚠️ Market breadth collapsed below 30% - participation deteriorating rapidly." }));
   pinescript.alertcondition(vix_spike_alert, ({ title: "⚠️ VIX Spike", message: "⚠️ VIX spiked >30% in 5 days - fear increasing rapidly." }));
   pinescript.alertcondition(credit_freeze_alert, ({ title: "⚠️ Credit Freeze", message: "⚠️ Credit stress extreme - potential liquidity crisis developing." }));
-  plotchar(composite_risk, ({ title: "Composite Risk", char: "", location: pinescript.location.top, display: display.data_window }));
-  plotchar(mania_score, ({ title: "Mania Score", char: "", location: pinescript.location.top, display: display.data_window }));
-  plotchar(panic_score, ({ title: "Panic Score", char: "", location: pinescript.location.top, display: display.data_window }));
-  plotchar(crash_score, ({ title: "Crash Score", char: "", location: pinescript.location.top, display: display.data_window }));
-  plotchar((show_vix ? vix : null), ({ title: "VIX", char: "", location: pinescript.location.top, display: display.data_window }));
-  plotchar(credit_stress, ({ title: "Credit Stress", char: "", location: pinescript.location.top, display: display.data_window }));
-  plotchar(breadth_proxy, ({ title: "Breadth %", char: "", location: pinescript.location.top, display: display.data_window }));
+  pinescript.plotchar(composite_risk, ({ title: "Composite Risk", char: "", location: pinescript.location.top, display: display.data_window }));
+  pinescript.plotchar(mania_score, ({ title: "Mania Score", char: "", location: pinescript.location.top, display: display.data_window }));
+  pinescript.plotchar(panic_score, ({ title: "Panic Score", char: "", location: pinescript.location.top, display: display.data_window }));
+  pinescript.plotchar(crash_score, ({ title: "Crash Score", char: "", location: pinescript.location.top, display: display.data_window }));
+  pinescript.plotchar((show_vix ? vix : null), ({ title: "VIX", char: "", location: pinescript.location.top, display: display.data_window }));
+  pinescript.plotchar(credit_stress, ({ title: "Credit Stress", char: "", location: pinescript.location.top, display: display.data_window }));
+  pinescript.plotchar(breadth_proxy, ({ title: "Breadth %", char: "", location: pinescript.location.top, display: display.data_window }));
 }
 
 
@@ -2051,6 +2210,10 @@ function run(data, options = {}) {
     rt.__shapeIdx = 0;
     globalThis.bar_index = i;
     globalThis.last_bar_index = n - 1;
+    globalThis.time_tradingday = inTime[i];
+    globalThis.time_close = inTime[i];
+    globalThis.last_bar_time = inTime[n - 1];
+    globalThis.timenow = inTime[n - 1];
     globalThis.barstate = {
       isfirst: i === 0, islast: i === n - 1, isrealtime: false, ishistory: true,
       isconfirmed: true, isnew: true, islastconfirmedhistory: i === n - 1,

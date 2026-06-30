@@ -178,10 +178,14 @@ class Lexer {
   }
 
   skipComments() {
-    // Directive-style comments like //@version=5 carry meaning and should not be skipped
+    // Only //@version carries meaning for us. Other //@ annotations (//@description,
+    // //@param, //@Metrify author tags, ...) are documentation and must be skipped as
+    // ordinary comments, otherwise the word after //@ leaks out as a stray identifier.
     if (this.currentChar === '/' && this.peek(1) === '/' && this.peek(2) === '@') {
-      // Leave it alone so the tokenizer can process it as a directive
-      return false;
+      let word = '';
+      for (let o = 3; o < 10 && this.peek(o) && /[A-Za-z]/.test(this.peek(o)); o++) word += this.peek(o);
+      if (word.toLowerCase() === 'version') return false; // process the version directive
+      // otherwise fall through and skip the rest of the line like any other comment
     }
     if (this.currentChar === '/' && this.peek(1) === '/') {
       while (this.currentChar && this.currentChar !== '\n') {
@@ -482,6 +486,32 @@ class Lexer {
       return contTypes.has(lastTok.type);
     };
 
+    // Looks ahead from the current newline: if the next non-blank, non-comment
+    // line begins with an operator that cannot start a statement (e.g. a leading
+    // "?" / ":" of a wrapped ternary, or "+", "and", "."), it's a continuation.
+    // The backward check above misses these because the trailing token is an
+    // ordinary operand. Pine has no statement that begins with these operators.
+    const nextLineStartsContinuation = () => {
+      const src = this.source;
+      let i = this.pos; // sitting on '\n'
+      while (i < src.length) {
+        const c = src[i];
+        if (c === '\n' || c === ' ' || c === '\t') { i++; continue; }
+        if (c === '/' && src[i + 1] === '/') { // skip a comment-only line
+          i += 2;
+          while (i < src.length && src[i] !== '\n') i++;
+          continue;
+        }
+        break;
+      }
+      if (i >= src.length) return false;
+      const rest = src.slice(i);
+      if (/^(and|or)\b/.test(rest)) return true;
+      const two = src.slice(i, i + 2);
+      if (two === '==' || two === '!=' || two === '<=' || two === '>=') return true;
+      return '?:*/%+-<>.'.includes(src[i]);
+    };
+
     const flushPendingIndents = () => {
       while (this.pendingIndents.length > 0) {
         tokens.push(this.pendingIndents.shift());
@@ -514,7 +544,7 @@ class Lexer {
             continue;
           }
 
-          if (isLineContinuation()) {
+          if (isLineContinuation() || nextLineStartsContinuation()) {
             this.advance();
             // Eat the leading whitespace on the continuation line without emitting indentation tokens
             while (this.currentChar === ' ' || this.currentChar === '\t') {

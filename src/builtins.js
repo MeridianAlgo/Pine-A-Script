@@ -68,6 +68,97 @@ export const builtins = new Map([
     return new Array(count || 0).fill(null);
   }],
 
+  // PineScript v6 lets you call collection functions as methods: arr.get(i),
+  // arr.push(v), m.put(k, v). JS arrays/Maps don't have those exact methods, so we
+  // attach them to the collections we hand back. We only add names that don't
+  // already exist natively (defining e.g. push in terms of arr.push would recurse).
+  ['__decArr', function(arr) {
+    if (!Array.isArray(arr) || arr.__pineDecorated) return arr;
+    const self = this;
+    const def = (name, fn) => Object.defineProperty(arr, name, { value: fn, writable: true, configurable: true });
+    Object.defineProperty(arr, '__pineDecorated', { value: true, configurable: true });
+    def('get', (i) => (arr[i] === undefined ? null : arr[i]));
+    def('set', (i, v) => { arr[i] = v; return v; });
+    def('size', () => arr.length);
+    def('clear', () => { arr.length = 0; });
+    def('insert', (i, v) => { arr.splice(i, 0, v); });
+    def('remove', (i) => arr.splice(i, 1)[0]);
+    def('contains', (v) => arr.includes(v));
+    def('indexof', (v) => arr.indexOf(v));
+    def('lastindexof', (v) => arr.lastIndexOf(v));
+    def('first', () => (arr.length ? arr[0] : null));
+    def('last', () => (arr.length ? arr[arr.length - 1] : null));
+    def('sum', () => arr.reduce((a, b) => a + b, 0));
+    def('avg', () => (arr.length ? arr.reduce((a, b) => a + b, 0) / arr.length : 0));
+    def('min', () => (arr.length ? Math.min(...arr) : null));
+    def('max', () => (arr.length ? Math.max(...arr) : null));
+    def('range', () => (arr.length ? Math.max(...arr) - Math.min(...arr) : null));
+    // Statistical methods that route to the array.* built-ins (these names are not
+    // native to JS arrays, so attaching them here is safe from recursion).
+    def('median', () => self.arrayMedian(arr));
+    def('mode', () => self.arrayMode(arr));
+    def('stdev', () => self.arrayStdev(arr));
+    def('variance', () => self.arrayVariance(arr));
+    def('covariance', (other) => self.arrayCovariance(arr, other));
+    def('percentile_linear_interpolation', (p) => self.arrayPercentileLinearInterpolation(arr, p));
+    def('percentile_nearest_rank', (p) => self.arrayPercentileNearestRank(arr, p));
+    def('abs', () => self.__decArr(self.arrayAbs(arr)));
+    def('binary_search', (v) => self.arrayBinarySearch(arr, v));
+    // Pine's array.sort takes an order string, not a comparator. Use the native
+    // sort via .call so we don't recurse through this overridden method.
+    def('sort', (order) => { Array.prototype.sort.call(arr, (a, b) => (order === 'descending' ? b - a : a - b)); return arr; });
+    def('sort_indices', (order) => self.__decArr(arr.map((_, i) => i).sort((a, b) => (order === 'descending' ? arr[b] - arr[a] : arr[a] - arr[b]))));
+    // join/slice/reverse/concat/includes/fill already exist natively on Array with
+    // compatible semantics, so we deliberately leave them to the native methods.
+    return arr;
+  }],
+
+  // Decorate a Map with PineScript map method names (put/contains/remove and
+  // array-returning keys/values, which Pine expects instead of JS iterators).
+  ['__decMap', function(m) {
+    if (!(m instanceof Map) || m.__pineDecorated) return m;
+    const def = (name, fn) => Object.defineProperty(m, name, { value: fn, writable: true, configurable: true });
+    Object.defineProperty(m, '__pineDecorated', { value: true, configurable: true });
+    def('put', (k, v) => { m.set(k, v); return v; });
+    def('contains', (k) => m.has(k));
+    def('remove', (k) => m.delete(k));
+    def('keys', () => Array.from(Map.prototype.keys.call(m)));
+    def('values', () => Array.from(Map.prototype.values.call(m)));
+    def('size_', () => m.size);
+    return m;
+  }],
+
+  // Decorate a matrix object ({rows, cols, data}) with Pine v6 method-call names.
+  // rows/cols stay numeric properties (built-ins read them), so the method forms
+  // are exposed as rows_/columns to avoid clobbering them.
+  ['__decMatrix', function(m) {
+    if (!m || typeof m !== 'object' || m.__pineDecorated) return m;
+    const self = this;
+    const def = (name, fn) => Object.defineProperty(m, name, { value: fn, writable: true, configurable: true });
+    Object.defineProperty(m, '__pineDecorated', { value: true, configurable: true });
+    def('get', (r, c) => self.matrixGet(m, r, c));
+    def('set', (r, c, v) => self.matrixSet(m, r, c, v));
+    def('rows_', () => m.rows);
+    def('columns', () => m.cols);
+    def('fill', (v) => self.matrixFill(m, v));
+    return m;
+  }],
+
+  // Wrap a drawing object (line/label/box/table/polyline) so any method we don't
+  // explicitly model (table.cell, line.set_xy, box.set_bgcolor, ...) becomes a
+  // chainable no-op. We don't render charts, so these calls just need to not throw
+  // while real fields stay readable.
+  ['__decDraw', function(obj) {
+    if (!obj || typeof obj !== 'object') return obj;
+    const p = new Proxy(obj, {
+      get(t, k) {
+        if (k in t || typeof k === 'symbol') return t[k];
+        return function() { return p; };
+      },
+    });
+    return p;
+  }],
+
   // Visual-output built-ins. We don't render charts, so these record the call and
   // return safely instead of throwing, letting indicators that use them still run.
   ['alertcondition', function(condition, title, message) {
@@ -80,6 +171,36 @@ export const builtins = new Map([
   }],
 
   ['barcolor', function(color) { return null; }],
+
+  // plotchar/plotarrow behave like plotshape for our purposes: record a per-bar
+  // series so the script runs and produces inspectable output.
+  ['plotchar', function(series, ...rest) {
+    const rt = globalThis.__pineRuntime;
+    if (!rt) return series;
+    const bar = rt.__barIndex | 0;
+    const ord = (rt.__shapeIdx = (rt.__shapeIdx | 0) + 1) - 1;
+    let key = 'char_' + ord;
+    for (const r of rest) {
+      if (typeof r === 'string') { key = r; break; }
+      if (r && typeof r === 'object' && r.title) { key = String(r.title); break; }
+    }
+    let s = rt.plotshapes[key];
+    if (!s) s = rt.plotshapes[key] = { title: key, data: [] };
+    s.data[bar] = this.__scalar(series);
+    return series;
+  }],
+
+  ['plotarrow', function(series, ...rest) {
+    const rt = globalThis.__pineRuntime;
+    if (!rt) return series;
+    const bar = rt.__barIndex | 0;
+    const ord = (rt.__plotIdx = (rt.__plotIdx | 0) + 1) - 1;
+    const key = 'arrow_' + ord;
+    let p = rt.plots[key];
+    if (!p) p = rt.plots[key] = { title: key, data: [] };
+    p.data[bar] = this.__scalar(series);
+    return series;
+  }],
 
   ['bgcolor', function(color, opts) { return null; }],
 
@@ -566,6 +687,14 @@ export const builtins = new Map([
     return Math.atan(value);
   }],
 
+  ['todegrees', function(radians) {
+    return radians * (180 / Math.PI);
+  }],
+
+  ['toradians', function(degrees) {
+    return degrees * (Math.PI / 180);
+  }],
+
   ['floor', function(value) {
     return Math.floor(value);
   }],
@@ -777,7 +906,7 @@ export const builtins = new Map([
   }],
 
   ['lineNew', function(x1, y1, x2, y2, opts = {}) {
-    return { x1, y1, x2, y2, opts, _type: 'line' };
+    return this.__decDraw({ x1, y1, x2, y2, opts, _type: 'line' });
   }],
 
   ['lineDelete', function(l) {
@@ -803,7 +932,7 @@ export const builtins = new Map([
   }],
 
   ['labelNew', function(x, y, text = '', opts = {}) {
-    return { x, y, text, opts, _type: 'label' };
+    return this.__decDraw({ x, y, text, opts, _type: 'label' });
   }],
 
   ['labelDelete', function(l) {
@@ -824,7 +953,7 @@ export const builtins = new Map([
 
   // Box drawing functions for creating rectangular shapes on the chart
   ['boxNew', function(left, top, right, bottom, opts = {}) {
-    return { left, top, right, bottom, opts, _type: 'box' };
+    return this.__decDraw({ left, top, right, bottom, opts, _type: 'box' });
   }],
 
   ['boxDelete', function(box) {
@@ -847,7 +976,7 @@ export const builtins = new Map([
 
   // Polyline drawing functions for multi-point paths on the chart
   ['polylineNew', function(points, opts = {}) {
-    return { points: points || [], opts, _type: 'polyline' };
+    return this.__decDraw({ points: points || [], opts, _type: 'polyline' });
   }],
 
   ['polylineDelete', function(poly) {
@@ -958,7 +1087,7 @@ export const builtins = new Map([
 
   // Map data structure functions for key-value storage within scripts
   ['mapNew', function() {
-    return new Map();
+    return this.__decMap(new Map());
   }],
 
   ['mapSize', function(m) {
@@ -1002,7 +1131,7 @@ export const builtins = new Map([
     const r = Math.max(0, rows ?? 0);
     const c = Math.max(0, cols ?? 0);
     const data = Array.from({ length: r }, () => Array.from({ length: c }, () => initialValue));
-    return { rows: r, cols: c, data };
+    return this.__decMatrix({ rows: r, cols: c, data });
   }],
 
   ['matrixRows', function(m) {
@@ -1138,6 +1267,63 @@ export const builtins = new Map([
     return null;
   }],
 
+  // Jacobi eigenvalue algorithm for symmetric matrices. Returns eigenvalues sorted
+  // descending and their eigenvectors as columns of a matrix, matching how Pine's
+  // matrix.eigenvalues / matrix.eigenvectors are typically used (covariance, SSA).
+  ['__jacobiEigen', function(m) {
+    if (!m || !Array.isArray(m.data)) return null;
+    const n = m.rows ?? 0;
+    if (n === 0 || n !== (m.cols ?? 0)) return null;
+    // Work on a copy so the input matrix is untouched.
+    const a = m.data.map(row => row.slice());
+    const v = Array.from({ length: n }, (_, i) => Array.from({ length: n }, (_, j) => (i === j ? 1 : 0)));
+    for (let sweep = 0; sweep < 100; sweep++) {
+      let off = 0;
+      for (let p = 0; p < n; p++) for (let q = p + 1; q < n; q++) off += a[p][q] * a[p][q];
+      if (off < 1e-20) break;
+      for (let p = 0; p < n; p++) {
+        for (let q = p + 1; q < n; q++) {
+          if (Math.abs(a[p][q]) < 1e-18) continue;
+          const theta = (a[q][q] - a[p][p]) / (2 * a[p][q]);
+          const t = Math.sign(theta || 1) / (Math.abs(theta) + Math.sqrt(theta * theta + 1));
+          const cos = 1 / Math.sqrt(t * t + 1);
+          const sin = t * cos;
+          for (let k = 0; k < n; k++) {
+            const akp = a[k][p], akq = a[k][q];
+            a[k][p] = cos * akp - sin * akq;
+            a[k][q] = sin * akp + cos * akq;
+          }
+          for (let k = 0; k < n; k++) {
+            const apk = a[p][k], aqk = a[q][k];
+            a[p][k] = cos * apk - sin * aqk;
+            a[q][k] = sin * apk + cos * aqk;
+          }
+          for (let k = 0; k < n; k++) {
+            const vkp = v[k][p], vkq = v[k][q];
+            v[k][p] = cos * vkp - sin * vkq;
+            v[k][q] = sin * vkp + cos * vkq;
+          }
+        }
+      }
+    }
+    // Sort eigenpairs by eigenvalue, descending.
+    const order = Array.from({ length: n }, (_, i) => i).sort((i, j) => a[j][j] - a[i][i]);
+    const values = order.map(i => a[i][i]);
+    const vectors = Array.from({ length: n }, (_, r) => order.map(c => v[r][c]));
+    return { values, vectors };
+  }],
+
+  ['matrixEigenvalues', function(m) {
+    const e = this.__jacobiEigen(m);
+    return this.__decArr(e ? e.values : []);
+  }],
+
+  ['matrixEigenvectors', function(m) {
+    const e = this.__jacobiEigen(m);
+    if (!e) return this.__decMatrix({ rows: 0, cols: 0, data: [] });
+    return this.__decMatrix({ rows: e.vectors.length, cols: e.vectors.length, data: e.vectors });
+  }],
+
   // External data request stub that passes through the expression in single-security mode
   ['requestSecurity', function(symbol, timeframe, expression) {
     return expression;
@@ -1145,7 +1331,7 @@ export const builtins = new Map([
 
   // Array manipulation functions that mirror PineScript's array namespace
   ['arrayNew', function(initialSize = 0, initialValue = 0) {
-    return Array(initialSize).fill(initialValue);
+    return this.__decArr(Array(initialSize).fill(initialValue));
   }],
 
   ['arraySize', function(arr) {
@@ -1208,10 +1394,10 @@ export const builtins = new Map([
   }],
 
   ['arraySlice', function(arr, startIndex = 0, endIndex = null) {
-    if (!arr) return [];
+    if (!arr) return this.__decArr([]);
     const start = Number(startIndex) || 0;
     const end = endIndex === null || endIndex === undefined ? arr.length : Number(endIndex) || 0;
-    return arr.slice(start, end);
+    return this.__decArr(arr.slice(start, end));
   }],
 
   ['arraySort', function(arr, order = 'ascending') {
@@ -1554,12 +1740,12 @@ export const builtins = new Map([
   ['arrayConcat', function(arr1, arr2) {
     if (!arr1) return arr2 || [];
     if (!arr2) return arr1;
-    return arr1.concat(arr2);
+    return this.__decArr(arr1.concat(arr2));
   }],
 
   ['arrayCopy', function(arr) {
-    if (!arr) return [];
-    return [...arr];
+    if (!arr) return this.__decArr([]);
+    return this.__decArr([...arr]);
   }],
 
   ['arrayBinarySearch', function(arr, value) {

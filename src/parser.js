@@ -40,9 +40,19 @@ class Parser {
 
   isGenericAnnotationStart() {
     if (!this.match(TokenType.LESS)) return false;
+    // A real generic type argument list (e.g. array.new<float>, matrix<chart.point>)
+    // contains only type tokens: identifiers, dotted names, commas and nested <>.
+    // If we encounter anything else (an operator, `=`, a literal, a newline), this is
+    // not a generic but a comparison like `close < open` — bail out so it parses as
+    // a relational expression instead of swallowing the rest of the line.
+    const allowed = new Set([
+      TokenType.IDENTIFIER, TokenType.DOT, TokenType.COMMA,
+      TokenType.LESS, TokenType.GREATER,
+    ]);
     let depth = 0;
     for (let i = 0; this.peek(i); i++) {
       const t = this.peek(i);
+      if (!allowed.has(t.type)) return false;
       if (t.type === TokenType.LESS) depth++;
       else if (t.type === TokenType.GREATER) {
         depth--;

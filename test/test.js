@@ -8,7 +8,8 @@ const tests = [
   {
     name: 'Simple variable declaration',
     input: `fastLength = 10`,
-    check: (result) => result.success && (result.code.includes('const fastLength = 10') || result.code.includes('let fastLength = 10'))
+    // PineScript is function-scoped, so variables are declared with `var`.
+    check: (result) => result.success && /\b(var|let|const) fastLength = 10/.test(result.code)
   },
   {
     name: 'Input declaration',

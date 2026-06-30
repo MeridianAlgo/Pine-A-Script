@@ -42,6 +42,80 @@ const pinescript = {
     if (value != null && typeof value[Symbol.iterator] === 'function') return Array.from(value);
     return new Array(count || 0).fill(null);
   },
+  __decArr: function(arr) {
+    if (!Array.isArray(arr) || arr.__pineDecorated) return arr;
+    const self = this;
+    const def = (name, fn) => Object.defineProperty(arr, name, { value: fn, writable: true, configurable: true });
+    Object.defineProperty(arr, '__pineDecorated', { value: true, configurable: true });
+    def('get', (i) => (arr[i] === undefined ? null : arr[i]));
+    def('set', (i, v) => { arr[i] = v; return v; });
+    def('size', () => arr.length);
+    def('clear', () => { arr.length = 0; });
+    def('insert', (i, v) => { arr.splice(i, 0, v); });
+    def('remove', (i) => arr.splice(i, 1)[0]);
+    def('contains', (v) => arr.includes(v));
+    def('indexof', (v) => arr.indexOf(v));
+    def('lastindexof', (v) => arr.lastIndexOf(v));
+    def('first', () => (arr.length ? arr[0] : null));
+    def('last', () => (arr.length ? arr[arr.length - 1] : null));
+    def('sum', () => arr.reduce((a, b) => a + b, 0));
+    def('avg', () => (arr.length ? arr.reduce((a, b) => a + b, 0) / arr.length : 0));
+    def('min', () => (arr.length ? Math.min(...arr) : null));
+    def('max', () => (arr.length ? Math.max(...arr) : null));
+    def('range', () => (arr.length ? Math.max(...arr) - Math.min(...arr) : null));
+    // Statistical methods that route to the array.* built-ins (these names are not
+    // native to JS arrays, so attaching them here is safe from recursion).
+    def('median', () => self.arrayMedian(arr));
+    def('mode', () => self.arrayMode(arr));
+    def('stdev', () => self.arrayStdev(arr));
+    def('variance', () => self.arrayVariance(arr));
+    def('covariance', (other) => self.arrayCovariance(arr, other));
+    def('percentile_linear_interpolation', (p) => self.arrayPercentileLinearInterpolation(arr, p));
+    def('percentile_nearest_rank', (p) => self.arrayPercentileNearestRank(arr, p));
+    def('abs', () => self.__decArr(self.arrayAbs(arr)));
+    def('binary_search', (v) => self.arrayBinarySearch(arr, v));
+    // Pine's array.sort takes an order string, not a comparator. Use the native
+    // sort via .call so we don't recurse through this overridden method.
+    def('sort', (order) => { Array.prototype.sort.call(arr, (a, b) => (order === 'descending' ? b - a : a - b)); return arr; });
+    def('sort_indices', (order) => self.__decArr(arr.map((_, i) => i).sort((a, b) => (order === 'descending' ? arr[b] - arr[a] : arr[a] - arr[b]))));
+    // join/slice/reverse/concat/includes/fill already exist natively on Array with
+    // compatible semantics, so we deliberately leave them to the native methods.
+    return arr;
+  },
+  __decMap: function(m) {
+    if (!(m instanceof Map) || m.__pineDecorated) return m;
+    const def = (name, fn) => Object.defineProperty(m, name, { value: fn, writable: true, configurable: true });
+    Object.defineProperty(m, '__pineDecorated', { value: true, configurable: true });
+    def('put', (k, v) => { m.set(k, v); return v; });
+    def('contains', (k) => m.has(k));
+    def('remove', (k) => m.delete(k));
+    def('keys', () => Array.from(Map.prototype.keys.call(m)));
+    def('values', () => Array.from(Map.prototype.values.call(m)));
+    def('size_', () => m.size);
+    return m;
+  },
+  __decMatrix: function(m) {
+    if (!m || typeof m !== 'object' || m.__pineDecorated) return m;
+    const self = this;
+    const def = (name, fn) => Object.defineProperty(m, name, { value: fn, writable: true, configurable: true });
+    Object.defineProperty(m, '__pineDecorated', { value: true, configurable: true });
+    def('get', (r, c) => self.matrixGet(m, r, c));
+    def('set', (r, c, v) => self.matrixSet(m, r, c, v));
+    def('rows_', () => m.rows);
+    def('columns', () => m.cols);
+    def('fill', (v) => self.matrixFill(m, v));
+    return m;
+  },
+  __decDraw: function(obj) {
+    if (!obj || typeof obj !== 'object') return obj;
+    const p = new Proxy(obj, {
+      get(t, k) {
+        if (k in t || typeof k === 'symbol') return t[k];
+        return function() { return p; };
+      },
+    });
+    return p;
+  },
   alertcondition: function(condition, ...rest) {
     if (globalThis.__pineRuntime) {
       globalThis.__pineRuntime.alerts.push({ condition, args: rest });
@@ -49,6 +123,32 @@ const pinescript = {
     return null;
   },
   barcolor: function(color) { return null; },
+  plotchar: function(series, ...rest) {
+    const rt = globalThis.__pineRuntime;
+    if (!rt) return series;
+    const bar = rt.__barIndex | 0;
+    const ord = (rt.__shapeIdx = (rt.__shapeIdx | 0) + 1) - 1;
+    let key = 'char_' + ord;
+    for (const r of rest) {
+      if (typeof r === 'string') { key = r; break; }
+      if (r && typeof r === 'object' && r.title) { key = String(r.title); break; }
+    }
+    let s = rt.plotshapes[key];
+    if (!s) s = rt.plotshapes[key] = { title: key, data: [] };
+    s.data[bar] = this.__scalar(series);
+    return series;
+  },
+  plotarrow: function(series, ...rest) {
+    const rt = globalThis.__pineRuntime;
+    if (!rt) return series;
+    const bar = rt.__barIndex | 0;
+    const ord = (rt.__plotIdx = (rt.__plotIdx | 0) + 1) - 1;
+    const key = 'arrow_' + ord;
+    let p = rt.plots[key];
+    if (!p) p = rt.plots[key] = { title: key, data: [] };
+    p.data[bar] = this.__scalar(series);
+    return series;
+  },
   bgcolor: function(color, title, editable, showLast) {
     return null;
   },
@@ -470,6 +570,12 @@ const pinescript = {
   atan: function(value) {
     return Math.atan(value);
   },
+  todegrees: function(radians) {
+    return radians * (180 / Math.PI);
+  },
+  toradians: function(degrees) {
+    return degrees * (Math.PI / 180);
+  },
   floor: function(value) {
     return Math.floor(value);
   },
@@ -641,7 +747,7 @@ const pinescript = {
     return series;
   },
   lineNew: function(x1, y1, x2, y2, opts = {}) {
-    return { x1, y1, x2, y2, opts, _type: 'line' };
+    return this.__decDraw({ x1, y1, x2, y2, opts, _type: 'line' });
   },
   lineDelete: function(l) {
     return null;
@@ -661,7 +767,7 @@ const pinescript = {
     return point === 0 || point === 'y1' ? line.y1 : line.y2;
   },
   labelNew: function(x, y, text = '', opts = {}) {
-    return { x, y, text, opts, _type: 'label' };
+    return this.__decDraw({ x, y, text, opts, _type: 'label' });
   },
   labelDelete: function(l) {
     return null;
@@ -676,7 +782,7 @@ const pinescript = {
     return label.text || '';
   },
   boxNew: function(left, top, right, bottom, opts = {}) {
-    return { left, top, right, bottom, opts, _type: 'box' };
+    return this.__decDraw({ left, top, right, bottom, opts, _type: 'box' });
   },
   boxDelete: function(box) {
     return null;
@@ -694,7 +800,7 @@ const pinescript = {
     return box;
   },
   polylineNew: function(points, opts = {}) {
-    return { points: points || [], opts, _type: 'polyline' };
+    return this.__decDraw({ points: points || [], opts, _type: 'polyline' });
   },
   polylineDelete: function(poly) {
     return null;
@@ -765,7 +871,7 @@ const pinescript = {
     return { time: _time ?? null, price: _price ?? null };
   },
   mapNew: function() {
-    return new Map();
+    return this.__decMap(new Map());
   },
   mapSize: function(m) {
     return m instanceof Map ? m.size : 0;
@@ -800,7 +906,7 @@ const pinescript = {
     const r = Math.max(0, rows ?? 0);
     const c = Math.max(0, cols ?? 0);
     const data = Array.from({ length: r }, () => Array.from({ length: c }, () => initialValue));
-    return { rows: r, cols: c, data };
+    return this.__decMatrix({ rows: r, cols: c, data });
   },
   matrixRows: function(m) {
     return m?.rows ?? 0;
@@ -923,11 +1029,62 @@ const pinescript = {
     }
     return null;
   },
+  __jacobiEigen: function(m) {
+    if (!m || !Array.isArray(m.data)) return null;
+    const n = m.rows ?? 0;
+    if (n === 0 || n !== (m.cols ?? 0)) return null;
+    // Work on a copy so the input matrix is untouched.
+    const a = m.data.map(row => row.slice());
+    const v = Array.from({ length: n }, (_, i) => Array.from({ length: n }, (_, j) => (i === j ? 1 : 0)));
+    for (let sweep = 0; sweep < 100; sweep++) {
+      let off = 0;
+      for (let p = 0; p < n; p++) for (let q = p + 1; q < n; q++) off += a[p][q] * a[p][q];
+      if (off < 1e-20) break;
+      for (let p = 0; p < n; p++) {
+        for (let q = p + 1; q < n; q++) {
+          if (Math.abs(a[p][q]) < 1e-18) continue;
+          const theta = (a[q][q] - a[p][p]) / (2 * a[p][q]);
+          const t = Math.sign(theta || 1) / (Math.abs(theta) + Math.sqrt(theta * theta + 1));
+          const cos = 1 / Math.sqrt(t * t + 1);
+          const sin = t * cos;
+          for (let k = 0; k < n; k++) {
+            const akp = a[k][p], akq = a[k][q];
+            a[k][p] = cos * akp - sin * akq;
+            a[k][q] = sin * akp + cos * akq;
+          }
+          for (let k = 0; k < n; k++) {
+            const apk = a[p][k], aqk = a[q][k];
+            a[p][k] = cos * apk - sin * aqk;
+            a[q][k] = sin * apk + cos * aqk;
+          }
+          for (let k = 0; k < n; k++) {
+            const vkp = v[k][p], vkq = v[k][q];
+            v[k][p] = cos * vkp - sin * vkq;
+            v[k][q] = sin * vkp + cos * vkq;
+          }
+        }
+      }
+    }
+    // Sort eigenpairs by eigenvalue, descending.
+    const order = Array.from({ length: n }, (_, i) => i).sort((i, j) => a[j][j] - a[i][i]);
+    const values = order.map(i => a[i][i]);
+    const vectors = Array.from({ length: n }, (_, r) => order.map(c => v[r][c]));
+    return { values, vectors };
+  },
+  matrixEigenvalues: function(m) {
+    const e = this.__jacobiEigen(m);
+    return this.__decArr(e ? e.values : []);
+  },
+  matrixEigenvectors: function(m) {
+    const e = this.__jacobiEigen(m);
+    if (!e) return this.__decMatrix({ rows: 0, cols: 0, data: [] });
+    return this.__decMatrix({ rows: e.vectors.length, cols: e.vectors.length, data: e.vectors });
+  },
   requestSecurity: function(symbol, timeframe, expression) {
     return expression;
   },
   arrayNew: function(initialSize = 0, initialValue = 0) {
-    return Array(initialSize).fill(initialValue);
+    return this.__decArr(Array(initialSize).fill(initialValue));
   },
   arraySize: function(arr) {
     return arr ? arr.length : 0;
@@ -978,10 +1135,10 @@ const pinescript = {
     return arr;
   },
   arraySlice: function(arr, startIndex = 0, endIndex = null) {
-    if (!arr) return [];
+    if (!arr) return this.__decArr([]);
     const start = Number(startIndex) || 0;
     const end = endIndex === null || endIndex === undefined ? arr.length : Number(endIndex) || 0;
-    return arr.slice(start, end);
+    return this.__decArr(arr.slice(start, end));
   },
   arraySort: function(arr, order = 'ascending') {
     if (arr) arr.sort((a, b) => order === 'ascending' ? a - b : b - a);
@@ -1191,7 +1348,7 @@ const pinescript = {
     const info = { ticker: 'AAPL', tickerid: 'NASDAQ:AAPL', prefix: 'NASDAQ', root: 'AAPL', suffix: '' };
     return info[type] || '';
   },
-  timenow: 1781574527774,
+  timenow: 1782783576913,
   barstate: "LAST",
   dividends: {},
   splits: {},
@@ -1245,11 +1402,11 @@ const pinescript = {
   arrayConcat: function(arr1, arr2) {
     if (!arr1) return arr2 || [];
     if (!arr2) return arr1;
-    return arr1.concat(arr2);
+    return this.__decArr(arr1.concat(arr2));
   },
   arrayCopy: function(arr) {
-    if (!arr) return [];
-    return [...arr];
+    if (!arr) return this.__decArr([]);
+    return this.__decArr([...arr]);
   },
   arrayBinarySearch: function(arr, value) {
     if (!arr || arr.length === 0) return -1;
@@ -1339,7 +1496,7 @@ globalThis.input.timeframe = globalThis.input.timeframe || ((defval) => defval);
 
 globalThis.array = globalThis.array || {
 
-  from: (...items) => items,
+  from: (...items) => pinescript.__decArr(items),
 
   size: (arr) => pinescript.arraySize(arr),
 
@@ -1508,6 +1665,8 @@ globalThis.line = globalThis.line || __pineNS({ style_solid: "solid", style_dash
 
 globalThis.box = globalThis.box || __pineNS({});
 
+globalThis.color = globalThis.color || __pineNS(Object.assign(function(c) { return c; }, { new: function(c, t) { return c; }, rgb: function(r, g, b, t) { return "#rgb(" + [r, g, b].join(",") + ")"; }, from_gradient: function(v, lo, hi, c1, c2) { return c1; }, r: function() { return 0; }, g: function() { return 0; }, b: function() { return 0; }, t: function() { return 0; }, aqua: "#00BCD4", black: "#363A45", blue: "#2962FF", fuchsia: "#E040FB", gray: "#787B86", green: "#4CAF50", lime: "#00E676", maroon: "#880E4F", navy: "#311B92", olive: "#808000", orange: "#FF9800", purple: "#9C27B0", red: "#FF5252", silver: "#B2B5BE", teal: "#00897B", white: "#FFFFFF", yellow: "#FFEB3B" }));
+
 globalThis.label = globalThis.label || __pineNS({ style_label_down: "label_down", style_label_up: "label_up", style_none: "none" });
 
 globalThis.polyline = globalThis.polyline || __pineNS({});
@@ -1520,7 +1679,9 @@ globalThis.map = globalThis.map || __pineNS({});
 
 globalThis.session = globalThis.session || __pineNS({ regular: "regular", extended: "extended" });
 
-globalThis.dayofweek = globalThis.dayofweek || __pineNS({ sunday: 1, monday: 2, tuesday: 3, wednesday: 4, thursday: 5, friday: 6, saturday: 7 });
+globalThis.ticker = globalThis.ticker || __pineNS({});
+
+globalThis.dayofweek = globalThis.dayofweek || __pineNS(Object.assign(function(t) { return new Date(t != null ? t : (globalThis.time || 0)).getUTCDay() + 1; }, { sunday: 1, monday: 2, tuesday: 3, wednesday: 4, thursday: 5, friday: 6, saturday: 7 }));
 
 globalThis.timeframe = __pineNS(Object.assign(globalThis.timeframe || {}, { period: (globalThis.timeframe && globalThis.timeframe.period) || "D", isintraday: false, isdaily: true, multiplier: 1 }));
 
@@ -1567,8 +1728,6 @@ globalThis.float = globalThis.float || function(x) { return x == null ? null : N
 globalThis.bool = globalThis.bool || function(x) { return Boolean(x); };
 
 globalThis.string = globalThis.string || function(x) { return x == null ? null : String(x); };
-
-globalThis.dayofweek = globalThis.dayofweek || __pineNS({ sunday: 1, monday: 2, tuesday: 3, wednesday: 4, thursday: 5, friday: 6, saturday: 7 });
 
 globalThis.str = globalThis.str || __pineNS({});
 
@@ -1655,7 +1814,7 @@ pinescript.text = { align_center: "center" };
 
 pinescript.table = {
 
-  new: function(position, columns, rows, opts) { return { position, columns, rows, opts: opts || {}, cells: [] }; },
+  new: function(position, columns, rows, opts) { return pinescript.__decDraw({ position, columns, rows, opts: opts || {}, cells: [] }); },
 
   cell: function(table, column, row, text, opts) {
 
@@ -1690,65 +1849,65 @@ function main() {
   // Study: 
   // Options: {"title":"NY Opening Range (Enhanced with LTF)","shorttitle":"NY ORB","overlay":true,"max_lines_count":500,"max_labels_count":500,"max_boxes_count":500,"max_bars_back":5000}
   if (state.g_5MIN === undefined) state.g_5MIN = "━━━━━━━━━ 5-MINUTE ORB ━━━━━━━━━";
-  let show_5min = pinescript.inputBool(true, "Show 5-Minute ORB", ({ group: state.g_5MIN }));
-  let bullish_color_5m = pinescript.inputColor(pinescript.color.rgb(0, 255, 149), "Bullish Color", ({ inline: "5mc", group: state.g_5MIN }));
-  let bearish_color_5m = pinescript.inputColor(pinescript.color.rgb(195, 0, 255), "Bearish Color", ({ inline: "5mc", group: state.g_5MIN }));
-  let bullish_fill_5m = pinescript.inputColor(pinescript.color.rgb(0, 255, 149, 85), "Bullish Fill", ({ inline: "5mf", group: state.g_5MIN }));
-  let bearish_fill_5m = pinescript.inputColor(pinescript.color.rgb(195, 0, 255, 85), "Bearish Fill", ({ inline: "5mf", group: state.g_5MIN }));
-  let boxStyle_5m = pinescript.inputString("Solid", "Range Style", ({ options: ["Solid", "Dashed", "Dotted"], inline: "5box", group: state.g_5MIN }));
-  let borderWidth_5m = pinescript.inputInt(1, "Width", 1, 10, ({ inline: "5box", group: state.g_5MIN }));
-  let show_midLine_5m = pinescript.inputBool(true, "Show Midline", ({ inline: "5mid", group: state.g_5MIN }));
-  let lineStyle_5m = pinescript.inputString("Dashed", "Style", ({ options: ["Solid", "Dashed", "Dotted"], inline: "5mid", group: state.g_5MIN }));
-  let lineWidth_5m = pinescript.inputInt(1, "Width", 1, 10, ({ inline: "5mid", group: state.g_5MIN }));
-  let show_extensions_5m = pinescript.inputBool(true, "Show Median Extensions", ({ inline: "5ext", group: state.g_5MIN }));
-  let ext_line_style_5m = pinescript.inputString("Dotted", "Style", ({ options: ["Solid", "Dashed", "Dotted"], inline: "5ext", group: state.g_5MIN }));
-  let ext_line_width_5m = pinescript.inputInt(1, "Width", ({ minval: 1, maxval: 5, inline: "5ext", group: state.g_5MIN }));
-  let show_ext_labels_5m = pinescript.inputBool(true, "Show Extension Labels", ({ group: state.g_5MIN }));
-  let show_ltf_5m = pinescript.inputBool(true, "Show LTF Candles", ({ group: state.g_5MIN }));
-  let ltf_5m_count = pinescript.inputInt(5, "  └─ Number of Candles", ({ minval: 1, maxval: 20, group: state.g_5MIN }));
-  let ltf_offset_5m = pinescript.inputInt(5, "  └─ Offset (bars from right)", ({ minval: 1, maxval: 100, group: state.g_5MIN }));
-  let ltf_spacing_5m = pinescript.inputInt(3, "  └─ Candle Spacing", ({ minval: 1, maxval: 5, group: state.g_5MIN }));
-  let ltf_width_5m = pinescript.inputInt(2, "  └─ Candle Width", ({ minval: 1, maxval: 5, group: state.g_5MIN }));
-  let ltf_bull_color_5m = pinescript.inputColor(pinescript.color.rgb(0, 255, 149, 60), "  └─ LTF Bullish Color", ({ group: state.g_5MIN }));
-  let ltf_bear_color_5m = pinescript.inputColor(pinescript.color.rgb(195, 0, 255, 60), "  └─ LTF Bearish Color", ({ group: state.g_5MIN }));
-  let show_ltf_range_5m = pinescript.inputBool(true, "  └─ Show LTF High/Low Lines", ({ group: state.g_5MIN }));
-  let ltf_range_style_5m = pinescript.inputString("Dotted", "  └─ LTF Range Style", ({ options: ["Solid", "Dashed", "Dotted"], group: state.g_5MIN }));
-  let ltf_range_width_5m = pinescript.inputInt(1, "  └─ LTF Range Width", ({ minval: 1, maxval: 5, group: state.g_5MIN }));
-  let ltf_range_color_5m = pinescript.inputColor(pinescript.color.rgb(0, 255, 149, 50), "  └─ LTF Range Color", ({ group: state.g_5MIN }));
+  var show_5min = pinescript.inputBool(true, "Show 5-Minute ORB", ({ group: state.g_5MIN }));
+  var bullish_color_5m = pinescript.inputColor(pinescript.color.rgb(0, 255, 149), "Bullish Color", ({ inline: "5mc", group: state.g_5MIN }));
+  var bearish_color_5m = pinescript.inputColor(pinescript.color.rgb(195, 0, 255), "Bearish Color", ({ inline: "5mc", group: state.g_5MIN }));
+  var bullish_fill_5m = pinescript.inputColor(pinescript.color.rgb(0, 255, 149, 85), "Bullish Fill", ({ inline: "5mf", group: state.g_5MIN }));
+  var bearish_fill_5m = pinescript.inputColor(pinescript.color.rgb(195, 0, 255, 85), "Bearish Fill", ({ inline: "5mf", group: state.g_5MIN }));
+  var boxStyle_5m = pinescript.inputString("Solid", "Range Style", ({ options: ["Solid", "Dashed", "Dotted"], inline: "5box", group: state.g_5MIN }));
+  var borderWidth_5m = pinescript.inputInt(1, "Width", 1, 10, ({ inline: "5box", group: state.g_5MIN }));
+  var show_midLine_5m = pinescript.inputBool(true, "Show Midline", ({ inline: "5mid", group: state.g_5MIN }));
+  var lineStyle_5m = pinescript.inputString("Dashed", "Style", ({ options: ["Solid", "Dashed", "Dotted"], inline: "5mid", group: state.g_5MIN }));
+  var lineWidth_5m = pinescript.inputInt(1, "Width", 1, 10, ({ inline: "5mid", group: state.g_5MIN }));
+  var show_extensions_5m = pinescript.inputBool(true, "Show Median Extensions", ({ inline: "5ext", group: state.g_5MIN }));
+  var ext_line_style_5m = pinescript.inputString("Dotted", "Style", ({ options: ["Solid", "Dashed", "Dotted"], inline: "5ext", group: state.g_5MIN }));
+  var ext_line_width_5m = pinescript.inputInt(1, "Width", ({ minval: 1, maxval: 5, inline: "5ext", group: state.g_5MIN }));
+  var show_ext_labels_5m = pinescript.inputBool(true, "Show Extension Labels", ({ group: state.g_5MIN }));
+  var show_ltf_5m = pinescript.inputBool(true, "Show LTF Candles", ({ group: state.g_5MIN }));
+  var ltf_5m_count = pinescript.inputInt(5, "  └─ Number of Candles", ({ minval: 1, maxval: 20, group: state.g_5MIN }));
+  var ltf_offset_5m = pinescript.inputInt(5, "  └─ Offset (bars from right)", ({ minval: 1, maxval: 100, group: state.g_5MIN }));
+  var ltf_spacing_5m = pinescript.inputInt(3, "  └─ Candle Spacing", ({ minval: 1, maxval: 5, group: state.g_5MIN }));
+  var ltf_width_5m = pinescript.inputInt(2, "  └─ Candle Width", ({ minval: 1, maxval: 5, group: state.g_5MIN }));
+  var ltf_bull_color_5m = pinescript.inputColor(pinescript.color.rgb(0, 255, 149, 60), "  └─ LTF Bullish Color", ({ group: state.g_5MIN }));
+  var ltf_bear_color_5m = pinescript.inputColor(pinescript.color.rgb(195, 0, 255, 60), "  └─ LTF Bearish Color", ({ group: state.g_5MIN }));
+  var show_ltf_range_5m = pinescript.inputBool(true, "  └─ Show LTF High/Low Lines", ({ group: state.g_5MIN }));
+  var ltf_range_style_5m = pinescript.inputString("Dotted", "  └─ LTF Range Style", ({ options: ["Solid", "Dashed", "Dotted"], group: state.g_5MIN }));
+  var ltf_range_width_5m = pinescript.inputInt(1, "  └─ LTF Range Width", ({ minval: 1, maxval: 5, group: state.g_5MIN }));
+  var ltf_range_color_5m = pinescript.inputColor(pinescript.color.rgb(0, 255, 149, 50), "  └─ LTF Range Color", ({ group: state.g_5MIN }));
   if (state.g_15MIN === undefined) state.g_15MIN = "━━━━━━━━━ 15-MINUTE ORB ━━━━━━━━━";
-  let show_15min = pinescript.inputBool(true, "Show 15-Minute ORB", ({ group: state.g_15MIN }));
-  let bullish_color_15m = pinescript.inputColor(pinescript.color.rgb(33, 150, 243), "Bullish Color", ({ inline: "15mc", group: state.g_15MIN }));
-  let bearish_color_15m = pinescript.inputColor(pinescript.color.rgb(255, 152, 0), "Bearish Color", ({ inline: "15mc", group: state.g_15MIN }));
-  let bullish_fill_15m = pinescript.inputColor(pinescript.color.rgb(33, 150, 243, 85), "Bullish Fill", ({ inline: "15mf", group: state.g_15MIN }));
-  let bearish_fill_15m = pinescript.inputColor(pinescript.color.rgb(255, 152, 0, 85), "Bearish Fill", ({ inline: "15mf", group: state.g_15MIN }));
-  let boxStyle_15m = pinescript.inputString("Solid", "Range Style", ({ options: ["Solid", "Dashed", "Dotted"], inline: "15box", group: state.g_15MIN }));
-  let borderWidth_15m = pinescript.inputInt(1, "Width", 1, 10, ({ inline: "15box", group: state.g_15MIN }));
-  let show_midLine_15m = pinescript.inputBool(true, "Show Midline", ({ inline: "15mid", group: state.g_15MIN }));
-  let lineStyle_15m = pinescript.inputString("Dashed", "Style", ({ options: ["Solid", "Dashed", "Dotted"], inline: "15mid", group: state.g_15MIN }));
-  let lineWidth_15m = pinescript.inputInt(1, "Width", 1, 10, ({ inline: "15mid", group: state.g_15MIN }));
-  let show_extensions_15m = pinescript.inputBool(true, "Show Median Extensions", ({ inline: "15ext", group: state.g_15MIN }));
-  let ext_line_style_15m = pinescript.inputString("Dotted", "Style", ({ options: ["Solid", "Dashed", "Dotted"], inline: "15ext", group: state.g_15MIN }));
-  let ext_line_width_15m = pinescript.inputInt(1, "Width", ({ minval: 1, maxval: 5, inline: "15ext", group: state.g_15MIN }));
-  let show_ext_labels_15m = pinescript.inputBool(true, "Show Extension Labels", ({ group: state.g_15MIN }));
-  let show_ltf_15m = pinescript.inputBool(true, "Show LTF Candles", ({ group: state.g_15MIN }));
-  let ltf_15m_count = pinescript.inputInt(15, "  └─ Number of Candles", ({ minval: 1, maxval: 20, group: state.g_15MIN }));
-  let ltf_offset_15m = pinescript.inputInt(35, "  └─ Offset (bars from right)", ({ minval: 1, maxval: 100, group: state.g_15MIN }));
-  let ltf_spacing_15m = pinescript.inputInt(3, "  └─ Candle Spacing", ({ minval: 1, maxval: 5, group: state.g_15MIN }));
-  let ltf_width_15m = pinescript.inputInt(2, "  └─ Candle Width", ({ minval: 1, maxval: 5, group: state.g_15MIN }));
-  let ltf_bull_color_15m = pinescript.inputColor(pinescript.color.rgb(0, 255, 149, 60), "  └─ LTF Bullish Color", ({ group: state.g_15MIN }));
-  let ltf_bear_color_15m = pinescript.inputColor(pinescript.color.rgb(195, 0, 255, 60), "  └─ LTF Bearish Color", ({ group: state.g_15MIN }));
-  let show_ltf_range_15m = pinescript.inputBool(true, "  └─ Show LTF High/Low Lines", ({ group: state.g_15MIN }));
-  let ltf_range_style_15m = pinescript.inputString("Dotted", "  └─ LTF Range Style", ({ options: ["Solid", "Dashed", "Dotted"], group: state.g_15MIN }));
-  let ltf_range_width_15m = pinescript.inputInt(1, "  └─ LTF Range Width", ({ minval: 1, maxval: 5, group: state.g_15MIN }));
-  let ltf_range_color_15m = pinescript.inputColor(pinescript.color.rgb(33, 150, 243, 50), "  └─ LTF Range Color", ({ group: state.g_15MIN }));
+  var show_15min = pinescript.inputBool(true, "Show 15-Minute ORB", ({ group: state.g_15MIN }));
+  var bullish_color_15m = pinescript.inputColor(pinescript.color.rgb(33, 150, 243), "Bullish Color", ({ inline: "15mc", group: state.g_15MIN }));
+  var bearish_color_15m = pinescript.inputColor(pinescript.color.rgb(255, 152, 0), "Bearish Color", ({ inline: "15mc", group: state.g_15MIN }));
+  var bullish_fill_15m = pinescript.inputColor(pinescript.color.rgb(33, 150, 243, 85), "Bullish Fill", ({ inline: "15mf", group: state.g_15MIN }));
+  var bearish_fill_15m = pinescript.inputColor(pinescript.color.rgb(255, 152, 0, 85), "Bearish Fill", ({ inline: "15mf", group: state.g_15MIN }));
+  var boxStyle_15m = pinescript.inputString("Solid", "Range Style", ({ options: ["Solid", "Dashed", "Dotted"], inline: "15box", group: state.g_15MIN }));
+  var borderWidth_15m = pinescript.inputInt(1, "Width", 1, 10, ({ inline: "15box", group: state.g_15MIN }));
+  var show_midLine_15m = pinescript.inputBool(true, "Show Midline", ({ inline: "15mid", group: state.g_15MIN }));
+  var lineStyle_15m = pinescript.inputString("Dashed", "Style", ({ options: ["Solid", "Dashed", "Dotted"], inline: "15mid", group: state.g_15MIN }));
+  var lineWidth_15m = pinescript.inputInt(1, "Width", 1, 10, ({ inline: "15mid", group: state.g_15MIN }));
+  var show_extensions_15m = pinescript.inputBool(true, "Show Median Extensions", ({ inline: "15ext", group: state.g_15MIN }));
+  var ext_line_style_15m = pinescript.inputString("Dotted", "Style", ({ options: ["Solid", "Dashed", "Dotted"], inline: "15ext", group: state.g_15MIN }));
+  var ext_line_width_15m = pinescript.inputInt(1, "Width", ({ minval: 1, maxval: 5, inline: "15ext", group: state.g_15MIN }));
+  var show_ext_labels_15m = pinescript.inputBool(true, "Show Extension Labels", ({ group: state.g_15MIN }));
+  var show_ltf_15m = pinescript.inputBool(true, "Show LTF Candles", ({ group: state.g_15MIN }));
+  var ltf_15m_count = pinescript.inputInt(15, "  └─ Number of Candles", ({ minval: 1, maxval: 20, group: state.g_15MIN }));
+  var ltf_offset_15m = pinescript.inputInt(35, "  └─ Offset (bars from right)", ({ minval: 1, maxval: 100, group: state.g_15MIN }));
+  var ltf_spacing_15m = pinescript.inputInt(3, "  └─ Candle Spacing", ({ minval: 1, maxval: 5, group: state.g_15MIN }));
+  var ltf_width_15m = pinescript.inputInt(2, "  └─ Candle Width", ({ minval: 1, maxval: 5, group: state.g_15MIN }));
+  var ltf_bull_color_15m = pinescript.inputColor(pinescript.color.rgb(0, 255, 149, 60), "  └─ LTF Bullish Color", ({ group: state.g_15MIN }));
+  var ltf_bear_color_15m = pinescript.inputColor(pinescript.color.rgb(195, 0, 255, 60), "  └─ LTF Bearish Color", ({ group: state.g_15MIN }));
+  var show_ltf_range_15m = pinescript.inputBool(true, "  └─ Show LTF High/Low Lines", ({ group: state.g_15MIN }));
+  var ltf_range_style_15m = pinescript.inputString("Dotted", "  └─ LTF Range Style", ({ options: ["Solid", "Dashed", "Dotted"], group: state.g_15MIN }));
+  var ltf_range_width_15m = pinescript.inputInt(1, "  └─ LTF Range Width", ({ minval: 1, maxval: 5, group: state.g_15MIN }));
+  var ltf_range_color_15m = pinescript.inputColor(pinescript.color.rgb(33, 150, 243, 50), "  └─ LTF Range Color", ({ group: state.g_15MIN }));
   if (state.g_LABELS === undefined) state.g_LABELS = "Labels & Display";
-  let showL = pinescript.inputBool(true, "Show High/Low/Mid Labels", ({ inline: "Labels", group: state.g_LABELS }));
-  let showP = pinescript.inputBool(false, "Show Prices", ({ inline: "Labels", group: state.g_LABELS }));
-  let pos = pinescript.inputString("Left", "Position", ({ options: ["Left", "Right"], group: state.g_LABELS }));
+  var showL = pinescript.inputBool(true, "Show High/Low/Mid Labels", ({ inline: "Labels", group: state.g_LABELS }));
+  var showP = pinescript.inputBool(false, "Show Prices", ({ inline: "Labels", group: state.g_LABELS }));
+  var pos = pinescript.inputString("Left", "Position", ({ options: ["Left", "Right"], group: state.g_LABELS }));
   if (state.g_TABLE === undefined) state.g_TABLE = "Statistics Table";
-  let show_stats_table = pinescript.inputBool(true, "Show Statistics Table", ({ group: state.g_TABLE }));
-  let stats_table_pos = pinescript.inputString("Top Right", "Table Position", ({ options: ["Bottom Center", "Bottom Left", "Bottom Right", "Middle Center", "Middle Left", "Middle Right", "Top Center", "Top Left", "Top Right"], group: state.g_TABLE }));
-  let stats_table_size = pinescript.inputString("Small", "Table Size", ({ options: ["Auto", "Tiny", "Small", "Normal", "Large", "Huge"], group: state.g_TABLE }));
+  var show_stats_table = pinescript.inputBool(true, "Show Statistics Table", ({ group: state.g_TABLE }));
+  var stats_table_pos = pinescript.inputString("Top Right", "Table Position", ({ options: ["Bottom Center", "Bottom Left", "Bottom Right", "Middle Center", "Middle Left", "Middle Right", "Top Center", "Top Left", "Top Right"], group: state.g_TABLE }));
+  var stats_table_size = pinescript.inputString("Small", "Table Size", ({ options: ["Auto", "Tiny", "Small", "Normal", "Large", "Huge"], group: state.g_TABLE }));
   function get_style(style) {
     switch (style) {
       case "Solid":
@@ -1880,11 +2039,11 @@ function main() {
       }
     }
   }
-  let MEDIAN_EXT_5M_HIGH = 0.411;
-  let MEDIAN_EXT_5M_LOW = 0.45;
-  let MEDIAN_EXT_15M_HIGH = 0.38;
-  let MEDIAN_EXT_15M_LOW = 0.415;
-  let tz = "America/New_York";
+  var MEDIAN_EXT_5M_HIGH = 0.411;
+  var MEDIAN_EXT_5M_LOW = 0.45;
+  var MEDIAN_EXT_15M_HIGH = 0.38;
+  var MEDIAN_EXT_15M_LOW = 0.415;
+  var tz = "America/New_York";
   if (state.or5_high === undefined) state.or5_high = null;
   if (state.or5_low === undefined) state.or5_low = null;
   if (state.or5_mid === undefined) state.or5_mid = null;
@@ -1957,22 +2116,22 @@ function main() {
   if (state.ib_close === undefined) state.ib_close = null;
   if (state.ib_captured === undefined) state.ib_captured = false;
   if (state.ib_is_bullish === undefined) state.ib_is_bullish = false;
-  let is_5m_session = !pinescript.na(pinescript.time(timeframe.period, "0930-0935", tz));
-  let is_5m_start = (is_5m_session && !pinescript.hist(0, is_5m_session, 1));
-  let is_5m_end = (pinescript.hist(1, is_5m_session, 1) && !is_5m_session);
-  let is_15m_session = !pinescript.na(pinescript.time(timeframe.period, "0930-0945", tz));
-  let is_15m_start = (is_15m_session && !pinescript.hist(2, is_15m_session, 1));
-  let is_15m_end = (pinescript.hist(3, is_15m_session, 1) && !is_15m_session);
-  let is_ib_session = !pinescript.na(pinescript.time(timeframe.period, "0930-1030", tz));
-  let is_ib_start = (is_ib_session && !pinescript.hist(4, is_ib_session, 1));
-  let is_ib_end = (pinescript.hist(5, is_ib_session, 1) && !is_ib_session);
-  let is_ny_session = !pinescript.na(pinescript.time(timeframe.period, "0930-1600", tz));
-  let is_ny_session_end = (pinescript.hist(6, is_ny_session, 1) && !is_ny_session);
-  let [H5, L5, M5, O5, C5] = pinescript.unpack(pinescript.requestSecurity(ticker.standard(syminfo.tickerid), "5", [high, low, hl2, open, close], ({ lookahead: barmerge.lookahead_on })), 5);
-  let [H15, L15, M15, O15, C15] = pinescript.unpack(pinescript.requestSecurity(ticker.standard(syminfo.tickerid), "15", [high, low, hl2, open, close], ({ lookahead: barmerge.lookahead_on })), 5);
-  let [H60, L60, O60, C60] = pinescript.unpack(pinescript.requestSecurity(ticker.standard(syminfo.tickerid), "60", [high, low, open, close], ({ lookahead: barmerge.lookahead_on })), 4);
-  let [high_1m, low_1m, open_1m, close_1m] = pinescript.unpack(request.security_lower_tf(ticker.standard(syminfo.tickerid), "1", [high, low, open, close]), 4);
-  let _style = ((pos === "Left") ? label.style_label_right : label.style_label_left);
+  var is_5m_session = !pinescript.na(pinescript.time(timeframe.period, "0930-0935", tz));
+  var is_5m_start = (is_5m_session && !pinescript.hist(0, is_5m_session, 1));
+  var is_5m_end = (pinescript.hist(1, is_5m_session, 1) && !is_5m_session);
+  var is_15m_session = !pinescript.na(pinescript.time(timeframe.period, "0930-0945", tz));
+  var is_15m_start = (is_15m_session && !pinescript.hist(2, is_15m_session, 1));
+  var is_15m_end = (pinescript.hist(3, is_15m_session, 1) && !is_15m_session);
+  var is_ib_session = !pinescript.na(pinescript.time(timeframe.period, "0930-1030", tz));
+  var is_ib_start = (is_ib_session && !pinescript.hist(4, is_ib_session, 1));
+  var is_ib_end = (pinescript.hist(5, is_ib_session, 1) && !is_ib_session);
+  var is_ny_session = !pinescript.na(pinescript.time(timeframe.period, "0930-1600", tz));
+  var is_ny_session_end = (pinescript.hist(6, is_ny_session, 1) && !is_ny_session);
+  var [H5, L5, M5, O5, C5] = pinescript.unpack(pinescript.requestSecurity(ticker.standard(syminfo.tickerid), "5", [high, low, hl2, open, close], ({ lookahead: barmerge.lookahead_on })), 5);
+  var [H15, L15, M15, O15, C15] = pinescript.unpack(pinescript.requestSecurity(ticker.standard(syminfo.tickerid), "15", [high, low, hl2, open, close], ({ lookahead: barmerge.lookahead_on })), 5);
+  var [H60, L60, O60, C60] = pinescript.unpack(pinescript.requestSecurity(ticker.standard(syminfo.tickerid), "60", [high, low, open, close], ({ lookahead: barmerge.lookahead_on })), 4);
+  var [high_1m, low_1m, open_1m, close_1m] = pinescript.unpack(request.security_lower_tf(ticker.standard(syminfo.tickerid), "1", [high, low, open, close]), 4);
+  var _style = ((pos === "Left") ? label.style_label_right : label.style_label_left);
   if (((is_ib_start && !pinescript.na(H60)) && !pinescript.na(L60))) {
     state.ib_high = H60;
     state.ib_low = L60;
@@ -1997,30 +2156,32 @@ function main() {
       }
       ltf.highs.clear();
       ltf.lows.clear();
-      let start_index = pinescript.max(0, (pinescript.arraySize(o_array) - max_candles));
-      let num_candles = (pinescript.arraySize(o_array) - start_index);
+      var start_index = pinescript.max(0, (pinescript.arraySize(o_array) - max_candles));
+      var num_candles = (pinescript.arraySize(o_array) - start_index);
       for (let i = start_index; i <= (pinescript.arraySize(o_array) - 1); i++) {
-        let o = pinescript.arrayGet(o_array, i);
-        let h = pinescript.arrayGet(h_array, i);
-        let l = pinescript.arrayGet(l_array, i);
-        let c = pinescript.arrayGet(c_array, i);
-        let is_bull = (c >= o);
-        let candle_color = (is_bull ? bull_color : bear_color);
-        let candle_index = (i - start_index);
-        let x_start = ((bar_index + offset_from_right) + (candle_index * spacing));
-        let x_end = (x_start + width);
-        let x_mid = pinescript.round((x_start + (width / 2)));
-        let body_top = pinescript.max(o, c);
-        let body_bottom = pinescript.min(o, c);
+        var o = pinescript.arrayGet(o_array, i);
+        var h = pinescript.arrayGet(h_array, i);
+        var l = pinescript.arrayGet(l_array, i);
+        var c = pinescript.arrayGet(c_array, i);
+        var is_bull = (c >= o);
+        var candle_color = (is_bull ? bull_color : bear_color);
+        var candle_index = (i - start_index);
+        var x_start = ((bar_index + offset_from_right) + (candle_index * spacing));
+        var x_end = (x_start + width);
+        var x_mid = pinescript.round((x_start + (width / 2)));
+        var body_top = pinescript.max(o, c);
+        var body_bottom = pinescript.min(o, c);
         ltf.bodies.push(pinescript.boxNew(x_start, body_top, x_end, body_bottom, ({ border_color: candle_color, bgcolor: candle_color, border_width: 1 })));
         ltf.wicks_high.push(pinescript.lineNew(x_mid, body_top, x_mid, h, ({ color: candle_color, width: 1 })));
         ltf.wicks_low.push(pinescript.lineNew(x_mid, body_bottom, x_mid, l, ({ color: candle_color, width: 1 })));
         ltf.highs.push(h);
         ltf.lows.push(l);
       }
-      let ltf_start_x = (bar_index + offset_from_right);
-      let ltf_end_x = (((bar_index + offset_from_right) + (num_candles * spacing)) + width);
-      [ltf_start_x, ltf_end_x];
+      var ltf_start_x = (bar_index + offset_from_right);
+      var ltf_end_x = (((bar_index + offset_from_right) + (num_candles * spacing)) + width);
+      return [ltf_start_x, ltf_end_x];
+    } else {
+      return null;
     }
   }
   if (show_5min) {
@@ -2047,10 +2208,10 @@ function main() {
       state.or5_ltf_frozen = false;
       state.or5_ext_high_reached = false;
       state.or5_ext_low_reached = false;
-      or5_ltf_opens_frozen.clear();
-      or5_ltf_highs_frozen.clear();
-      or5_ltf_lows_frozen.clear();
-      or5_ltf_closes_frozen.clear();
+      state.or5_ltf_opens_frozen.clear();
+      state.or5_ltf_highs_frozen.clear();
+      state.or5_ltf_lows_frozen.clear();
+      state.or5_ltf_closes_frozen.clear();
       state.or5_top_line = null;
       state.or5_bot_line = null;
       state.or5_mid_line = null;
@@ -2076,18 +2237,18 @@ function main() {
     }
     if ((((is_5m_session && !state.or5_ltf_frozen) && !pinescript.na(open_1m)) && (pinescript.arraySize(open_1m) > 0))) {
       for (let i = 0; i <= (pinescript.arraySize(open_1m) - 1); i++) {
-        or5_ltf_opens_frozen.push(pinescript.arrayGet(open_1m, i));
-        or5_ltf_highs_frozen.push(pinescript.arrayGet(high_1m, i));
-        or5_ltf_lows_frozen.push(pinescript.arrayGet(low_1m, i));
-        or5_ltf_closes_frozen.push(pinescript.arrayGet(close_1m, i));
+        state.or5_ltf_opens_frozen.push(pinescript.arrayGet(open_1m, i));
+        state.or5_ltf_highs_frozen.push(pinescript.arrayGet(high_1m, i));
+        state.or5_ltf_lows_frozen.push(pinescript.arrayGet(low_1m, i));
+        state.or5_ltf_closes_frozen.push(pinescript.arrayGet(close_1m, i));
       }
     }
     if ((is_5m_end && !state.or5_ltf_frozen)) {
       state.or5_ltf_frozen = true;
       if (((state.or5_extreme_first === "none") && (pinescript.arraySize(state.or5_ltf_highs_frozen) > 0))) {
         for (let i = 0; i <= (pinescript.arraySize(state.or5_ltf_highs_frozen) - 1); i++) {
-          let h_1m = pinescript.arrayGet(state.or5_ltf_highs_frozen, i);
-          let l_1m = pinescript.arrayGet(state.or5_ltf_lows_frozen, i);
+          var h_1m = pinescript.arrayGet(state.or5_ltf_highs_frozen, i);
+          var l_1m = pinescript.arrayGet(state.or5_ltf_lows_frozen, i);
           if ((h_1m >= state.or5_high)) {
             state.or5_extreme_first = "high";
             break;
@@ -2106,9 +2267,9 @@ function main() {
       }
     }
     if ((((state.or5_captured && !pinescript.na(state.or5_high)) && !pinescript.na(state.or5_low)) && pinescript.na(state.or5_top_line))) {
-      let is_bullish = (state.or5_close >= state.or5_open);
-      let _color = (is_bullish ? bullish_color_5m : bearish_color_5m);
-      let _fillcolor = (is_bullish ? bullish_fill_5m : bearish_fill_5m);
+      var is_bullish = (state.or5_close >= state.or5_open);
+      var _color = (is_bullish ? bullish_color_5m : bearish_color_5m);
+      var _fillcolor = (is_bullish ? bullish_fill_5m : bearish_fill_5m);
       state.or5_top_line = pinescript.lineNew(state.or5_start_bar, state.or5_high, bar_index, state.or5_high, ({ color: _color, style: get_style(boxStyle_5m), width: borderWidth_5m }));
       state.or5_bot_line = pinescript.lineNew(state.or5_start_bar, state.or5_low, bar_index, state.or5_low, ({ color: _color, style: get_style(boxStyle_5m), width: borderWidth_5m }));
       state.or5_fill = linefill.new(state.or5_top_line, state.or5_bot_line, _fillcolor);
@@ -2116,12 +2277,12 @@ function main() {
         state.or5_mid_line = pinescript.lineNew(state.or5_start_bar, state.or5_mid, bar_index, state.or5_mid, ({ color: _color, style: get_style(lineStyle_5m), width: lineWidth_5m }));
       }
       if (show_extensions_5m) {
-        let ext_high_price = (state.or5_high * (1 + (MEDIAN_EXT_5M_HIGH / 100)));
-        let ext_low_price = (state.or5_low * (1 - (MEDIAN_EXT_5M_LOW / 100)));
+        var ext_high_price = (state.or5_high * (1 + (MEDIAN_EXT_5M_HIGH / 100)));
+        var ext_low_price = (state.or5_low * (1 - (MEDIAN_EXT_5M_LOW / 100)));
         state.or5_ext_high = pinescript.lineNew(state.or5_start_bar, ext_high_price, bar_index, ext_high_price, ({ color: _color, style: get_style(ext_line_style_5m), width: ext_line_width_5m }));
         state.or5_ext_low = pinescript.lineNew(state.or5_start_bar, ext_low_price, bar_index, ext_low_price, ({ color: _color, style: get_style(ext_line_style_5m), width: ext_line_width_5m }));
       }
-      let x = ((pos === "Left") ? state.or5_start_bar : bar_index);
+      var x = ((pos === "Left") ? state.or5_start_bar : bar_index);
       if (showL) {
         state.or5_high_label = pinescript.labelNew(x, state.or5_high, ("5m High" + (showP ? ((" (" + pinescript.strToString(state.or5_high, format.mintick)) + ")") : "")), ({ style: _style, color: pinescript.color.new(_color, 100), textcolor: _color, size: get_label_size("Normal") }));
         state.or5_low_label = pinescript.labelNew(x, state.or5_low, ("5m Low" + (showP ? ((" (" + pinescript.strToString(state.or5_low, format.mintick)) + ")") : "")), ({ style: _style, color: pinescript.color.new(_color, 100), textcolor: _color, size: get_label_size("Normal") }));
@@ -2137,12 +2298,12 @@ function main() {
       }
     }
     if (((((state.or5_captured && show_ltf_5m) && state.or5_ltf_frozen) && (pinescript.arraySize(state.or5_ltf_opens_frozen) > 0)) && is_ny_session)) {
-      [ltf_start_x, ltf_end_x] = pinescript.unpack(draw_ltf_candles(state.ltf5, state.or5_ltf_opens_frozen, state.or5_ltf_highs_frozen, state.or5_ltf_lows_frozen, state.or5_ltf_closes_frozen, ltf_bull_color_5m, ltf_bear_color_5m, ltf_offset_5m, ltf_5m_count, ltf_spacing_5m, ltf_width_5m), 2);
+      var [ltf_start_x, ltf_end_x] = pinescript.unpack(draw_ltf_candles(state.ltf5, state.or5_ltf_opens_frozen, state.or5_ltf_highs_frozen, state.or5_ltf_lows_frozen, state.or5_ltf_closes_frozen, ltf_bull_color_5m, ltf_bear_color_5m, ltf_offset_5m, ltf_5m_count, ltf_spacing_5m, ltf_width_5m), 2);
       if ((show_ltf_range_5m && (pinescript.arraySize(state.ltf5.highs) > 0))) {
         pinescript.lineDelete(state.or5_ltf_high_line);
         pinescript.lineDelete(state.or5_ltf_low_line);
-        let ltf_high = pinescript.arrayMax(state.ltf5.highs);
-        let ltf_low = pinescript.arrayMin(state.ltf5.lows);
+        var ltf_high = pinescript.arrayMax(state.ltf5.highs);
+        var ltf_low = pinescript.arrayMin(state.ltf5.lows);
         state.or5_ltf_high_line = pinescript.lineNew(ltf_start_x, ltf_high, ltf_end_x, ltf_high, ({ color: ltf_range_color_5m, style: get_style(ltf_range_style_5m), width: ltf_range_width_5m }));
         state.or5_ltf_low_line = pinescript.lineNew(ltf_start_x, ltf_low, ltf_end_x, ltf_low, ({ color: ltf_range_color_5m, style: get_style(ltf_range_style_5m), width: ltf_range_width_5m }));
       }
@@ -2227,10 +2388,10 @@ function main() {
       state.or15_ltf_frozen = false;
       state.or15_ext_high_reached = false;
       state.or15_ext_low_reached = false;
-      or15_ltf_opens_frozen.clear();
-      or15_ltf_highs_frozen.clear();
-      or15_ltf_lows_frozen.clear();
-      or15_ltf_closes_frozen.clear();
+      state.or15_ltf_opens_frozen.clear();
+      state.or15_ltf_highs_frozen.clear();
+      state.or15_ltf_lows_frozen.clear();
+      state.or15_ltf_closes_frozen.clear();
       state.or15_top_line = null;
       state.or15_bot_line = null;
       state.or15_mid_line = null;
@@ -2256,10 +2417,10 @@ function main() {
     }
     if ((((is_15m_session && !state.or15_ltf_frozen) && !pinescript.na(open_1m)) && (pinescript.arraySize(open_1m) > 0))) {
       for (let i = 0; i <= (pinescript.arraySize(open_1m) - 1); i++) {
-        or15_ltf_opens_frozen.push(pinescript.arrayGet(open_1m, i));
-        or15_ltf_highs_frozen.push(pinescript.arrayGet(high_1m, i));
-        or15_ltf_lows_frozen.push(pinescript.arrayGet(low_1m, i));
-        or15_ltf_closes_frozen.push(pinescript.arrayGet(close_1m, i));
+        state.or15_ltf_opens_frozen.push(pinescript.arrayGet(open_1m, i));
+        state.or15_ltf_highs_frozen.push(pinescript.arrayGet(high_1m, i));
+        state.or15_ltf_lows_frozen.push(pinescript.arrayGet(low_1m, i));
+        state.or15_ltf_closes_frozen.push(pinescript.arrayGet(close_1m, i));
       }
     }
     if ((is_15m_end && !state.or15_ltf_frozen)) {
@@ -2386,46 +2547,46 @@ function main() {
   if ((show_stats_table && (state.or5_captured || state.or15_captured))) {
     if (state.stats_table === undefined) state.stats_table = null;
     pinescript.tableDelete(pinescript.hist(11, state.stats_table, 1));
-    let table_pos = get_table_position(stats_table_pos);
-    let table_size = get_table_text_size(stats_table_size);
-    let header_bg = pinescript.color.rgb(64, 64, 64);
-    let header_text = pinescript.color.white;
-    let cell_bg = pinescript.color.white;
-    let cell_text = pinescript.color.rgb(64, 64, 64);
-    let pending_bg = pinescript.color.rgb(255, 235, 59);
-    let pending_text = pinescript.color.rgb(64, 64, 64);
-    let validated_bg = pinescript.color.rgb(0, 150, 136);
-    let validated_text = pinescript.color.white;
+    var table_pos = get_table_position(stats_table_pos);
+    var table_size = get_table_text_size(stats_table_size);
+    var header_bg = pinescript.color.rgb(64, 64, 64);
+    var header_text = pinescript.color.white;
+    var cell_bg = pinescript.color.white;
+    var cell_text = pinescript.color.rgb(64, 64, 64);
+    var pending_bg = pinescript.color.rgb(255, 235, 59);
+    var pending_text = pinescript.color.rgb(64, 64, 64);
+    var validated_bg = pinescript.color.rgb(0, 150, 136);
+    var validated_text = pinescript.color.white;
     state.stats_table = pinescript.table.new(table_pos, 3, 35, ({ border_width: 1, border_color: pinescript.color.rgb(64, 64, 64), bgcolor: cell_bg }));
-    let session_ended = (is_ny_session_end || !is_ny_session);
-    let row = 0;
+    var session_ended = (is_ny_session_end || !is_ny_session);
+    var row = 0;
     pinescript.table.cell(state.stats_table, 0, row, "━━━ ORB STATISTICS ━━━", ({ bgcolor: header_bg, text_color: header_text, text_size: table_size, text_font_family: font.family_monospace }));
     pinescript.tableMergeCells(state.stats_table, 0, row, 2, row);
     row = (row + 1);
     if ((show_5min && state.or5_captured)) {
-      let is_bull_5m = (state.or5_close >= state.or5_open);
-      let extreme_5m = state.or5_extreme_first;
+      var is_bull_5m = (state.or5_close >= state.or5_open);
+      var extreme_5m = state.or5_extreme_first;
       pinescript.table.cell(state.stats_table, 0, row, "━━━ 5-MIN ORB ━━━", ({ bgcolor: header_bg, text_color: header_text, text_size: table_size, text_font_family: font.family_monospace }));
       pinescript.tableMergeCells(state.stats_table, 0, row, 2, row);
       row = (row + 1);
       pinescript.table.cell(state.stats_table, 0, row, "Direction", ({ bgcolor: cell_bg, text_color: cell_text, text_size: table_size, text_font_family: font.family_monospace }));
-      let dir_text = (is_bull_5m ? "Bullish" : "Bearish");
-      let dir_color = (is_bull_5m ? bullish_color_5m : bearish_color_5m);
+      var dir_text = (is_bull_5m ? "Bullish" : "Bearish");
+      var dir_color = (is_bull_5m ? bullish_color_5m : bearish_color_5m);
       pinescript.table.cell(state.stats_table, 1, row, dir_text, ({ bgcolor: cell_bg, text_color: dir_color, text_size: table_size, text_font_family: font.family_monospace }));
       pinescript.table.cell(state.stats_table, 2, row, "Validated", ({ bgcolor: validated_bg, text_color: validated_text, text_size: table_size, text_font_family: font.family_monospace }));
       row = (row + 1);
       pinescript.table.cell(state.stats_table, 0, row, "Extreme First", ({ bgcolor: cell_bg, text_color: cell_text, text_size: table_size, text_font_family: font.family_monospace }));
-      let extreme_text = ((extreme_5m === "high") ? "High First" : ((extreme_5m === "low") ? "Low First" : "Unknown"));
+      var extreme_text = ((extreme_5m === "high") ? "High First" : ((extreme_5m === "low") ? "Low First" : "Unknown"));
       pinescript.table.cell(state.stats_table, 1, row, extreme_text, ({ bgcolor: cell_bg, text_color: cell_text, text_size: table_size, text_font_family: font.family_monospace }));
-      let extreme_validated = (extreme_5m !== "none");
-      let status_bg = (extreme_validated ? validated_bg : pending_bg);
-      let status_text = (extreme_validated ? validated_text : pending_text);
-      let status_symbol = (extreme_validated ? "Validated" : "Pending");
+      var extreme_validated = (extreme_5m !== "none");
+      var status_bg = (extreme_validated ? validated_bg : pending_bg);
+      var status_text = (extreme_validated ? validated_text : pending_text);
+      var status_symbol = (extreme_validated ? "Validated" : "Pending");
       pinescript.table.cell(state.stats_table, 2, row, status_symbol, ({ bgcolor: status_bg, text_color: status_text, text_size: table_size, text_font_family: font.family_monospace }));
       row = (row + 1);
       pinescript.table.cell(state.stats_table, 0, row, "Extension ↑", ({ bgcolor: cell_bg, text_color: cell_text, text_size: table_size, text_font_family: font.family_monospace }));
       pinescript.table.cell(state.stats_table, 1, row, "84.9%", ({ bgcolor: cell_bg, text_color: cell_text, text_size: table_size, text_font_family: font.family_monospace }));
-      let ext_up_validated = state.or5_ext_high_reached;
+      var ext_up_validated = state.or5_ext_high_reached;
       status_bg = (ext_up_validated ? validated_bg : pending_bg);
       status_text = (ext_up_validated ? validated_text : pending_text);
       status_symbol = (ext_up_validated ? "Validated" : "Pending");
@@ -2433,14 +2594,14 @@ function main() {
       row = (row + 1);
       pinescript.table.cell(state.stats_table, 0, row, "Extension ↓", ({ bgcolor: cell_bg, text_color: cell_text, text_size: table_size, text_font_family: font.family_monospace }));
       pinescript.table.cell(state.stats_table, 1, row, "81.0%", ({ bgcolor: cell_bg, text_color: cell_text, text_size: table_size, text_font_family: font.family_monospace }));
-      let ext_down_validated = state.or5_ext_low_reached;
+      var ext_down_validated = state.or5_ext_low_reached;
       status_bg = (ext_down_validated ? validated_bg : pending_bg);
       status_text = (ext_down_validated ? validated_text : pending_text);
       status_symbol = (ext_down_validated ? "Validated" : "Pending");
       pinescript.table.cell(state.stats_table, 2, row, status_symbol, ({ bgcolor: status_bg, text_color: status_text, text_size: table_size, text_font_family: font.family_monospace }));
       row = (row + 1);
       if ((extreme_5m !== "none")) {
-        let retest_prob = 0;
+        var retest_prob = 0;
         if ((is_bull_5m && (extreme_5m === "high"))) {
           retest_prob = 88.4;
         } else {
@@ -2465,8 +2626,8 @@ function main() {
         row = (row + 1);
       }
       if ((extreme_5m !== "none")) {
-        let ib_prob = 0;
-        let ib_dir = "";
+        var ib_prob = 0;
+        var ib_dir = "";
         if ((is_bull_5m && (extreme_5m === "low"))) {
           ib_prob = 68.7;
           ib_dir = "Bullish";
@@ -2495,8 +2656,8 @@ function main() {
         row = (row + 1);
       }
       if ((extreme_5m !== "none")) {
-        let break_prob = 0;
-        let break_dir = "";
+        var break_prob = 0;
+        var break_dir = "";
         if ((is_bull_5m && (extreme_5m === "low"))) {
           break_prob = 79.9;
           break_dir = "High";
@@ -2518,7 +2679,7 @@ function main() {
         }
         pinescript.table.cell(state.stats_table, 0, row, "Next Break", ({ bgcolor: cell_bg, text_color: cell_text, text_size: table_size, text_font_family: font.family_monospace }));
         pinescript.table.cell(state.stats_table, 1, row, (((break_dir + " ") + pinescript.strToString(break_prob, "#.#")) + "%"), ({ bgcolor: cell_bg, text_color: cell_text, text_size: table_size, text_font_family: font.family_monospace }));
-        let break_validated = (state.or5_high_broken || state.or5_low_broken);
+        var break_validated = (state.or5_high_broken || state.or5_low_broken);
         status_bg = (break_validated ? validated_bg : pending_bg);
         status_text = (break_validated ? validated_text : pending_text);
         status_symbol = (break_validated ? "Validated" : "Pending");
@@ -2526,8 +2687,8 @@ function main() {
         row = (row + 1);
       }
       if ((state.or5_high_broken || state.or5_low_broken)) {
-        let close_prob = 0;
-        let close_dir = "";
+        var close_prob = 0;
+        var close_dir = "";
         if ((is_bull_5m && state.or5_high_broken)) {
           close_prob = 67.1;
           close_dir = "Bullish";
@@ -2560,8 +2721,8 @@ function main() {
       row = (row + 1);
     }
     if ((show_15min && state.or15_captured)) {
-      let is_bull_15m = (state.or15_close >= state.or15_open);
-      let extreme_15m = state.or15_extreme_first;
+      var is_bull_15m = (state.or15_close >= state.or15_open);
+      var extreme_15m = state.or15_extreme_first;
       pinescript.table.cell(state.stats_table, 0, row, "━━━ 15-MIN ORB ━━━", ({ bgcolor: header_bg, text_color: header_text, text_size: table_size, text_font_family: font.family_monospace }));
       pinescript.tableMergeCells(state.stats_table, 0, row, 2, row);
       row = (row + 1);
@@ -2758,6 +2919,10 @@ function run(data, options = {}) {
     rt.__shapeIdx = 0;
     globalThis.bar_index = i;
     globalThis.last_bar_index = n - 1;
+    globalThis.time_tradingday = inTime[i];
+    globalThis.time_close = inTime[i];
+    globalThis.last_bar_time = inTime[n - 1];
+    globalThis.timenow = inTime[n - 1];
     globalThis.barstate = {
       isfirst: i === 0, islast: i === n - 1, isrealtime: false, ishistory: true,
       isconfirmed: true, isnew: true, islastconfirmedhistory: i === n - 1,
