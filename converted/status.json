@@ -1,45 +1,13 @@
 {
-  "timestamp": "2026-06-30T01:39:38.304Z",
+  "timestamp": "2026-06-30T01:49:14.005Z",
   "total": 29,
   "passed": 29,
   "failed": 0,
-  "totalTimeMs": 2680,
+  "totalTimeMs": 2699,
   "averageConfidenceScore": 98.8,
   "files": [
     {
       "name": "3D_MACD_Bar_Plot_LuxAlgo.pine",
-      "status": "converted",
-      "confidenceScore": 100,
-      "elapsedMs": 86,
-      "jsExists": true,
-      "errorExists": false
-    },
-    {
-      "name": "Arbitrage_Matrix_LuxAlgo.pine",
-      "status": "converted",
-      "confidenceScore": 100,
-      "elapsedMs": 90,
-      "jsExists": true,
-      "errorExists": false
-    },
-    {
-      "name": "Asset_Drift_Model.pine",
-      "status": "converted",
-      "confidenceScore": 100,
-      "elapsedMs": 92,
-      "jsExists": true,
-      "errorExists": false
-    },
-    {
-      "name": "Automatic_Trendline_Metrify.pine",
-      "status": "converted",
-      "confidenceScore": 100,
-      "elapsedMs": 87,
-      "jsExists": true,
-      "errorExists": false
-    },
-    {
-      "name": "CE_1M_3M_Buy_Sell_Hold.pine",
       "status": "converted",
       "confidenceScore": 100,
       "elapsedMs": 84,
@@ -47,10 +15,42 @@
       "errorExists": false
     },
     {
-      "name": "Crossing_Moving_Averages_with_ADX_Filter.pine",
+      "name": "Arbitrage_Matrix_LuxAlgo.pine",
+      "status": "converted",
+      "confidenceScore": 100,
+      "elapsedMs": 93,
+      "jsExists": true,
+      "errorExists": false
+    },
+    {
+      "name": "Asset_Drift_Model.pine",
+      "status": "converted",
+      "confidenceScore": 100,
+      "elapsedMs": 95,
+      "jsExists": true,
+      "errorExists": false
+    },
+    {
+      "name": "Automatic_Trendline_Metrify.pine",
+      "status": "converted",
+      "confidenceScore": 100,
+      "elapsedMs": 89,
+      "jsExists": true,
+      "errorExists": false
+    },
+    {
+      "name": "CE_1M_3M_Buy_Sell_Hold.pine",
       "status": "converted",
       "confidenceScore": 100,
       "elapsedMs": 80,
+      "jsExists": true,
+      "errorExists": false
+    },
+    {
+      "name": "Crossing_Moving_Averages_with_ADX_Filter.pine",
+      "status": "converted",
+      "confidenceScore": 100,
+      "elapsedMs": 82,
       "jsExists": true,
       "errorExists": false
     },
@@ -74,7 +74,7 @@
       "name": "Hyperfork_Matrix.pine",
       "status": "converted",
       "confidenceScore": 100,
-      "elapsedMs": 101,
+      "elapsedMs": 100,
       "jsExists": true,
       "errorExists": false
     },
@@ -82,7 +82,7 @@
       "name": "Impulse_Trend_Arrows.pine",
       "status": "converted",
       "confidenceScore": 100,
-      "elapsedMs": 86,
+      "elapsedMs": 91,
       "jsExists": true,
       "errorExists": false
     },
@@ -90,7 +90,7 @@
       "name": "Institutional_Order_Flow_Strength_Classifier_LuxAlgo.pine",
       "status": "converted",
       "confidenceScore": 100,
-      "elapsedMs": 89,
+      "elapsedMs": 87,
       "jsExists": true,
       "errorExists": false
     },
@@ -98,7 +98,7 @@
       "name": "Liquidity_Sweep_Detector.pine",
       "status": "converted",
       "confidenceScore": 100,
-      "elapsedMs": 98,
+      "elapsedMs": 93,
       "jsExists": true,
       "errorExists": false
     },
@@ -106,7 +106,7 @@
       "name": "Manias_Panics_and_Crashes.pine",
       "status": "converted",
       "confidenceScore": 100,
-      "elapsedMs": 92,
+      "elapsedMs": 94,
       "jsExists": true,
       "errorExists": false
     },
@@ -114,7 +114,7 @@
       "name": "Net_Buy_Volume_theUltimator5.pine",
       "status": "converted",
       "confidenceScore": 100,
-      "elapsedMs": 79,
+      "elapsedMs": 81,
       "jsExists": true,
       "errorExists": false
     },
@@ -122,7 +122,7 @@
       "name": "NY_5m_15m_Orb_-_Statistics_LTF_Candle_structure.pine",
       "status": "converted",
       "confidenceScore": 100,
-      "elapsedMs": 107,
+      "elapsedMs": 110,
       "jsExists": true,
       "errorExists": false
     },
@@ -130,7 +130,7 @@
       "name": "Peak_Trading_Activity_Graphs_LuxAlgo.pine",
       "status": "converted",
       "confidenceScore": 100,
-      "elapsedMs": 101,
+      "elapsedMs": 93,
       "jsExists": true,
       "errorExists": false
     },
@@ -138,7 +138,7 @@
       "name": "Proximal_Range_Filter_LuxAlgo.pine",
       "status": "converted",
       "confidenceScore": 100,
-      "elapsedMs": 80,
+      "elapsedMs": 82,
       "jsExists": true,
       "errorExists": false
     },
@@ -146,7 +146,7 @@
       "name": "Pro_Pattern_Long-Short_High_Winrate.pine",
       "status": "converted",
       "confidenceScore": 100,
-      "elapsedMs": 91,
+      "elapsedMs": 97,
       "jsExists": true,
       "errorExists": false
     },
@@ -154,7 +154,7 @@
       "name": "Quantum_Structure_jjart.pine",
       "status": "converted",
       "confidenceScore": 100,
-      "elapsedMs": 111,
+      "elapsedMs": 114,
       "jsExists": true,
       "errorExists": false
     },
@@ -162,7 +162,7 @@
       "name": "RBT_strategy.pine",
       "status": "converted",
       "confidenceScore": 100,
-      "elapsedMs": 81,
+      "elapsedMs": 90,
       "jsExists": true,
       "errorExists": false
     },
@@ -170,7 +170,7 @@
       "name": "Scalping_Strategy_3_minutes.pine",
       "status": "converted",
       "confidenceScore": 75,
-      "elapsedMs": 113,
+      "elapsedMs": 114,
       "jsExists": true,
       "errorExists": false
     },
@@ -178,7 +178,7 @@
       "name": "Singular_Spectrum_Decomposition_LuxAlgo.pine",
       "status": "converted",
       "confidenceScore": 100,
-      "elapsedMs": 93,
+      "elapsedMs": 95,
       "jsExists": true,
       "errorExists": false
     },
@@ -186,7 +186,7 @@
       "name": "Smart_Trader_Episode_03_by_Ata_Sabanci_Candles_and_Tradelines.pine",
       "status": "converted",
       "confidenceScore": 90,
-      "elapsedMs": 134,
+      "elapsedMs": 139,
       "jsExists": true,
       "errorExists": false
     },
@@ -202,7 +202,7 @@
       "name": "TehThomas_-_Aligned_Timeframe_Fair_Value_Gaps.pine",
       "status": "converted",
       "confidenceScore": 100,
-      "elapsedMs": 89,
+      "elapsedMs": 84,
       "jsExists": true,
       "errorExists": false
     },
@@ -210,7 +210,7 @@
       "name": "Volatility_Contraction_Score.pine",
       "status": "converted",
       "confidenceScore": 100,
-      "elapsedMs": 89,
+      "elapsedMs": 88,
       "jsExists": true,
       "errorExists": false
     },
@@ -218,7 +218,7 @@
       "name": "Volume_Surprise_LuxAlgo.pine",
       "status": "converted",
       "confidenceScore": 100,
-      "elapsedMs": 87,
+      "elapsedMs": 84,
       "jsExists": true,
       "errorExists": false
     },
