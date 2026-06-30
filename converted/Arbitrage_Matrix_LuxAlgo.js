@@ -42,6 +42,80 @@ const pinescript = {
     if (value != null && typeof value[Symbol.iterator] === 'function') return Array.from(value);
     return new Array(count || 0).fill(null);
   },
+  __decArr: function(arr) {
+    if (!Array.isArray(arr) || arr.__pineDecorated) return arr;
+    const self = this;
+    const def = (name, fn) => Object.defineProperty(arr, name, { value: fn, writable: true, configurable: true });
+    Object.defineProperty(arr, '__pineDecorated', { value: true, configurable: true });
+    def('get', (i) => (arr[i] === undefined ? null : arr[i]));
+    def('set', (i, v) => { arr[i] = v; return v; });
+    def('size', () => arr.length);
+    def('clear', () => { arr.length = 0; });
+    def('insert', (i, v) => { arr.splice(i, 0, v); });
+    def('remove', (i) => arr.splice(i, 1)[0]);
+    def('contains', (v) => arr.includes(v));
+    def('indexof', (v) => arr.indexOf(v));
+    def('lastindexof', (v) => arr.lastIndexOf(v));
+    def('first', () => (arr.length ? arr[0] : null));
+    def('last', () => (arr.length ? arr[arr.length - 1] : null));
+    def('sum', () => arr.reduce((a, b) => a + b, 0));
+    def('avg', () => (arr.length ? arr.reduce((a, b) => a + b, 0) / arr.length : 0));
+    def('min', () => (arr.length ? Math.min(...arr) : null));
+    def('max', () => (arr.length ? Math.max(...arr) : null));
+    def('range', () => (arr.length ? Math.max(...arr) - Math.min(...arr) : null));
+    // Statistical methods that route to the array.* built-ins (these names are not
+    // native to JS arrays, so attaching them here is safe from recursion).
+    def('median', () => self.arrayMedian(arr));
+    def('mode', () => self.arrayMode(arr));
+    def('stdev', () => self.arrayStdev(arr));
+    def('variance', () => self.arrayVariance(arr));
+    def('covariance', (other) => self.arrayCovariance(arr, other));
+    def('percentile_linear_interpolation', (p) => self.arrayPercentileLinearInterpolation(arr, p));
+    def('percentile_nearest_rank', (p) => self.arrayPercentileNearestRank(arr, p));
+    def('abs', () => self.__decArr(self.arrayAbs(arr)));
+    def('binary_search', (v) => self.arrayBinarySearch(arr, v));
+    // Pine's array.sort takes an order string, not a comparator. Use the native
+    // sort via .call so we don't recurse through this overridden method.
+    def('sort', (order) => { Array.prototype.sort.call(arr, (a, b) => (order === 'descending' ? b - a : a - b)); return arr; });
+    def('sort_indices', (order) => self.__decArr(arr.map((_, i) => i).sort((a, b) => (order === 'descending' ? arr[b] - arr[a] : arr[a] - arr[b]))));
+    // join/slice/reverse/concat/includes/fill already exist natively on Array with
+    // compatible semantics, so we deliberately leave them to the native methods.
+    return arr;
+  },
+  __decMap: function(m) {
+    if (!(m instanceof Map) || m.__pineDecorated) return m;
+    const def = (name, fn) => Object.defineProperty(m, name, { value: fn, writable: true, configurable: true });
+    Object.defineProperty(m, '__pineDecorated', { value: true, configurable: true });
+    def('put', (k, v) => { m.set(k, v); return v; });
+    def('contains', (k) => m.has(k));
+    def('remove', (k) => m.delete(k));
+    def('keys', () => Array.from(Map.prototype.keys.call(m)));
+    def('values', () => Array.from(Map.prototype.values.call(m)));
+    def('size_', () => m.size);
+    return m;
+  },
+  __decMatrix: function(m) {
+    if (!m || typeof m !== 'object' || m.__pineDecorated) return m;
+    const self = this;
+    const def = (name, fn) => Object.defineProperty(m, name, { value: fn, writable: true, configurable: true });
+    Object.defineProperty(m, '__pineDecorated', { value: true, configurable: true });
+    def('get', (r, c) => self.matrixGet(m, r, c));
+    def('set', (r, c, v) => self.matrixSet(m, r, c, v));
+    def('rows_', () => m.rows);
+    def('columns', () => m.cols);
+    def('fill', (v) => self.matrixFill(m, v));
+    return m;
+  },
+  __decDraw: function(obj) {
+    if (!obj || typeof obj !== 'object') return obj;
+    const p = new Proxy(obj, {
+      get(t, k) {
+        if (k in t || typeof k === 'symbol') return t[k];
+        return function() { return p; };
+      },
+    });
+    return p;
+  },
   alertcondition: function(condition, ...rest) {
     if (globalThis.__pineRuntime) {
       globalThis.__pineRuntime.alerts.push({ condition, args: rest });
@@ -49,6 +123,32 @@ const pinescript = {
     return null;
   },
   barcolor: function(color) { return null; },
+  plotchar: function(series, ...rest) {
+    const rt = globalThis.__pineRuntime;
+    if (!rt) return series;
+    const bar = rt.__barIndex | 0;
+    const ord = (rt.__shapeIdx = (rt.__shapeIdx | 0) + 1) - 1;
+    let key = 'char_' + ord;
+    for (const r of rest) {
+      if (typeof r === 'string') { key = r; break; }
+      if (r && typeof r === 'object' && r.title) { key = String(r.title); break; }
+    }
+    let s = rt.plotshapes[key];
+    if (!s) s = rt.plotshapes[key] = { title: key, data: [] };
+    s.data[bar] = this.__scalar(series);
+    return series;
+  },
+  plotarrow: function(series, ...rest) {
+    const rt = globalThis.__pineRuntime;
+    if (!rt) return series;
+    const bar = rt.__barIndex | 0;
+    const ord = (rt.__plotIdx = (rt.__plotIdx | 0) + 1) - 1;
+    const key = 'arrow_' + ord;
+    let p = rt.plots[key];
+    if (!p) p = rt.plots[key] = { title: key, data: [] };
+    p.data[bar] = this.__scalar(series);
+    return series;
+  },
   bgcolor: function(color, title, editable, showLast) {
     return null;
   },
@@ -470,6 +570,12 @@ const pinescript = {
   atan: function(value) {
     return Math.atan(value);
   },
+  todegrees: function(radians) {
+    return radians * (180 / Math.PI);
+  },
+  toradians: function(degrees) {
+    return degrees * (Math.PI / 180);
+  },
   floor: function(value) {
     return Math.floor(value);
   },
@@ -641,7 +747,7 @@ const pinescript = {
     return series;
   },
   lineNew: function(x1, y1, x2, y2, opts = {}) {
-    return { x1, y1, x2, y2, opts, _type: 'line' };
+    return this.__decDraw({ x1, y1, x2, y2, opts, _type: 'line' });
   },
   lineDelete: function(l) {
     return null;
@@ -661,7 +767,7 @@ const pinescript = {
     return point === 0 || point === 'y1' ? line.y1 : line.y2;
   },
   labelNew: function(x, y, text = '', opts = {}) {
-    return { x, y, text, opts, _type: 'label' };
+    return this.__decDraw({ x, y, text, opts, _type: 'label' });
   },
   labelDelete: function(l) {
     return null;
@@ -676,7 +782,7 @@ const pinescript = {
     return label.text || '';
   },
   boxNew: function(left, top, right, bottom, opts = {}) {
-    return { left, top, right, bottom, opts, _type: 'box' };
+    return this.__decDraw({ left, top, right, bottom, opts, _type: 'box' });
   },
   boxDelete: function(box) {
     return null;
@@ -694,7 +800,7 @@ const pinescript = {
     return box;
   },
   polylineNew: function(points, opts = {}) {
-    return { points: points || [], opts, _type: 'polyline' };
+    return this.__decDraw({ points: points || [], opts, _type: 'polyline' });
   },
   polylineDelete: function(poly) {
     return null;
@@ -765,7 +871,7 @@ const pinescript = {
     return { time: _time ?? null, price: _price ?? null };
   },
   mapNew: function() {
-    return new Map();
+    return this.__decMap(new Map());
   },
   mapSize: function(m) {
     return m instanceof Map ? m.size : 0;
@@ -800,7 +906,7 @@ const pinescript = {
     const r = Math.max(0, rows ?? 0);
     const c = Math.max(0, cols ?? 0);
     const data = Array.from({ length: r }, () => Array.from({ length: c }, () => initialValue));
-    return { rows: r, cols: c, data };
+    return this.__decMatrix({ rows: r, cols: c, data });
   },
   matrixRows: function(m) {
     return m?.rows ?? 0;
@@ -923,11 +1029,62 @@ const pinescript = {
     }
     return null;
   },
+  __jacobiEigen: function(m) {
+    if (!m || !Array.isArray(m.data)) return null;
+    const n = m.rows ?? 0;
+    if (n === 0 || n !== (m.cols ?? 0)) return null;
+    // Work on a copy so the input matrix is untouched.
+    const a = m.data.map(row => row.slice());
+    const v = Array.from({ length: n }, (_, i) => Array.from({ length: n }, (_, j) => (i === j ? 1 : 0)));
+    for (let sweep = 0; sweep < 100; sweep++) {
+      let off = 0;
+      for (let p = 0; p < n; p++) for (let q = p + 1; q < n; q++) off += a[p][q] * a[p][q];
+      if (off < 1e-20) break;
+      for (let p = 0; p < n; p++) {
+        for (let q = p + 1; q < n; q++) {
+          if (Math.abs(a[p][q]) < 1e-18) continue;
+          const theta = (a[q][q] - a[p][p]) / (2 * a[p][q]);
+          const t = Math.sign(theta || 1) / (Math.abs(theta) + Math.sqrt(theta * theta + 1));
+          const cos = 1 / Math.sqrt(t * t + 1);
+          const sin = t * cos;
+          for (let k = 0; k < n; k++) {
+            const akp = a[k][p], akq = a[k][q];
+            a[k][p] = cos * akp - sin * akq;
+            a[k][q] = sin * akp + cos * akq;
+          }
+          for (let k = 0; k < n; k++) {
+            const apk = a[p][k], aqk = a[q][k];
+            a[p][k] = cos * apk - sin * aqk;
+            a[q][k] = sin * apk + cos * aqk;
+          }
+          for (let k = 0; k < n; k++) {
+            const vkp = v[k][p], vkq = v[k][q];
+            v[k][p] = cos * vkp - sin * vkq;
+            v[k][q] = sin * vkp + cos * vkq;
+          }
+        }
+      }
+    }
+    // Sort eigenpairs by eigenvalue, descending.
+    const order = Array.from({ length: n }, (_, i) => i).sort((i, j) => a[j][j] - a[i][i]);
+    const values = order.map(i => a[i][i]);
+    const vectors = Array.from({ length: n }, (_, r) => order.map(c => v[r][c]));
+    return { values, vectors };
+  },
+  matrixEigenvalues: function(m) {
+    const e = this.__jacobiEigen(m);
+    return this.__decArr(e ? e.values : []);
+  },
+  matrixEigenvectors: function(m) {
+    const e = this.__jacobiEigen(m);
+    if (!e) return this.__decMatrix({ rows: 0, cols: 0, data: [] });
+    return this.__decMatrix({ rows: e.vectors.length, cols: e.vectors.length, data: e.vectors });
+  },
   requestSecurity: function(symbol, timeframe, expression) {
     return expression;
   },
   arrayNew: function(initialSize = 0, initialValue = 0) {
-    return Array(initialSize).fill(initialValue);
+    return this.__decArr(Array(initialSize).fill(initialValue));
   },
   arraySize: function(arr) {
     return arr ? arr.length : 0;
@@ -978,10 +1135,10 @@ const pinescript = {
     return arr;
   },
   arraySlice: function(arr, startIndex = 0, endIndex = null) {
-    if (!arr) return [];
+    if (!arr) return this.__decArr([]);
     const start = Number(startIndex) || 0;
     const end = endIndex === null || endIndex === undefined ? arr.length : Number(endIndex) || 0;
-    return arr.slice(start, end);
+    return this.__decArr(arr.slice(start, end));
   },
   arraySort: function(arr, order = 'ascending') {
     if (arr) arr.sort((a, b) => order === 'ascending' ? a - b : b - a);
@@ -1191,7 +1348,7 @@ const pinescript = {
     const info = { ticker: 'AAPL', tickerid: 'NASDAQ:AAPL', prefix: 'NASDAQ', root: 'AAPL', suffix: '' };
     return info[type] || '';
   },
-  timenow: 1781574526454,
+  timenow: 1782784151441,
   barstate: "LAST",
   dividends: {},
   splits: {},
@@ -1245,11 +1402,11 @@ const pinescript = {
   arrayConcat: function(arr1, arr2) {
     if (!arr1) return arr2 || [];
     if (!arr2) return arr1;
-    return arr1.concat(arr2);
+    return this.__decArr(arr1.concat(arr2));
   },
   arrayCopy: function(arr) {
-    if (!arr) return [];
-    return [...arr];
+    if (!arr) return this.__decArr([]);
+    return this.__decArr([...arr]);
   },
   arrayBinarySearch: function(arr, value) {
     if (!arr || arr.length === 0) return -1;
@@ -1339,7 +1496,7 @@ globalThis.input.timeframe = globalThis.input.timeframe || ((defval) => defval);
 
 globalThis.array = globalThis.array || {
 
-  from: (...items) => items,
+  from: (...items) => pinescript.__decArr(items),
 
   size: (arr) => pinescript.arraySize(arr),
 
@@ -1508,6 +1665,8 @@ globalThis.line = globalThis.line || __pineNS({ style_solid: "solid", style_dash
 
 globalThis.box = globalThis.box || __pineNS({});
 
+globalThis.color = globalThis.color || __pineNS(Object.assign(function(c) { return c; }, { new: function(c, t) { return c; }, rgb: function(r, g, b, t) { return "#rgb(" + [r, g, b].join(",") + ")"; }, from_gradient: function(v, lo, hi, c1, c2) { return c1; }, r: function() { return 0; }, g: function() { return 0; }, b: function() { return 0; }, t: function() { return 0; }, aqua: "#00BCD4", black: "#363A45", blue: "#2962FF", fuchsia: "#E040FB", gray: "#787B86", green: "#4CAF50", lime: "#00E676", maroon: "#880E4F", navy: "#311B92", olive: "#808000", orange: "#FF9800", purple: "#9C27B0", red: "#FF5252", silver: "#B2B5BE", teal: "#00897B", white: "#FFFFFF", yellow: "#FFEB3B" }));
+
 globalThis.label = globalThis.label || __pineNS({ style_label_down: "label_down", style_label_up: "label_up", style_none: "none" });
 
 globalThis.polyline = globalThis.polyline || __pineNS({});
@@ -1520,7 +1679,9 @@ globalThis.map = globalThis.map || __pineNS({});
 
 globalThis.session = globalThis.session || __pineNS({ regular: "regular", extended: "extended" });
 
-globalThis.dayofweek = globalThis.dayofweek || __pineNS({ sunday: 1, monday: 2, tuesday: 3, wednesday: 4, thursday: 5, friday: 6, saturday: 7 });
+globalThis.ticker = globalThis.ticker || __pineNS({});
+
+globalThis.dayofweek = globalThis.dayofweek || __pineNS(Object.assign(function(t) { return new Date(t != null ? t : (globalThis.time || 0)).getUTCDay() + 1; }, { sunday: 1, monday: 2, tuesday: 3, wednesday: 4, thursday: 5, friday: 6, saturday: 7 }));
 
 globalThis.timeframe = __pineNS(Object.assign(globalThis.timeframe || {}, { period: (globalThis.timeframe && globalThis.timeframe.period) || "D", isintraday: false, isdaily: true, multiplier: 1 }));
 
@@ -1567,8 +1728,6 @@ globalThis.float = globalThis.float || function(x) { return x == null ? null : N
 globalThis.bool = globalThis.bool || function(x) { return Boolean(x); };
 
 globalThis.string = globalThis.string || function(x) { return x == null ? null : String(x); };
-
-globalThis.dayofweek = globalThis.dayofweek || __pineNS({ sunday: 1, monday: 2, tuesday: 3, wednesday: 4, thursday: 5, friday: 6, saturday: 7 });
 
 globalThis.str = globalThis.str || __pineNS({});
 
@@ -1655,7 +1814,7 @@ pinescript.text = { align_center: "center" };
 
 pinescript.table = {
 
-  new: function(position, columns, rows, opts) { return { position, columns, rows, opts: opts || {}, cells: [] }; },
+  new: function(position, columns, rows, opts) { return pinescript.__decDraw({ position, columns, rows, opts: opts || {}, cells: [] }); },
 
   cell: function(table, column, row, text, opts) {
 
@@ -1690,188 +1849,188 @@ function main() {
   null;
   // Study: Arbitrage Matrix [LuxAlgo]
   // Options: {"overlay":true}
-  let RED = pinescript.color.hex("#F23645");
-  let GREEN = pinescript.color.hex("#089981");
-  let AUTO = "Auto";
-  let CRYPTO_EXCHANGES = "Crypto Exchanges";
-  let FX_BROKERS = "Forex Brokers";
-  let TOP_RIGHT = "Top Right";
-  let BOTTOM_RIGHT = "Bottom Right";
-  let BOTTOM_LEFT = "Bottom Left";
-  let TINY = "Tiny";
-  let SMALL = "Small";
-  let NORMAL = "Normal";
-  let LARGE = "Large";
-  let HUGE = "Huge";
-  let PRICE_LAST = "Last Price";
-  let VOLUME_LAST = "Last Volume";
-  let PRICE_AVG = "Avg Price";
-  let VOLUME_AVG = "Avg Volume";
-  let DASHBOARD_GROUP = "Dashboard";
-  let STYLE_GROUP = "Style";
-  let EXCHANGES_GROUP = "Crypto Exchanges";
-  let BROKERS_GROUP = "Forex Brokers";
-  let sourceTooltip = "Choose between crypto exchanges, forex brokers, or automatic selection based on the asset in the chart.";
-  let averageLengthTooltip = "Select the length for the price and volume averages.";
-  let dashboardDataTooltip = "Select the data to display.";
-  let dashboardPositionTooltip = "Select the dashboard location.";
-  let dashboardSizeTooltip = "Select the dashboard size.";
-  let bullishColorTooltip = "Select bullish color.";
-  let bearishColorTooltip = "Select bearish color.";
-  let backgroundTooltip = "Enable background gradient color.";
-  let EM_SPACE = " ";
-  let EN_SPACE = " ";
-  let FOUR_PER_EM_SPACE = " ";
-  let SIX_PER_EM_SPACE = " ";
-  let HAIR_SPACE = " ";
-  let MS = EM_SPACE;
-  let NS = EN_SPACE;
-  let FS = FOUR_PER_EM_SPACE;
-  let SS = SIX_PER_EM_SPACE;
-  let HS = HAIR_SPACE;
-  let sourceInput = pinescript.inputString(AUTO, "Sources", ({ tooltip: sourceTooltip, options: [AUTO, CRYPTO_EXCHANGES, FX_BROKERS] }));
-  let averageLengthInput = pinescript.inputInt(20, "Average Length", ({ tooltip: averageLengthTooltip }));
-  let enableCRYPTOCOMInput = pinescript.inputBool(true, "CRYPTOCOM", ({ group: EXCHANGES_GROUP, inline: "row1" }));
-  let enableBINANCEInput = pinescript.inputBool(true, "BINANCE", ({ group: EXCHANGES_GROUP, inline: "row1" }));
-  let enableBYBITInput = pinescript.inputBool(true, "BYBIT", ({ group: EXCHANGES_GROUP, inline: "row1" }));
-  let enableWEBULLPAYInput = pinescript.inputBool(true, (("WEBULLPAY" + FS) + HS), ({ group: EXCHANGES_GROUP, inline: "row2" }));
-  let enableGEMINIInput = pinescript.inputBool(true, (("GEMINI" + NS) + FS), ({ group: EXCHANGES_GROUP, inline: "row2" }));
-  let enableCRYPTOInput = pinescript.inputBool(true, "CRYPTO", ({ group: EXCHANGES_GROUP, inline: "row2" }));
-  let enableBINANCEUSInput = pinescript.inputBool(true, ((("BINANCEUS" + FS) + SS) + HS), ({ group: EXCHANGES_GROUP, inline: "row3" }));
-  let enableKRAKENInput = pinescript.inputBool(true, (("KRAKEN" + FS) + HS), ({ group: EXCHANGES_GROUP, inline: "row3" }));
-  let enableBTSEInput = pinescript.inputBool(true, "BTSE", ({ group: EXCHANGES_GROUP, inline: "row3" }));
-  let enableBITSTAMPInput = pinescript.inputBool(true, (("BITSTAMP" + MS) + SS), ({ group: EXCHANGES_GROUP, inline: "row4" }));
-  let enableKUCOINInput = pinescript.inputBool(true, ("KUCOIN" + NS), ({ group: EXCHANGES_GROUP, inline: "row4" }));
-  let enableHTXInput = pinescript.inputBool(true, "HTX", ({ group: EXCHANGES_GROUP, inline: "row4" }));
-  let enableCOINBASEInput = pinescript.inputBool(true, (("COINBASE" + MS) + HS), ({ group: EXCHANGES_GROUP, inline: "row5" }));
-  let enableBITGETInput = pinescript.inputBool(true, ((("BITGET" + NS) + HS) + HS), ({ group: EXCHANGES_GROUP, inline: "row5" }));
-  let enableGATEInput = pinescript.inputBool(true, "GATE", ({ group: EXCHANGES_GROUP, inline: "row5" }));
-  let enableWHITEBITInput = pinescript.inputBool(true, ((("WHITEBIT" + MS) + HS) + HS), ({ group: EXCHANGES_GROUP, inline: "row6" }));
-  let enableCOINEXInput = pinescript.inputBool(true, (("COINEX" + NS) + HS), ({ group: EXCHANGES_GROUP, inline: "row6" }));
-  let enableMEXCInput = pinescript.inputBool(true, "MEXC", ({ group: EXCHANGES_GROUP, inline: "row6" }));
-  let enableOKXInput = pinescript.inputBool(true, "OKX", ({ group: EXCHANGES_GROUP, inline: "row7" }));
-  let enablePEPPERSTONEInput = pinescript.inputBool(true, "PEPPERSTONE", ({ group: BROKERS_GROUP, inline: "row8" }));
-  let enableEIGHTCAPInput = pinescript.inputBool(true, (("EIGHTCAP" + FS) + SS), ({ group: BROKERS_GROUP, inline: "row8" }));
-  let enableOANDAInput = pinescript.inputBool(true, "OANDA", ({ group: BROKERS_GROUP, inline: "row8" }));
-  let enableCMCMARKETSInput = pinescript.inputBool(true, ("CMCMARKETS" + FS), ({ group: BROKERS_GROUP, inline: "row9" }));
-  let enableTICKMILLInput = pinescript.inputBool(true, (((("TICKMILL" + NS) + FS) + HS) + HS), ({ group: BROKERS_GROUP, inline: "row9" }));
-  let enableSAXOInput = pinescript.inputBool(true, "SAXO", ({ group: BROKERS_GROUP, inline: "row9" }));
-  let enableCAPITALCOMInput = pinescript.inputBool(true, ((("CAPITALCOM" + NS) + HS) + HS), ({ group: BROKERS_GROUP, inline: "row10" }));
-  let enableFOREXCOMInput = pinescript.inputBool(true, "FOREXCOM", ({ group: BROKERS_GROUP, inline: "row10" }));
-  let enableIBKRInput = pinescript.inputBool(true, "IBKR", ({ group: BROKERS_GROUP, inline: "row10" }));
-  let enableICMARKETSInput = pinescript.inputBool(true, (("ICMARKETS" + MS) + FS), ({ group: BROKERS_GROUP, inline: "row11" }));
-  let enableVANTAGEInput = pinescript.inputBool(true, (((("VANTAGE" + NS) + SS) + SS) + HS), ({ group: BROKERS_GROUP, inline: "row11" }));
-  let enableFXInput = pinescript.inputBool(true, "FX", ({ group: BROKERS_GROUP, inline: "row11" }));
-  let enableIGInput = pinescript.inputBool(true, "IG", ({ group: BROKERS_GROUP, inline: "row12" }));
-  let dashboardDataInput = pinescript.inputString(PRICE_LAST, "Data", ({ group: DASHBOARD_GROUP, tooltip: dashboardDataTooltip, options: [PRICE_LAST, PRICE_AVG, VOLUME_LAST, VOLUME_AVG] }));
-  let dashboardPositionInput = pinescript.inputString(TOP_RIGHT, "Position", ({ group: DASHBOARD_GROUP, tooltip: dashboardPositionTooltip, options: [TOP_RIGHT, BOTTOM_RIGHT, BOTTOM_LEFT] }));
-  let dashboardSizeInput = pinescript.inputString(SMALL, "Size", ({ group: DASHBOARD_GROUP, tooltip: dashboardSizeTooltip, options: [TINY, SMALL, NORMAL, LARGE, HUGE] }));
-  let bullishColorInput = pinescript.inputColor(GREEN, "Bullish", ({ group: STYLE_GROUP, tooltip: bullishColorTooltip }));
-  let bearishColorInput = pinescript.inputColor(RED, "Bearish", ({ group: STYLE_GROUP, tooltip: bearishColorTooltip }));
-  let backgroundInput = pinescript.inputBool(true, "Background Gradient", ({ group: STYLE_GROUP, tooltip: backgroundTooltip }));
+  var RED = pinescript.color.hex("#F23645");
+  var GREEN = pinescript.color.hex("#089981");
+  var AUTO = "Auto";
+  var CRYPTO_EXCHANGES = "Crypto Exchanges";
+  var FX_BROKERS = "Forex Brokers";
+  var TOP_RIGHT = "Top Right";
+  var BOTTOM_RIGHT = "Bottom Right";
+  var BOTTOM_LEFT = "Bottom Left";
+  var TINY = "Tiny";
+  var SMALL = "Small";
+  var NORMAL = "Normal";
+  var LARGE = "Large";
+  var HUGE = "Huge";
+  var PRICE_LAST = "Last Price";
+  var VOLUME_LAST = "Last Volume";
+  var PRICE_AVG = "Avg Price";
+  var VOLUME_AVG = "Avg Volume";
+  var DASHBOARD_GROUP = "Dashboard";
+  var STYLE_GROUP = "Style";
+  var EXCHANGES_GROUP = "Crypto Exchanges";
+  var BROKERS_GROUP = "Forex Brokers";
+  var sourceTooltip = "Choose between crypto exchanges, forex brokers, or automatic selection based on the asset in the chart.";
+  var averageLengthTooltip = "Select the length for the price and volume averages.";
+  var dashboardDataTooltip = "Select the data to display.";
+  var dashboardPositionTooltip = "Select the dashboard location.";
+  var dashboardSizeTooltip = "Select the dashboard size.";
+  var bullishColorTooltip = "Select bullish color.";
+  var bearishColorTooltip = "Select bearish color.";
+  var backgroundTooltip = "Enable background gradient color.";
+  var EM_SPACE = " ";
+  var EN_SPACE = " ";
+  var FOUR_PER_EM_SPACE = " ";
+  var SIX_PER_EM_SPACE = " ";
+  var HAIR_SPACE = " ";
+  var MS = EM_SPACE;
+  var NS = EN_SPACE;
+  var FS = FOUR_PER_EM_SPACE;
+  var SS = SIX_PER_EM_SPACE;
+  var HS = HAIR_SPACE;
+  var sourceInput = pinescript.inputString(AUTO, "Sources", ({ tooltip: sourceTooltip, options: [AUTO, CRYPTO_EXCHANGES, FX_BROKERS] }));
+  var averageLengthInput = pinescript.inputInt(20, "Average Length", ({ tooltip: averageLengthTooltip }));
+  var enableCRYPTOCOMInput = pinescript.inputBool(true, "CRYPTOCOM", ({ group: EXCHANGES_GROUP, inline: "row1" }));
+  var enableBINANCEInput = pinescript.inputBool(true, "BINANCE", ({ group: EXCHANGES_GROUP, inline: "row1" }));
+  var enableBYBITInput = pinescript.inputBool(true, "BYBIT", ({ group: EXCHANGES_GROUP, inline: "row1" }));
+  var enableWEBULLPAYInput = pinescript.inputBool(true, (("WEBULLPAY" + FS) + HS), ({ group: EXCHANGES_GROUP, inline: "row2" }));
+  var enableGEMINIInput = pinescript.inputBool(true, (("GEMINI" + NS) + FS), ({ group: EXCHANGES_GROUP, inline: "row2" }));
+  var enableCRYPTOInput = pinescript.inputBool(true, "CRYPTO", ({ group: EXCHANGES_GROUP, inline: "row2" }));
+  var enableBINANCEUSInput = pinescript.inputBool(true, ((("BINANCEUS" + FS) + SS) + HS), ({ group: EXCHANGES_GROUP, inline: "row3" }));
+  var enableKRAKENInput = pinescript.inputBool(true, (("KRAKEN" + FS) + HS), ({ group: EXCHANGES_GROUP, inline: "row3" }));
+  var enableBTSEInput = pinescript.inputBool(true, "BTSE", ({ group: EXCHANGES_GROUP, inline: "row3" }));
+  var enableBITSTAMPInput = pinescript.inputBool(true, (("BITSTAMP" + MS) + SS), ({ group: EXCHANGES_GROUP, inline: "row4" }));
+  var enableKUCOINInput = pinescript.inputBool(true, ("KUCOIN" + NS), ({ group: EXCHANGES_GROUP, inline: "row4" }));
+  var enableHTXInput = pinescript.inputBool(true, "HTX", ({ group: EXCHANGES_GROUP, inline: "row4" }));
+  var enableCOINBASEInput = pinescript.inputBool(true, (("COINBASE" + MS) + HS), ({ group: EXCHANGES_GROUP, inline: "row5" }));
+  var enableBITGETInput = pinescript.inputBool(true, ((("BITGET" + NS) + HS) + HS), ({ group: EXCHANGES_GROUP, inline: "row5" }));
+  var enableGATEInput = pinescript.inputBool(true, "GATE", ({ group: EXCHANGES_GROUP, inline: "row5" }));
+  var enableWHITEBITInput = pinescript.inputBool(true, ((("WHITEBIT" + MS) + HS) + HS), ({ group: EXCHANGES_GROUP, inline: "row6" }));
+  var enableCOINEXInput = pinescript.inputBool(true, (("COINEX" + NS) + HS), ({ group: EXCHANGES_GROUP, inline: "row6" }));
+  var enableMEXCInput = pinescript.inputBool(true, "MEXC", ({ group: EXCHANGES_GROUP, inline: "row6" }));
+  var enableOKXInput = pinescript.inputBool(true, "OKX", ({ group: EXCHANGES_GROUP, inline: "row7" }));
+  var enablePEPPERSTONEInput = pinescript.inputBool(true, "PEPPERSTONE", ({ group: BROKERS_GROUP, inline: "row8" }));
+  var enableEIGHTCAPInput = pinescript.inputBool(true, (("EIGHTCAP" + FS) + SS), ({ group: BROKERS_GROUP, inline: "row8" }));
+  var enableOANDAInput = pinescript.inputBool(true, "OANDA", ({ group: BROKERS_GROUP, inline: "row8" }));
+  var enableCMCMARKETSInput = pinescript.inputBool(true, ("CMCMARKETS" + FS), ({ group: BROKERS_GROUP, inline: "row9" }));
+  var enableTICKMILLInput = pinescript.inputBool(true, (((("TICKMILL" + NS) + FS) + HS) + HS), ({ group: BROKERS_GROUP, inline: "row9" }));
+  var enableSAXOInput = pinescript.inputBool(true, "SAXO", ({ group: BROKERS_GROUP, inline: "row9" }));
+  var enableCAPITALCOMInput = pinescript.inputBool(true, ((("CAPITALCOM" + NS) + HS) + HS), ({ group: BROKERS_GROUP, inline: "row10" }));
+  var enableFOREXCOMInput = pinescript.inputBool(true, "FOREXCOM", ({ group: BROKERS_GROUP, inline: "row10" }));
+  var enableIBKRInput = pinescript.inputBool(true, "IBKR", ({ group: BROKERS_GROUP, inline: "row10" }));
+  var enableICMARKETSInput = pinescript.inputBool(true, (("ICMARKETS" + MS) + FS), ({ group: BROKERS_GROUP, inline: "row11" }));
+  var enableVANTAGEInput = pinescript.inputBool(true, (((("VANTAGE" + NS) + SS) + SS) + HS), ({ group: BROKERS_GROUP, inline: "row11" }));
+  var enableFXInput = pinescript.inputBool(true, "FX", ({ group: BROKERS_GROUP, inline: "row11" }));
+  var enableIGInput = pinescript.inputBool(true, "IG", ({ group: BROKERS_GROUP, inline: "row12" }));
+  var dashboardDataInput = pinescript.inputString(PRICE_LAST, "Data", ({ group: DASHBOARD_GROUP, tooltip: dashboardDataTooltip, options: [PRICE_LAST, PRICE_AVG, VOLUME_LAST, VOLUME_AVG] }));
+  var dashboardPositionInput = pinescript.inputString(TOP_RIGHT, "Position", ({ group: DASHBOARD_GROUP, tooltip: dashboardPositionTooltip, options: [TOP_RIGHT, BOTTOM_RIGHT, BOTTOM_LEFT] }));
+  var dashboardSizeInput = pinescript.inputString(SMALL, "Size", ({ group: DASHBOARD_GROUP, tooltip: dashboardSizeTooltip, options: [TINY, SMALL, NORMAL, LARGE, HUGE] }));
+  var bullishColorInput = pinescript.inputColor(GREEN, "Bullish", ({ group: STYLE_GROUP, tooltip: bullishColorTooltip }));
+  var bearishColorInput = pinescript.inputColor(RED, "Bearish", ({ group: STYLE_GROUP, tooltip: bearishColorTooltip }));
+  var backgroundInput = pinescript.inputBool(true, "Background Gradient", ({ group: STYLE_GROUP, tooltip: backgroundTooltip }));
   if (state.crypto === undefined) state.crypto = pinescript.arrayNew();
   if (state.forex === undefined) state.forex = pinescript.arrayNew();
   if (barstate.isfirst) {
     if (enableBITSTAMPInput) {
-      crypto.push("BITSTAMP");
+      state.crypto.push("BITSTAMP");
     }
     if (enableCOINBASEInput) {
-      crypto.push("COINBASE");
+      state.crypto.push("COINBASE");
     }
     if (enableCRYPTOInput) {
-      crypto.push("CRYPTO");
+      state.crypto.push("CRYPTO");
     }
     if (enableBINANCEInput) {
-      crypto.push("BINANCE");
+      state.crypto.push("BINANCE");
     }
     if (enableKRAKENInput) {
-      crypto.push("KRAKEN");
+      state.crypto.push("KRAKEN");
     }
     if (enableOKXInput) {
-      crypto.push("OKX");
+      state.crypto.push("OKX");
     }
     if (enableGEMINIInput) {
-      crypto.push("GEMINI");
+      state.crypto.push("GEMINI");
     }
     if (enableCRYPTOCOMInput) {
-      crypto.push("CRYPTOCOM");
+      state.crypto.push("CRYPTOCOM");
     }
     if (enableWEBULLPAYInput) {
-      crypto.push("WEBULLPAY");
+      state.crypto.push("WEBULLPAY");
     }
     if (enableBINANCEUSInput) {
-      crypto.push("BINANCEUS");
+      state.crypto.push("BINANCEUS");
     }
     if (enableBTSEInput) {
-      crypto.push("BTSE");
+      state.crypto.push("BTSE");
     }
     if (enableWHITEBITInput) {
-      crypto.push("WHITEBIT");
+      state.crypto.push("WHITEBIT");
     }
     if (enableBYBITInput) {
-      crypto.push("BYBIT");
+      state.crypto.push("BYBIT");
     }
     if (enableKUCOINInput) {
-      crypto.push("KUCOIN");
+      state.crypto.push("KUCOIN");
     }
     if (enableMEXCInput) {
-      crypto.push("MEXC");
+      state.crypto.push("MEXC");
     }
     if (enableBITGETInput) {
-      crypto.push("BITGET");
+      state.crypto.push("BITGET");
     }
     if (enableCOINEXInput) {
-      crypto.push("COINEX");
+      state.crypto.push("COINEX");
     }
     if (enableHTXInput) {
-      crypto.push("HTX");
+      state.crypto.push("HTX");
     }
     if (enableGATEInput) {
-      crypto.push("GATE");
+      state.crypto.push("GATE");
     }
     if (enableTICKMILLInput) {
-      forex.push("TICKMILL");
+      state.forex.push("TICKMILL");
     }
     if (enableFXInput) {
-      forex.push("FX");
+      state.forex.push("FX");
     }
     if (enableOANDAInput) {
-      forex.push("OANDA");
+      state.forex.push("OANDA");
     }
     if (enableFOREXCOMInput) {
-      forex.push("FOREXCOM");
+      state.forex.push("FOREXCOM");
     }
     if (enablePEPPERSTONEInput) {
-      forex.push("PEPPERSTONE");
+      state.forex.push("PEPPERSTONE");
     }
     if (enableCMCMARKETSInput) {
-      forex.push("CMCMARKETS");
+      state.forex.push("CMCMARKETS");
     }
     if (enableICMARKETSInput) {
-      forex.push("ICMARKETS");
+      state.forex.push("ICMARKETS");
     }
     if (enableIBKRInput) {
-      forex.push("IBKR");
+      state.forex.push("IBKR");
     }
     if (enableIGInput) {
-      forex.push("IG");
+      state.forex.push("IG");
     }
     if (enableEIGHTCAPInput) {
-      forex.push("EIGHTCAP");
+      state.forex.push("EIGHTCAP");
     }
     if (enableSAXOInput) {
-      forex.push("SAXO");
+      state.forex.push("SAXO");
     }
     if (enableCAPITALCOMInput) {
-      forex.push("CAPITALCOM");
+      state.forex.push("CAPITALCOM");
     }
     if (enableVANTAGEInput) {
-      forex.push("VANTAGE");
+      state.forex.push("VANTAGE");
     }
   }
   if (state.exchanges === undefined) state.exchanges = ((sourceInput === AUTO) ? ((syminfo.type === "crypto") ? state.crypto : state.forex) : ((sourceInput === CRYPTO_EXCHANGES) ? state.crypto : state.forex));
   if (state.currentData === undefined) state.currentData = data.new(pinescript.arrayNew(), pinescript.arrayNew(), pinescript.arrayNew(), pinescript.arrayNew());
-  if (state.assets === undefined) state.assets = array.from(asset.new(pinescript.arrayNew(), pinescript.arrayNew()), asset.new(pinescript.arrayNew(), pinescript.arrayNew()), asset.new(pinescript.arrayNew(), pinescript.arrayNew()), asset.new(pinescript.arrayNew(), pinescript.arrayNew()), asset.new(pinescript.arrayNew(), pinescript.arrayNew()), asset.new(pinescript.arrayNew(), pinescript.arrayNew()), asset.new(pinescript.arrayNew(), pinescript.arrayNew()), asset.new(pinescript.arrayNew(), pinescript.arrayNew()), asset.new(pinescript.arrayNew(), pinescript.arrayNew()), asset.new(pinescript.arrayNew(), pinescript.arrayNew()), asset.new(pinescript.arrayNew(), pinescript.arrayNew()), asset.new(pinescript.arrayNew(), pinescript.arrayNew()), asset.new(pinescript.arrayNew(), pinescript.arrayNew()), asset.new(pinescript.arrayNew(), pinescript.arrayNew()), asset.new(pinescript.arrayNew(), pinescript.arrayNew()), asset.new(pinescript.arrayNew(), pinescript.arrayNew()), asset.new(pinescript.arrayNew(), pinescript.arrayNew()), asset.new(pinescript.arrayNew(), pinescript.arrayNew()), asset.new(pinescript.arrayNew(), pinescript.arrayNew()));
+  if (state.assets === undefined) state.assets = pinescript.array.from(asset.new(pinescript.arrayNew(), pinescript.arrayNew()), asset.new(pinescript.arrayNew(), pinescript.arrayNew()), asset.new(pinescript.arrayNew(), pinescript.arrayNew()), asset.new(pinescript.arrayNew(), pinescript.arrayNew()), asset.new(pinescript.arrayNew(), pinescript.arrayNew()), asset.new(pinescript.arrayNew(), pinescript.arrayNew()), asset.new(pinescript.arrayNew(), pinescript.arrayNew()), asset.new(pinescript.arrayNew(), pinescript.arrayNew()), asset.new(pinescript.arrayNew(), pinescript.arrayNew()), asset.new(pinescript.arrayNew(), pinescript.arrayNew()), asset.new(pinescript.arrayNew(), pinescript.arrayNew()), asset.new(pinescript.arrayNew(), pinescript.arrayNew()), asset.new(pinescript.arrayNew(), pinescript.arrayNew()), asset.new(pinescript.arrayNew(), pinescript.arrayNew()), asset.new(pinescript.arrayNew(), pinescript.arrayNew()), asset.new(pinescript.arrayNew(), pinescript.arrayNew()), asset.new(pinescript.arrayNew(), pinescript.arrayNew()), asset.new(pinescript.arrayNew(), pinescript.arrayNew()), asset.new(pinescript.arrayNew(), pinescript.arrayNew()));
   pinescript.position.bottom_left;
   pinescript.position.bottom_right;
   pinescript.position.top_right;
@@ -1883,40 +2042,40 @@ function main() {
   pinescript.size.tiny;
   if (state.parsedDashboardSize === undefined) state.parsedDashboardSize = ((dashboardSizeInput === TINY) ? undefined : ((dashboardSizeInput === SMALL) ? undefined : ((dashboardSizeInput === NORMAL) ? undefined : ((dashboardSizeInput === LARGE) ? undefined : ((dashboardSizeInput === HUGE) ? undefined : null)))));
   function clearData() {
-    currentData.lastPrices.clear();
-    currentData.lastVolumes.clear();
-    currentData.avgPrices.clear();
-    return currentData.avgVolumes.clear();
+    state.currentData.lastPrices.clear();
+    state.currentData.lastVolumes.clear();
+    state.currentData.avgPrices.clear();
+    return state.currentData.avgVolumes.clear();
   }
   function gatherData() {
-    let ticker = syminfo.ticker;
-    for (const [index, eachExchange] of state.exchanges) {
-      let tickerid = ((eachExchange + ":") + ticker);
-      let [assetPrice, assetVolume] = pinescript.unpack(pinescript.requestSecurity(tickerid, "", [close, volume], ({ ignore_invalid_symbol: true, calc_bars_count: averageLengthInput })), 2);
+    var ticker = syminfo.ticker;
+    for (const [index, eachExchange] of (state.exchanges ?? []).entries()) {
+      var tickerid = ((eachExchange + ":") + ticker);
+      var [assetPrice, assetVolume] = pinescript.unpack(pinescript.requestSecurity(tickerid, "", [close, volume], ({ ignore_invalid_symbol: true, calc_bars_count: averageLengthInput })), 2);
       if (!pinescript.na(assetPrice)) {
-        assets.get(index).prices.push(pinescript.nz(assetPrice));
-        if ((assets.get(index).prices.size() > averageLengthInput)) {
-          assets.get(index).prices.shift();
+        state.assets.get(index).prices.push(pinescript.nz(assetPrice));
+        if ((state.assets.get(index).prices.size() > averageLengthInput)) {
+          state.assets.get(index).prices.shift();
         }
       }
       if (!pinescript.na(assetVolume)) {
-        assets.get(index).volumes.push(pinescript.nz(assetVolume));
-        if ((assets.get(index).prices.size() > averageLengthInput)) {
-          assets.get(index).volumes.shift();
+        state.assets.get(index).volumes.push(pinescript.nz(assetVolume));
+        if ((state.assets.get(index).prices.size() > averageLengthInput)) {
+          state.assets.get(index).volumes.shift();
         }
       }
     }
   }
   function updateData() {
     clearData();
-    for (const eachAsset of state.assets) {
+    for (const eachAsset of (state.assets ?? [])) {
       if ((eachAsset.prices.size() !== 0)) {
-        currentData.lastPrices.push(eachAsset.prices.last());
-        currentData.avgPrices.push(eachAsset.prices.avg());
+        state.currentData.lastPrices.push(eachAsset.prices.last());
+        state.currentData.avgPrices.push(eachAsset.prices.avg());
       }
       if ((eachAsset.volumes.size() !== 0)) {
-        currentData.lastVolumes.push(eachAsset.volumes.last());
-        currentData.avgVolumes.push(eachAsset.volumes.avg());
+        state.currentData.lastVolumes.push(eachAsset.volumes.last());
+        state.currentData.avgVolumes.push(eachAsset.volumes.avg());
       }
     }
   }
@@ -1924,28 +2083,28 @@ function main() {
     return t_able.cell(column, row, data, ({ text_color: pinescript.color, text_size: state.parsedDashboardSize, text_halign: align, bgcolor: background, tooltip: tooltip }));
   }
   function checkData(index) {
-    return (((dashboardDataInput === PRICE_LAST) || (dashboardDataInput === PRICE_AVG)) ? ((assets.get(index).prices.size() !== 0) && (assets.get(index).prices.avg() !== 0)) : ((assets.get(index).volumes.size() !== 0) && (assets.get(index).volumes.avg() !== 0)));
+    return (((dashboardDataInput === PRICE_LAST) || (dashboardDataInput === PRICE_AVG)) ? ((state.assets.get(index).prices.size() !== 0) && (state.assets.get(index).prices.avg() !== 0)) : ((state.assets.get(index).volumes.size() !== 0) && (state.assets.get(index).volumes.avg() !== 0)));
   }
   function dashboardData(column, row) {
     switch (dashboardDataInput) {
       case PRICE_LAST:
       {
-        (assets.get(row).prices.last() - assets.get(column).prices.last());
+        (state.assets.get(row).prices.last() - state.assets.get(column).prices.last());
         break;
       }
       case VOLUME_LAST:
       {
-        (assets.get(row).volumes.last() - assets.get(column).volumes.last());
+        (state.assets.get(row).volumes.last() - state.assets.get(column).volumes.last());
         break;
       }
       case PRICE_AVG:
       {
-        (assets.get(row).prices.avg() - assets.get(column).prices.avg());
+        (state.assets.get(row).prices.avg() - state.assets.get(column).prices.avg());
         break;
       }
       case VOLUME_AVG:
       {
-        (assets.get(row).volumes.avg() - assets.get(column).volumes.avg());
+        (state.assets.get(row).volumes.avg() - state.assets.get(column).volumes.avg());
         break;
       }
     }
@@ -1957,22 +2116,22 @@ function main() {
     switch (dashboardDataInput) {
       case PRICE_LAST:
       {
-        currentData.lastPrices.range();
+        state.currentData.lastPrices.range();
         break;
       }
       case VOLUME_LAST:
       {
-        currentData.lastVolumes.range();
+        state.currentData.lastVolumes.range();
         break;
       }
       case PRICE_AVG:
       {
-        currentData.avgPrices.range();
+        state.currentData.avgPrices.range();
         break;
       }
       case VOLUME_AVG:
       {
-        currentData.avgVolumes.range();
+        state.currentData.avgVolumes.range();
         break;
       }
     }
@@ -1980,22 +2139,22 @@ function main() {
   function drawDashboard() {
     if (state.t_able === undefined) state.t_able = pinescript.table.new(state.parsedDashboardPosition, 21, 21, ({ bgcolor: pinescript.color.hex("#1e222d"), border_color: pinescript.color.hex("#373a46"), border_width: 1, frame_color: pinescript.color.hex("#373a46"), frame_width: 1, force_overlay: true }));
     cell(state.t_able, 0, 0, syminfo.ticker, pinescript.color.new(pinescript.color.white, 20), ({ align: pinescript.text.align_center }));
-    t_able.cell_set_text_formatting(0, 0, pinescript.text.format_bold);
-    for (const [row, rowExchange] of state.exchanges) {
+    state.t_able.cell_set_text_formatting(0, 0, pinescript.text.format_bold);
+    for (const [row, rowExchange] of (state.exchanges ?? []).entries()) {
       if (checkData(row)) {
         cell(state.t_able, 0, (row + 1), rowExchange, ({ align: pinescript.text.align_left }));
-        for (const [column, columnExchange] of state.exchanges) {
+        for (const [column, columnExchange] of (state.exchanges ?? []).entries()) {
           if (checkData(column)) {
-            let delta = dashboardData(column, row);
-            let maxDelta = extremeDataValue();
-            let backgroundColor = (backgroundInput ? pinescript.color.from_gradient(pinescript.abs(delta), 0, maxDelta, pinescript.color.new(((delta > 0) ? bullishColorInput : bearishColorInput), 100), pinescript.color.new(((delta > 0) ? bullishColorInput : bearishColorInput), 70)) : null);
-            let textColor = pinescript.color.from_gradient(pinescript.abs(delta), 0, maxDelta, pinescript.color.new(((delta > 0) ? bullishColorInput : bearishColorInput), 50), pinescript.color.new(((delta > 0) ? bullishColorInput : bearishColorInput), 0));
+            var delta = dashboardData(column, row);
+            var maxDelta = extremeDataValue();
+            var backgroundColor = (backgroundInput ? pinescript.color.from_gradient(pinescript.abs(delta), 0, maxDelta, pinescript.color.new(((delta > 0) ? bullishColorInput : bearishColorInput), 100), pinescript.color.new(((delta > 0) ? bullishColorInput : bearishColorInput), 70)) : null);
+            var textColor = pinescript.color.from_gradient(pinescript.abs(delta), 0, maxDelta, pinescript.color.new(((delta > 0) ? bullishColorInput : bearishColorInput), 50), pinescript.color.new(((delta > 0) ? bullishColorInput : bearishColorInput), 0));
             cell(state.t_able, (column + 1), 0, columnExchange, ({ align: pinescript.text.align_center }));
             cell(state.t_able, (column + 1), (row + 1), ((delta !== 0) ? pinescript.strToString(delta, dashboardFormat()) : ""), ({ align: pinescript.text.align_center, color: textColor, background: backgroundColor, tooltip: ((rowExchange + " vs ") + columnExchange) }));
             if ((pinescript.abs(delta) === maxDelta)) {
-              t_able.cell_set_bgcolor((column + 1), (row + 1), ((delta > 0) ? bullishColorInput : bearishColorInput));
-              t_able.cell_set_text_formatting((column + 1), (row + 1), pinescript.text.format_bold);
-              t_able.cell_set_text_color((column + 1), (row + 1), pinescript.color.white);
+              state.t_able.cell_set_bgcolor((column + 1), (row + 1), ((delta > 0) ? bullishColorInput : bearishColorInput));
+              state.t_able.cell_set_text_formatting((column + 1), (row + 1), pinescript.text.format_bold);
+              state.t_able.cell_set_text_color((column + 1), (row + 1), pinescript.color.white);
             }
           }
         }
@@ -2055,6 +2214,10 @@ function run(data, options = {}) {
     rt.__shapeIdx = 0;
     globalThis.bar_index = i;
     globalThis.last_bar_index = n - 1;
+    globalThis.time_tradingday = inTime[i];
+    globalThis.time_close = inTime[i];
+    globalThis.last_bar_time = inTime[n - 1];
+    globalThis.timenow = inTime[n - 1];
     globalThis.barstate = {
       isfirst: i === 0, islast: i === n - 1, isrealtime: false, ishistory: true,
       isconfirmed: true, isnew: true, islastconfirmedhistory: i === n - 1,

@@ -42,6 +42,80 @@ const pinescript = {
     if (value != null && typeof value[Symbol.iterator] === 'function') return Array.from(value);
     return new Array(count || 0).fill(null);
   },
+  __decArr: function(arr) {
+    if (!Array.isArray(arr) || arr.__pineDecorated) return arr;
+    const self = this;
+    const def = (name, fn) => Object.defineProperty(arr, name, { value: fn, writable: true, configurable: true });
+    Object.defineProperty(arr, '__pineDecorated', { value: true, configurable: true });
+    def('get', (i) => (arr[i] === undefined ? null : arr[i]));
+    def('set', (i, v) => { arr[i] = v; return v; });
+    def('size', () => arr.length);
+    def('clear', () => { arr.length = 0; });
+    def('insert', (i, v) => { arr.splice(i, 0, v); });
+    def('remove', (i) => arr.splice(i, 1)[0]);
+    def('contains', (v) => arr.includes(v));
+    def('indexof', (v) => arr.indexOf(v));
+    def('lastindexof', (v) => arr.lastIndexOf(v));
+    def('first', () => (arr.length ? arr[0] : null));
+    def('last', () => (arr.length ? arr[arr.length - 1] : null));
+    def('sum', () => arr.reduce((a, b) => a + b, 0));
+    def('avg', () => (arr.length ? arr.reduce((a, b) => a + b, 0) / arr.length : 0));
+    def('min', () => (arr.length ? Math.min(...arr) : null));
+    def('max', () => (arr.length ? Math.max(...arr) : null));
+    def('range', () => (arr.length ? Math.max(...arr) - Math.min(...arr) : null));
+    // Statistical methods that route to the array.* built-ins (these names are not
+    // native to JS arrays, so attaching them here is safe from recursion).
+    def('median', () => self.arrayMedian(arr));
+    def('mode', () => self.arrayMode(arr));
+    def('stdev', () => self.arrayStdev(arr));
+    def('variance', () => self.arrayVariance(arr));
+    def('covariance', (other) => self.arrayCovariance(arr, other));
+    def('percentile_linear_interpolation', (p) => self.arrayPercentileLinearInterpolation(arr, p));
+    def('percentile_nearest_rank', (p) => self.arrayPercentileNearestRank(arr, p));
+    def('abs', () => self.__decArr(self.arrayAbs(arr)));
+    def('binary_search', (v) => self.arrayBinarySearch(arr, v));
+    // Pine's array.sort takes an order string, not a comparator. Use the native
+    // sort via .call so we don't recurse through this overridden method.
+    def('sort', (order) => { Array.prototype.sort.call(arr, (a, b) => (order === 'descending' ? b - a : a - b)); return arr; });
+    def('sort_indices', (order) => self.__decArr(arr.map((_, i) => i).sort((a, b) => (order === 'descending' ? arr[b] - arr[a] : arr[a] - arr[b]))));
+    // join/slice/reverse/concat/includes/fill already exist natively on Array with
+    // compatible semantics, so we deliberately leave them to the native methods.
+    return arr;
+  },
+  __decMap: function(m) {
+    if (!(m instanceof Map) || m.__pineDecorated) return m;
+    const def = (name, fn) => Object.defineProperty(m, name, { value: fn, writable: true, configurable: true });
+    Object.defineProperty(m, '__pineDecorated', { value: true, configurable: true });
+    def('put', (k, v) => { m.set(k, v); return v; });
+    def('contains', (k) => m.has(k));
+    def('remove', (k) => m.delete(k));
+    def('keys', () => Array.from(Map.prototype.keys.call(m)));
+    def('values', () => Array.from(Map.prototype.values.call(m)));
+    def('size_', () => m.size);
+    return m;
+  },
+  __decMatrix: function(m) {
+    if (!m || typeof m !== 'object' || m.__pineDecorated) return m;
+    const self = this;
+    const def = (name, fn) => Object.defineProperty(m, name, { value: fn, writable: true, configurable: true });
+    Object.defineProperty(m, '__pineDecorated', { value: true, configurable: true });
+    def('get', (r, c) => self.matrixGet(m, r, c));
+    def('set', (r, c, v) => self.matrixSet(m, r, c, v));
+    def('rows_', () => m.rows);
+    def('columns', () => m.cols);
+    def('fill', (v) => self.matrixFill(m, v));
+    return m;
+  },
+  __decDraw: function(obj) {
+    if (!obj || typeof obj !== 'object') return obj;
+    const p = new Proxy(obj, {
+      get(t, k) {
+        if (k in t || typeof k === 'symbol') return t[k];
+        return function() { return p; };
+      },
+    });
+    return p;
+  },
   alertcondition: function(condition, ...rest) {
     if (globalThis.__pineRuntime) {
       globalThis.__pineRuntime.alerts.push({ condition, args: rest });
@@ -49,6 +123,32 @@ const pinescript = {
     return null;
   },
   barcolor: function(color) { return null; },
+  plotchar: function(series, ...rest) {
+    const rt = globalThis.__pineRuntime;
+    if (!rt) return series;
+    const bar = rt.__barIndex | 0;
+    const ord = (rt.__shapeIdx = (rt.__shapeIdx | 0) + 1) - 1;
+    let key = 'char_' + ord;
+    for (const r of rest) {
+      if (typeof r === 'string') { key = r; break; }
+      if (r && typeof r === 'object' && r.title) { key = String(r.title); break; }
+    }
+    let s = rt.plotshapes[key];
+    if (!s) s = rt.plotshapes[key] = { title: key, data: [] };
+    s.data[bar] = this.__scalar(series);
+    return series;
+  },
+  plotarrow: function(series, ...rest) {
+    const rt = globalThis.__pineRuntime;
+    if (!rt) return series;
+    const bar = rt.__barIndex | 0;
+    const ord = (rt.__plotIdx = (rt.__plotIdx | 0) + 1) - 1;
+    const key = 'arrow_' + ord;
+    let p = rt.plots[key];
+    if (!p) p = rt.plots[key] = { title: key, data: [] };
+    p.data[bar] = this.__scalar(series);
+    return series;
+  },
   bgcolor: function(color, title, editable, showLast) {
     return null;
   },
@@ -470,6 +570,12 @@ const pinescript = {
   atan: function(value) {
     return Math.atan(value);
   },
+  todegrees: function(radians) {
+    return radians * (180 / Math.PI);
+  },
+  toradians: function(degrees) {
+    return degrees * (Math.PI / 180);
+  },
   floor: function(value) {
     return Math.floor(value);
   },
@@ -641,7 +747,7 @@ const pinescript = {
     return series;
   },
   lineNew: function(x1, y1, x2, y2, opts = {}) {
-    return { x1, y1, x2, y2, opts, _type: 'line' };
+    return this.__decDraw({ x1, y1, x2, y2, opts, _type: 'line' });
   },
   lineDelete: function(l) {
     return null;
@@ -661,7 +767,7 @@ const pinescript = {
     return point === 0 || point === 'y1' ? line.y1 : line.y2;
   },
   labelNew: function(x, y, text = '', opts = {}) {
-    return { x, y, text, opts, _type: 'label' };
+    return this.__decDraw({ x, y, text, opts, _type: 'label' });
   },
   labelDelete: function(l) {
     return null;
@@ -676,7 +782,7 @@ const pinescript = {
     return label.text || '';
   },
   boxNew: function(left, top, right, bottom, opts = {}) {
-    return { left, top, right, bottom, opts, _type: 'box' };
+    return this.__decDraw({ left, top, right, bottom, opts, _type: 'box' });
   },
   boxDelete: function(box) {
     return null;
@@ -694,7 +800,7 @@ const pinescript = {
     return box;
   },
   polylineNew: function(points, opts = {}) {
-    return { points: points || [], opts, _type: 'polyline' };
+    return this.__decDraw({ points: points || [], opts, _type: 'polyline' });
   },
   polylineDelete: function(poly) {
     return null;
@@ -765,7 +871,7 @@ const pinescript = {
     return { time: _time ?? null, price: _price ?? null };
   },
   mapNew: function() {
-    return new Map();
+    return this.__decMap(new Map());
   },
   mapSize: function(m) {
     return m instanceof Map ? m.size : 0;
@@ -800,7 +906,7 @@ const pinescript = {
     const r = Math.max(0, rows ?? 0);
     const c = Math.max(0, cols ?? 0);
     const data = Array.from({ length: r }, () => Array.from({ length: c }, () => initialValue));
-    return { rows: r, cols: c, data };
+    return this.__decMatrix({ rows: r, cols: c, data });
   },
   matrixRows: function(m) {
     return m?.rows ?? 0;
@@ -923,11 +1029,62 @@ const pinescript = {
     }
     return null;
   },
+  __jacobiEigen: function(m) {
+    if (!m || !Array.isArray(m.data)) return null;
+    const n = m.rows ?? 0;
+    if (n === 0 || n !== (m.cols ?? 0)) return null;
+    // Work on a copy so the input matrix is untouched.
+    const a = m.data.map(row => row.slice());
+    const v = Array.from({ length: n }, (_, i) => Array.from({ length: n }, (_, j) => (i === j ? 1 : 0)));
+    for (let sweep = 0; sweep < 100; sweep++) {
+      let off = 0;
+      for (let p = 0; p < n; p++) for (let q = p + 1; q < n; q++) off += a[p][q] * a[p][q];
+      if (off < 1e-20) break;
+      for (let p = 0; p < n; p++) {
+        for (let q = p + 1; q < n; q++) {
+          if (Math.abs(a[p][q]) < 1e-18) continue;
+          const theta = (a[q][q] - a[p][p]) / (2 * a[p][q]);
+          const t = Math.sign(theta || 1) / (Math.abs(theta) + Math.sqrt(theta * theta + 1));
+          const cos = 1 / Math.sqrt(t * t + 1);
+          const sin = t * cos;
+          for (let k = 0; k < n; k++) {
+            const akp = a[k][p], akq = a[k][q];
+            a[k][p] = cos * akp - sin * akq;
+            a[k][q] = sin * akp + cos * akq;
+          }
+          for (let k = 0; k < n; k++) {
+            const apk = a[p][k], aqk = a[q][k];
+            a[p][k] = cos * apk - sin * aqk;
+            a[q][k] = sin * apk + cos * aqk;
+          }
+          for (let k = 0; k < n; k++) {
+            const vkp = v[k][p], vkq = v[k][q];
+            v[k][p] = cos * vkp - sin * vkq;
+            v[k][q] = sin * vkp + cos * vkq;
+          }
+        }
+      }
+    }
+    // Sort eigenpairs by eigenvalue, descending.
+    const order = Array.from({ length: n }, (_, i) => i).sort((i, j) => a[j][j] - a[i][i]);
+    const values = order.map(i => a[i][i]);
+    const vectors = Array.from({ length: n }, (_, r) => order.map(c => v[r][c]));
+    return { values, vectors };
+  },
+  matrixEigenvalues: function(m) {
+    const e = this.__jacobiEigen(m);
+    return this.__decArr(e ? e.values : []);
+  },
+  matrixEigenvectors: function(m) {
+    const e = this.__jacobiEigen(m);
+    if (!e) return this.__decMatrix({ rows: 0, cols: 0, data: [] });
+    return this.__decMatrix({ rows: e.vectors.length, cols: e.vectors.length, data: e.vectors });
+  },
   requestSecurity: function(symbol, timeframe, expression) {
     return expression;
   },
   arrayNew: function(initialSize = 0, initialValue = 0) {
-    return Array(initialSize).fill(initialValue);
+    return this.__decArr(Array(initialSize).fill(initialValue));
   },
   arraySize: function(arr) {
     return arr ? arr.length : 0;
@@ -978,10 +1135,10 @@ const pinescript = {
     return arr;
   },
   arraySlice: function(arr, startIndex = 0, endIndex = null) {
-    if (!arr) return [];
+    if (!arr) return this.__decArr([]);
     const start = Number(startIndex) || 0;
     const end = endIndex === null || endIndex === undefined ? arr.length : Number(endIndex) || 0;
-    return arr.slice(start, end);
+    return this.__decArr(arr.slice(start, end));
   },
   arraySort: function(arr, order = 'ascending') {
     if (arr) arr.sort((a, b) => order === 'ascending' ? a - b : b - a);
@@ -1191,7 +1348,7 @@ const pinescript = {
     const info = { ticker: 'AAPL', tickerid: 'NASDAQ:AAPL', prefix: 'NASDAQ', root: 'AAPL', suffix: '' };
     return info[type] || '';
   },
-  timenow: 1781574529258,
+  timenow: 1782784153977,
   barstate: "LAST",
   dividends: {},
   splits: {},
@@ -1245,11 +1402,11 @@ const pinescript = {
   arrayConcat: function(arr1, arr2) {
     if (!arr1) return arr2 || [];
     if (!arr2) return arr1;
-    return arr1.concat(arr2);
+    return this.__decArr(arr1.concat(arr2));
   },
   arrayCopy: function(arr) {
-    if (!arr) return [];
-    return [...arr];
+    if (!arr) return this.__decArr([]);
+    return this.__decArr([...arr]);
   },
   arrayBinarySearch: function(arr, value) {
     if (!arr || arr.length === 0) return -1;
@@ -1339,7 +1496,7 @@ globalThis.input.timeframe = globalThis.input.timeframe || ((defval) => defval);
 
 globalThis.array = globalThis.array || {
 
-  from: (...items) => items,
+  from: (...items) => pinescript.__decArr(items),
 
   size: (arr) => pinescript.arraySize(arr),
 
@@ -1508,6 +1665,8 @@ globalThis.line = globalThis.line || __pineNS({ style_solid: "solid", style_dash
 
 globalThis.box = globalThis.box || __pineNS({});
 
+globalThis.color = globalThis.color || __pineNS(Object.assign(function(c) { return c; }, { new: function(c, t) { return c; }, rgb: function(r, g, b, t) { return "#rgb(" + [r, g, b].join(",") + ")"; }, from_gradient: function(v, lo, hi, c1, c2) { return c1; }, r: function() { return 0; }, g: function() { return 0; }, b: function() { return 0; }, t: function() { return 0; }, aqua: "#00BCD4", black: "#363A45", blue: "#2962FF", fuchsia: "#E040FB", gray: "#787B86", green: "#4CAF50", lime: "#00E676", maroon: "#880E4F", navy: "#311B92", olive: "#808000", orange: "#FF9800", purple: "#9C27B0", red: "#FF5252", silver: "#B2B5BE", teal: "#00897B", white: "#FFFFFF", yellow: "#FFEB3B" }));
+
 globalThis.label = globalThis.label || __pineNS({ style_label_down: "label_down", style_label_up: "label_up", style_none: "none" });
 
 globalThis.polyline = globalThis.polyline || __pineNS({});
@@ -1520,7 +1679,9 @@ globalThis.map = globalThis.map || __pineNS({});
 
 globalThis.session = globalThis.session || __pineNS({ regular: "regular", extended: "extended" });
 
-globalThis.dayofweek = globalThis.dayofweek || __pineNS({ sunday: 1, monday: 2, tuesday: 3, wednesday: 4, thursday: 5, friday: 6, saturday: 7 });
+globalThis.ticker = globalThis.ticker || __pineNS({});
+
+globalThis.dayofweek = globalThis.dayofweek || __pineNS(Object.assign(function(t) { return new Date(t != null ? t : (globalThis.time || 0)).getUTCDay() + 1; }, { sunday: 1, monday: 2, tuesday: 3, wednesday: 4, thursday: 5, friday: 6, saturday: 7 }));
 
 globalThis.timeframe = __pineNS(Object.assign(globalThis.timeframe || {}, { period: (globalThis.timeframe && globalThis.timeframe.period) || "D", isintraday: false, isdaily: true, multiplier: 1 }));
 
@@ -1567,8 +1728,6 @@ globalThis.float = globalThis.float || function(x) { return x == null ? null : N
 globalThis.bool = globalThis.bool || function(x) { return Boolean(x); };
 
 globalThis.string = globalThis.string || function(x) { return x == null ? null : String(x); };
-
-globalThis.dayofweek = globalThis.dayofweek || __pineNS({ sunday: 1, monday: 2, tuesday: 3, wednesday: 4, thursday: 5, friday: 6, saturday: 7 });
 
 globalThis.str = globalThis.str || __pineNS({});
 
@@ -1655,7 +1814,7 @@ pinescript.text = { align_center: "center" };
 
 pinescript.table = {
 
-  new: function(position, columns, rows, opts) { return { position, columns, rows, opts: opts || {}, cells: [] }; },
+  new: function(position, columns, rows, opts) { return pinescript.__decDraw({ position, columns, rows, opts: opts || {}, cells: [] }); },
 
   cell: function(table, column, row, text, opts) {
 
@@ -1688,42 +1847,45 @@ function main() {
   null;
   // Strategy: VSA Pro: Trend and Rejection 🚀
   // Options: {"overlay":true,"initial_capital":100000,"default_qty_type":null,"default_qty_value":100,"currency":null,"process_orders_on_close":true}
-  let group_trend = "Trend Ayarları (SuperTrend)";
-  let st_period = pinescript.inputInt(10, "ST Periyodu", ({ group: group_trend }));
-  let st_multiplier = pinescript.inputFloat(3, "ST Çarpanı", ({ step: 0.1, group: group_trend }));
-  let group_volatility = "Hacim & Volatilite (VSA)";
-  let atr_length = pinescript.inputInt(14, "ATR Uzunluğu", ({ group: group_volatility }));
-  let min_vol_mult = pinescript.inputFloat(1, "Min. Hacim Eşiği (Ortalama)", ({ group: group_volatility }));
-  let effort_mult = pinescript.inputFloat(2, "Yüksek Hacim (Görsel Ekleme)", ({ step: 0.1, group: group_volatility }));
-  let result_mult = pinescript.inputFloat(1.5, "Gövde Boyu (Görsel Momentum)", ({ step: 0.1, group: group_volatility }));
-  let group_labels = "Etiket İsimleri";
-  let txt_start_long = pinescript.inputString("AL", "Trend Başlangıcı (Long)", ({ group: group_labels }));
-  let txt_start_short = pinescript.inputString("NAKİT", "Trend Bitişi (Sat)", ({ group: group_labels }));
-  let [superTrendVal, superTrendDir] = pinescript.unpack(pinescript.supertrend(st_multiplier, st_period), 2);
-  let isTrendNewGreen = ((superTrendDir === -1) && (pinescript.hist(0, superTrendDir, 1) === 1));
-  let isTrendNewRed = ((superTrendDir === 1) && (pinescript.hist(1, superTrendDir, 1) === -1));
-  let isGreenZone = (superTrendDir === -1);
-  let isRedZone = (superTrendDir === 1);
-  let atr = pinescript.atr(atr_length);
-  let avgVol = pinescript.sma(volume, 50);
-  let bodySize = pinescript.abs((close - open));
-  let isGreenCandle = (close > open);
-  let isRedCandle = pinescript.close((avgVol * min_vol_mult));
-  let signal_AL = isTrendNewGreen;
-  let signal_SAT = isTrendNewRed;
-  let cond_L1 = (isGreenCandle && (relBodyATR > result_mult));
-  let cond_L2 = ((isRedCandle && (relVol > effort_mult)) && (relBodyATR < 0.8));
-  let signal_EKLE_Gorsel = (((isGreenZone && !isTrendNewGreen) && isVolumeValid) && (cond_L1 || cond_L2));
-  let cond_S1 = (isRedCandle && (relBodyATR > result_mult));
-  let cond_S2 = ((isGreenCandle && (relVol > effort_mult)) && (relBodyATR < 0.8));
-  let signal_ZAYIFLIK_Gorsel = (((isRedZone && !isTrendNewRed) && isVolumeValid) && (cond_S1 || cond_S2));
+  var group_trend = "Trend Ayarları (SuperTrend)";
+  var st_period = pinescript.inputInt(10, "ST Periyodu", ({ group: group_trend }));
+  var st_multiplier = pinescript.inputFloat(3, "ST Çarpanı", ({ step: 0.1, group: group_trend }));
+  var group_volatility = "Hacim & Volatilite (VSA)";
+  var atr_length = pinescript.inputInt(14, "ATR Uzunluğu", ({ group: group_volatility }));
+  var min_vol_mult = pinescript.inputFloat(1, "Min. Hacim Eşiği (Ortalama)", ({ group: group_volatility }));
+  var effort_mult = pinescript.inputFloat(2, "Yüksek Hacim (Görsel Ekleme)", ({ step: 0.1, group: group_volatility }));
+  var result_mult = pinescript.inputFloat(1.5, "Gövde Boyu (Görsel Momentum)", ({ step: 0.1, group: group_volatility }));
+  var group_labels = "Etiket İsimleri";
+  var txt_start_long = pinescript.inputString("AL", "Trend Başlangıcı (Long)", ({ group: group_labels }));
+  var txt_start_short = pinescript.inputString("NAKİT", "Trend Bitişi (Sat)", ({ group: group_labels }));
+  var [superTrendVal, superTrendDir] = pinescript.unpack(pinescript.supertrend(st_multiplier, st_period), 2);
+  var isTrendNewGreen = ((superTrendDir === -1) && (pinescript.hist(0, superTrendDir, 1) === 1));
+  var isTrendNewRed = ((superTrendDir === 1) && (pinescript.hist(1, superTrendDir, 1) === -1));
+  var isGreenZone = (superTrendDir === -1);
+  var isRedZone = (superTrendDir === 1);
+  var atr = pinescript.atr(atr_length);
+  var avgVol = pinescript.sma(pinescript.series(2, volume), 50);
+  var bodySize = pinescript.abs((close - open));
+  var isGreenCandle = (close > open);
+  var isRedCandle = (close < open);
+  var relBodyATR = (bodySize / atr);
+  var relVol = (volume / avgVol);
+  var isVolumeValid = (volume > (avgVol * min_vol_mult));
+  var signal_AL = isTrendNewGreen;
+  var signal_SAT = isTrendNewRed;
+  var cond_L1 = (isGreenCandle && (relBodyATR > result_mult));
+  var cond_L2 = ((isRedCandle && (relVol > effort_mult)) && (relBodyATR < 0.8));
+  var signal_EKLE_Gorsel = (((isGreenZone && !isTrendNewGreen) && isVolumeValid) && (cond_L1 || cond_L2));
+  var cond_S1 = (isRedCandle && (relBodyATR > result_mult));
+  var cond_S2 = ((isGreenCandle && (relVol > effort_mult)) && (relBodyATR < 0.8));
+  var signal_ZAYIFLIK_Gorsel = (((isRedZone && !isTrendNewRed) && isVolumeValid) && (cond_S1 || cond_S2));
   if (signal_AL) {
     pinescript.strategyEntry("Long_Giris", pinescript.strategy.long, ({ comment: "AL %100" }));
   }
   if (signal_SAT) {
-    strategy.close_all(({ comment: "NAKİTE GEÇ 🔴" }));
+    pinescript.strategy.close_all(({ comment: "NAKİTE GEÇ 🔴" }));
   }
-  let lineColor = (isGreenZone ? pinescript.color.new(pinescript.color.green, 0) : pinescript.color.new(pinescript.color.red, 0));
+  var lineColor = (isGreenZone ? pinescript.color.new(pinescript.color.green, 0) : pinescript.color.new(pinescript.color.red, 0));
   pinescript.plot(superTrendVal, "Trend Hattı", ({ color: lineColor, linewidth: 2 }));
   pinescript.bgcolor((isGreenZone ? pinescript.color.new(pinescript.color.green, 90) : pinescript.color.new(pinescript.color.red, 90)), ({ title: "Trend Bölgeleri" }));
   if (signal_AL) {
@@ -1742,8 +1904,8 @@ function main() {
   if (barstate.islast) {
     pinescript.table.cell(state.legend, 0, 0, "STRATEJİ DURUMU", ({ text_color: pinescript.color.yellow }));
     pinescript.tableMergeCells(state.legend, 0, 0, 1, 0);
-    let statusText = (isGreenZone ? "ALIMDA (Yükseliş)" : "NAKİTTE (Düşüş)");
-    let statusColor = (isGreenZone ? pinescript.color.green : pinescript.color.red);
+    var statusText = (isGreenZone ? "ALIMDA (Yükseliş)" : "NAKİTTE (Düşüş)");
+    var statusColor = (isGreenZone ? pinescript.color.green : pinescript.color.red);
     pinescript.table.cell(state.legend, 0, 1, statusText, ({ text_color: statusColor, text_size: pinescript.size.normal }));
     pinescript.tableMergeCells(state.legend, 0, 1, 1, 1);
   }
@@ -1791,6 +1953,10 @@ function run(data, options = {}) {
     rt.__shapeIdx = 0;
     globalThis.bar_index = i;
     globalThis.last_bar_index = n - 1;
+    globalThis.time_tradingday = inTime[i];
+    globalThis.time_close = inTime[i];
+    globalThis.last_bar_time = inTime[n - 1];
+    globalThis.timenow = inTime[n - 1];
     globalThis.barstate = {
       isfirst: i === 0, islast: i === n - 1, isrealtime: false, ishistory: true,
       isconfirmed: true, isnew: true, islastconfirmedhistory: i === n - 1,

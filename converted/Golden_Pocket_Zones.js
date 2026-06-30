@@ -42,6 +42,80 @@ const pinescript = {
     if (value != null && typeof value[Symbol.iterator] === 'function') return Array.from(value);
     return new Array(count || 0).fill(null);
   },
+  __decArr: function(arr) {
+    if (!Array.isArray(arr) || arr.__pineDecorated) return arr;
+    const self = this;
+    const def = (name, fn) => Object.defineProperty(arr, name, { value: fn, writable: true, configurable: true });
+    Object.defineProperty(arr, '__pineDecorated', { value: true, configurable: true });
+    def('get', (i) => (arr[i] === undefined ? null : arr[i]));
+    def('set', (i, v) => { arr[i] = v; return v; });
+    def('size', () => arr.length);
+    def('clear', () => { arr.length = 0; });
+    def('insert', (i, v) => { arr.splice(i, 0, v); });
+    def('remove', (i) => arr.splice(i, 1)[0]);
+    def('contains', (v) => arr.includes(v));
+    def('indexof', (v) => arr.indexOf(v));
+    def('lastindexof', (v) => arr.lastIndexOf(v));
+    def('first', () => (arr.length ? arr[0] : null));
+    def('last', () => (arr.length ? arr[arr.length - 1] : null));
+    def('sum', () => arr.reduce((a, b) => a + b, 0));
+    def('avg', () => (arr.length ? arr.reduce((a, b) => a + b, 0) / arr.length : 0));
+    def('min', () => (arr.length ? Math.min(...arr) : null));
+    def('max', () => (arr.length ? Math.max(...arr) : null));
+    def('range', () => (arr.length ? Math.max(...arr) - Math.min(...arr) : null));
+    // Statistical methods that route to the array.* built-ins (these names are not
+    // native to JS arrays, so attaching them here is safe from recursion).
+    def('median', () => self.arrayMedian(arr));
+    def('mode', () => self.arrayMode(arr));
+    def('stdev', () => self.arrayStdev(arr));
+    def('variance', () => self.arrayVariance(arr));
+    def('covariance', (other) => self.arrayCovariance(arr, other));
+    def('percentile_linear_interpolation', (p) => self.arrayPercentileLinearInterpolation(arr, p));
+    def('percentile_nearest_rank', (p) => self.arrayPercentileNearestRank(arr, p));
+    def('abs', () => self.__decArr(self.arrayAbs(arr)));
+    def('binary_search', (v) => self.arrayBinarySearch(arr, v));
+    // Pine's array.sort takes an order string, not a comparator. Use the native
+    // sort via .call so we don't recurse through this overridden method.
+    def('sort', (order) => { Array.prototype.sort.call(arr, (a, b) => (order === 'descending' ? b - a : a - b)); return arr; });
+    def('sort_indices', (order) => self.__decArr(arr.map((_, i) => i).sort((a, b) => (order === 'descending' ? arr[b] - arr[a] : arr[a] - arr[b]))));
+    // join/slice/reverse/concat/includes/fill already exist natively on Array with
+    // compatible semantics, so we deliberately leave them to the native methods.
+    return arr;
+  },
+  __decMap: function(m) {
+    if (!(m instanceof Map) || m.__pineDecorated) return m;
+    const def = (name, fn) => Object.defineProperty(m, name, { value: fn, writable: true, configurable: true });
+    Object.defineProperty(m, '__pineDecorated', { value: true, configurable: true });
+    def('put', (k, v) => { m.set(k, v); return v; });
+    def('contains', (k) => m.has(k));
+    def('remove', (k) => m.delete(k));
+    def('keys', () => Array.from(Map.prototype.keys.call(m)));
+    def('values', () => Array.from(Map.prototype.values.call(m)));
+    def('size_', () => m.size);
+    return m;
+  },
+  __decMatrix: function(m) {
+    if (!m || typeof m !== 'object' || m.__pineDecorated) return m;
+    const self = this;
+    const def = (name, fn) => Object.defineProperty(m, name, { value: fn, writable: true, configurable: true });
+    Object.defineProperty(m, '__pineDecorated', { value: true, configurable: true });
+    def('get', (r, c) => self.matrixGet(m, r, c));
+    def('set', (r, c, v) => self.matrixSet(m, r, c, v));
+    def('rows_', () => m.rows);
+    def('columns', () => m.cols);
+    def('fill', (v) => self.matrixFill(m, v));
+    return m;
+  },
+  __decDraw: function(obj) {
+    if (!obj || typeof obj !== 'object') return obj;
+    const p = new Proxy(obj, {
+      get(t, k) {
+        if (k in t || typeof k === 'symbol') return t[k];
+        return function() { return p; };
+      },
+    });
+    return p;
+  },
   alertcondition: function(condition, ...rest) {
     if (globalThis.__pineRuntime) {
       globalThis.__pineRuntime.alerts.push({ condition, args: rest });
@@ -49,6 +123,32 @@ const pinescript = {
     return null;
   },
   barcolor: function(color) { return null; },
+  plotchar: function(series, ...rest) {
+    const rt = globalThis.__pineRuntime;
+    if (!rt) return series;
+    const bar = rt.__barIndex | 0;
+    const ord = (rt.__shapeIdx = (rt.__shapeIdx | 0) + 1) - 1;
+    let key = 'char_' + ord;
+    for (const r of rest) {
+      if (typeof r === 'string') { key = r; break; }
+      if (r && typeof r === 'object' && r.title) { key = String(r.title); break; }
+    }
+    let s = rt.plotshapes[key];
+    if (!s) s = rt.plotshapes[key] = { title: key, data: [] };
+    s.data[bar] = this.__scalar(series);
+    return series;
+  },
+  plotarrow: function(series, ...rest) {
+    const rt = globalThis.__pineRuntime;
+    if (!rt) return series;
+    const bar = rt.__barIndex | 0;
+    const ord = (rt.__plotIdx = (rt.__plotIdx | 0) + 1) - 1;
+    const key = 'arrow_' + ord;
+    let p = rt.plots[key];
+    if (!p) p = rt.plots[key] = { title: key, data: [] };
+    p.data[bar] = this.__scalar(series);
+    return series;
+  },
   bgcolor: function(color, title, editable, showLast) {
     return null;
   },
@@ -470,6 +570,12 @@ const pinescript = {
   atan: function(value) {
     return Math.atan(value);
   },
+  todegrees: function(radians) {
+    return radians * (180 / Math.PI);
+  },
+  toradians: function(degrees) {
+    return degrees * (Math.PI / 180);
+  },
   floor: function(value) {
     return Math.floor(value);
   },
@@ -641,7 +747,7 @@ const pinescript = {
     return series;
   },
   lineNew: function(x1, y1, x2, y2, opts = {}) {
-    return { x1, y1, x2, y2, opts, _type: 'line' };
+    return this.__decDraw({ x1, y1, x2, y2, opts, _type: 'line' });
   },
   lineDelete: function(l) {
     return null;
@@ -661,7 +767,7 @@ const pinescript = {
     return point === 0 || point === 'y1' ? line.y1 : line.y2;
   },
   labelNew: function(x, y, text = '', opts = {}) {
-    return { x, y, text, opts, _type: 'label' };
+    return this.__decDraw({ x, y, text, opts, _type: 'label' });
   },
   labelDelete: function(l) {
     return null;
@@ -676,7 +782,7 @@ const pinescript = {
     return label.text || '';
   },
   boxNew: function(left, top, right, bottom, opts = {}) {
-    return { left, top, right, bottom, opts, _type: 'box' };
+    return this.__decDraw({ left, top, right, bottom, opts, _type: 'box' });
   },
   boxDelete: function(box) {
     return null;
@@ -694,7 +800,7 @@ const pinescript = {
     return box;
   },
   polylineNew: function(points, opts = {}) {
-    return { points: points || [], opts, _type: 'polyline' };
+    return this.__decDraw({ points: points || [], opts, _type: 'polyline' });
   },
   polylineDelete: function(poly) {
     return null;
@@ -765,7 +871,7 @@ const pinescript = {
     return { time: _time ?? null, price: _price ?? null };
   },
   mapNew: function() {
-    return new Map();
+    return this.__decMap(new Map());
   },
   mapSize: function(m) {
     return m instanceof Map ? m.size : 0;
@@ -800,7 +906,7 @@ const pinescript = {
     const r = Math.max(0, rows ?? 0);
     const c = Math.max(0, cols ?? 0);
     const data = Array.from({ length: r }, () => Array.from({ length: c }, () => initialValue));
-    return { rows: r, cols: c, data };
+    return this.__decMatrix({ rows: r, cols: c, data });
   },
   matrixRows: function(m) {
     return m?.rows ?? 0;
@@ -923,11 +1029,62 @@ const pinescript = {
     }
     return null;
   },
+  __jacobiEigen: function(m) {
+    if (!m || !Array.isArray(m.data)) return null;
+    const n = m.rows ?? 0;
+    if (n === 0 || n !== (m.cols ?? 0)) return null;
+    // Work on a copy so the input matrix is untouched.
+    const a = m.data.map(row => row.slice());
+    const v = Array.from({ length: n }, (_, i) => Array.from({ length: n }, (_, j) => (i === j ? 1 : 0)));
+    for (let sweep = 0; sweep < 100; sweep++) {
+      let off = 0;
+      for (let p = 0; p < n; p++) for (let q = p + 1; q < n; q++) off += a[p][q] * a[p][q];
+      if (off < 1e-20) break;
+      for (let p = 0; p < n; p++) {
+        for (let q = p + 1; q < n; q++) {
+          if (Math.abs(a[p][q]) < 1e-18) continue;
+          const theta = (a[q][q] - a[p][p]) / (2 * a[p][q]);
+          const t = Math.sign(theta || 1) / (Math.abs(theta) + Math.sqrt(theta * theta + 1));
+          const cos = 1 / Math.sqrt(t * t + 1);
+          const sin = t * cos;
+          for (let k = 0; k < n; k++) {
+            const akp = a[k][p], akq = a[k][q];
+            a[k][p] = cos * akp - sin * akq;
+            a[k][q] = sin * akp + cos * akq;
+          }
+          for (let k = 0; k < n; k++) {
+            const apk = a[p][k], aqk = a[q][k];
+            a[p][k] = cos * apk - sin * aqk;
+            a[q][k] = sin * apk + cos * aqk;
+          }
+          for (let k = 0; k < n; k++) {
+            const vkp = v[k][p], vkq = v[k][q];
+            v[k][p] = cos * vkp - sin * vkq;
+            v[k][q] = sin * vkp + cos * vkq;
+          }
+        }
+      }
+    }
+    // Sort eigenpairs by eigenvalue, descending.
+    const order = Array.from({ length: n }, (_, i) => i).sort((i, j) => a[j][j] - a[i][i]);
+    const values = order.map(i => a[i][i]);
+    const vectors = Array.from({ length: n }, (_, r) => order.map(c => v[r][c]));
+    return { values, vectors };
+  },
+  matrixEigenvalues: function(m) {
+    const e = this.__jacobiEigen(m);
+    return this.__decArr(e ? e.values : []);
+  },
+  matrixEigenvectors: function(m) {
+    const e = this.__jacobiEigen(m);
+    if (!e) return this.__decMatrix({ rows: 0, cols: 0, data: [] });
+    return this.__decMatrix({ rows: e.vectors.length, cols: e.vectors.length, data: e.vectors });
+  },
   requestSecurity: function(symbol, timeframe, expression) {
     return expression;
   },
   arrayNew: function(initialSize = 0, initialValue = 0) {
-    return Array(initialSize).fill(initialValue);
+    return this.__decArr(Array(initialSize).fill(initialValue));
   },
   arraySize: function(arr) {
     return arr ? arr.length : 0;
@@ -978,10 +1135,10 @@ const pinescript = {
     return arr;
   },
   arraySlice: function(arr, startIndex = 0, endIndex = null) {
-    if (!arr) return [];
+    if (!arr) return this.__decArr([]);
     const start = Number(startIndex) || 0;
     const end = endIndex === null || endIndex === undefined ? arr.length : Number(endIndex) || 0;
-    return arr.slice(start, end);
+    return this.__decArr(arr.slice(start, end));
   },
   arraySort: function(arr, order = 'ascending') {
     if (arr) arr.sort((a, b) => order === 'ascending' ? a - b : b - a);
@@ -1191,7 +1348,7 @@ const pinescript = {
     const info = { ticker: 'AAPL', tickerid: 'NASDAQ:AAPL', prefix: 'NASDAQ', root: 'AAPL', suffix: '' };
     return info[type] || '';
   },
-  timenow: 1781574527061,
+  timenow: 1782784151964,
   barstate: "LAST",
   dividends: {},
   splits: {},
@@ -1245,11 +1402,11 @@ const pinescript = {
   arrayConcat: function(arr1, arr2) {
     if (!arr1) return arr2 || [];
     if (!arr2) return arr1;
-    return arr1.concat(arr2);
+    return this.__decArr(arr1.concat(arr2));
   },
   arrayCopy: function(arr) {
-    if (!arr) return [];
-    return [...arr];
+    if (!arr) return this.__decArr([]);
+    return this.__decArr([...arr]);
   },
   arrayBinarySearch: function(arr, value) {
     if (!arr || arr.length === 0) return -1;
@@ -1339,7 +1496,7 @@ globalThis.input.timeframe = globalThis.input.timeframe || ((defval) => defval);
 
 globalThis.array = globalThis.array || {
 
-  from: (...items) => items,
+  from: (...items) => pinescript.__decArr(items),
 
   size: (arr) => pinescript.arraySize(arr),
 
@@ -1508,6 +1665,8 @@ globalThis.line = globalThis.line || __pineNS({ style_solid: "solid", style_dash
 
 globalThis.box = globalThis.box || __pineNS({});
 
+globalThis.color = globalThis.color || __pineNS(Object.assign(function(c) { return c; }, { new: function(c, t) { return c; }, rgb: function(r, g, b, t) { return "#rgb(" + [r, g, b].join(",") + ")"; }, from_gradient: function(v, lo, hi, c1, c2) { return c1; }, r: function() { return 0; }, g: function() { return 0; }, b: function() { return 0; }, t: function() { return 0; }, aqua: "#00BCD4", black: "#363A45", blue: "#2962FF", fuchsia: "#E040FB", gray: "#787B86", green: "#4CAF50", lime: "#00E676", maroon: "#880E4F", navy: "#311B92", olive: "#808000", orange: "#FF9800", purple: "#9C27B0", red: "#FF5252", silver: "#B2B5BE", teal: "#00897B", white: "#FFFFFF", yellow: "#FFEB3B" }));
+
 globalThis.label = globalThis.label || __pineNS({ style_label_down: "label_down", style_label_up: "label_up", style_none: "none" });
 
 globalThis.polyline = globalThis.polyline || __pineNS({});
@@ -1520,7 +1679,9 @@ globalThis.map = globalThis.map || __pineNS({});
 
 globalThis.session = globalThis.session || __pineNS({ regular: "regular", extended: "extended" });
 
-globalThis.dayofweek = globalThis.dayofweek || __pineNS({ sunday: 1, monday: 2, tuesday: 3, wednesday: 4, thursday: 5, friday: 6, saturday: 7 });
+globalThis.ticker = globalThis.ticker || __pineNS({});
+
+globalThis.dayofweek = globalThis.dayofweek || __pineNS(Object.assign(function(t) { return new Date(t != null ? t : (globalThis.time || 0)).getUTCDay() + 1; }, { sunday: 1, monday: 2, tuesday: 3, wednesday: 4, thursday: 5, friday: 6, saturday: 7 }));
 
 globalThis.timeframe = __pineNS(Object.assign(globalThis.timeframe || {}, { period: (globalThis.timeframe && globalThis.timeframe.period) || "D", isintraday: false, isdaily: true, multiplier: 1 }));
 
@@ -1567,8 +1728,6 @@ globalThis.float = globalThis.float || function(x) { return x == null ? null : N
 globalThis.bool = globalThis.bool || function(x) { return Boolean(x); };
 
 globalThis.string = globalThis.string || function(x) { return x == null ? null : String(x); };
-
-globalThis.dayofweek = globalThis.dayofweek || __pineNS({ sunday: 1, monday: 2, tuesday: 3, wednesday: 4, thursday: 5, friday: 6, saturday: 7 });
 
 globalThis.str = globalThis.str || __pineNS({});
 
@@ -1655,7 +1814,7 @@ pinescript.text = { align_center: "center" };
 
 pinescript.table = {
 
-  new: function(position, columns, rows, opts) { return { position, columns, rows, opts: opts || {}, cells: [] }; },
+  new: function(position, columns, rows, opts) { return pinescript.__decDraw({ position, columns, rows, opts: opts || {}, cells: [] }); },
 
   cell: function(table, column, row, text, opts) {
 
@@ -1689,14 +1848,14 @@ function main() {
   null;
   // Study: Golden Pocket Zones
   // Options: {"overlay":true,"max_boxes_count":500}
-  let lookbackDays = pinescript.inputInt(20, "Lookback Days", ({ minval: 1, maxval: 100, tooltip: "Number of daily candles to analyze for golden pocket zones" }));
-  let zoneHeightPct = pinescript.inputFloat(3, "Zone Height (% of ADR10)", ({ minval: 0.1, maxval: 50, step: 0.1, tooltip: "Height of golden pocket zone as percentage of ADR10 - SAME for all zones" }));
-  let minCandleSizePct = pinescript.inputFloat(60, "Min Candle Size (% of ADR10)", ({ minval: 0, maxval: 200, step: 5, tooltip: "Only show zones for candles larger than this % of ADR10. Set to 0 to show all zones." }));
-  let showLabels = pinescript.inputBool(true, "Show Labels", ({ tooltip: "Display age and strength labels inside zones" }));
-  let zoneColor = pinescript.inputColor(pinescript.color.new(pinescript.color.hex("#FFB84D"), 20), "Zone Color", ({ tooltip: "Color of the golden pocket zones" }));
-  let textColor = pinescript.inputColor(pinescript.color.new(pinescript.color.hex("#000000"), 0), "Text Color", ({ tooltip: "Color of the text labels" }));
-  let [dailyHigh, dailyLow, dailyTime] = pinescript.unpack(pinescript.requestSecurity(syminfo.tickerid, "D", [high, low, time], ({ lookahead: barmerge.lookahead_off })), 3);
-  let adr10 = pinescript.requestSecurity(syminfo.tickerid, "D", pinescript.sma((high - low), 10), ({ lookahead: barmerge.lookahead_off }));
+  var lookbackDays = pinescript.inputInt(20, "Lookback Days", ({ minval: 1, maxval: 100, tooltip: "Number of daily candles to analyze for golden pocket zones" }));
+  var zoneHeightPct = pinescript.inputFloat(3, "Zone Height (% of ADR10)", ({ minval: 0.1, maxval: 50, step: 0.1, tooltip: "Height of golden pocket zone as percentage of ADR10 - SAME for all zones" }));
+  var minCandleSizePct = pinescript.inputFloat(60, "Min Candle Size (% of ADR10)", ({ minval: 0, maxval: 200, step: 5, tooltip: "Only show zones for candles larger than this % of ADR10. Set to 0 to show all zones." }));
+  var showLabels = pinescript.inputBool(true, "Show Labels", ({ tooltip: "Display age and strength labels inside zones" }));
+  var zoneColor = pinescript.inputColor(pinescript.color.new(pinescript.color.hex("#FFB84D"), 20), "Zone Color", ({ tooltip: "Color of the golden pocket zones" }));
+  var textColor = pinescript.inputColor(pinescript.color.new(pinescript.color.hex("#000000"), 0), "Text Color", ({ tooltip: "Color of the text labels" }));
+  var [dailyHigh, dailyLow, dailyTime] = pinescript.unpack(pinescript.requestSecurity(syminfo.tickerid, "D", [high, low, time], ({ lookahead: barmerge.lookahead_off })), 3);
+  var adr10 = pinescript.requestSecurity(syminfo.tickerid, "D", pinescript.sma(pinescript.series(0, (high - low)), 10), ({ lookahead: barmerge.lookahead_off }));
   if (state.lastDailyTime === undefined) state.lastDailyTime = 0;
   if (state.lastDailyStartBar === undefined) state.lastDailyStartBar = null;
   if (state.dailyHighs === undefined) state.dailyHighs = pinescript.arrayNew();
@@ -1712,8 +1871,8 @@ function main() {
     return (pinescript.abs(val) / f_getPips());
   }
   function calcGoldenPocket(high, low, fixedZoneHeight) {
-    let candleRange = (high - low);
-    let gpMid = (low + (candleRange * 0.559));
+    var candleRange = (high - low);
+    var gpMid = (low + (candleRange * 0.559));
     return [(gpMid + fixedZoneHeight), (gpMid - fixedZoneHeight), candleRange];
   }
   function zonesOverlap(upper1, lower1, upper2, lower2) {
@@ -1723,8 +1882,8 @@ function main() {
     return [pinescript.max(upper1, upper2), pinescript.min(lower1, lower2)];
   }
   function calcStrength(candleSize, adr) {
-    let strengthPct = ((candleSize / adr) * 100);
-    let strength = 0;
+    var strengthPct = ((candleSize / adr) * 100);
+    var strength = 0;
     if ((strengthPct >= 160)) {
       strength = 10;
     } else {
@@ -1771,42 +1930,42 @@ function main() {
       pinescript.arrayPop(state.dailyADRs);
     }
     pinescript.arrayClear(state.zones);
-    let fixedZoneHeight = (!pinescript.na(state.currentADR10) ? ((state.currentADR10 * (zoneHeightPct / 100)) / 2) : 0);
-    let tempZones = pinescript.arrayNew();
-    let arraySize = pinescript.arraySize(state.dailyHighs);
-    let barsArraySize = pinescript.arraySize(state.dailyBars);
+    var fixedZoneHeight = (!pinescript.na(state.currentADR10) ? ((state.currentADR10 * (zoneHeightPct / 100)) / 2) : 0);
+    var tempZones = pinescript.arrayNew();
+    var arraySize = pinescript.arraySize(state.dailyHighs);
+    var barsArraySize = pinescript.arraySize(state.dailyBars);
     if (((arraySize > 0) && (fixedZoneHeight > 0))) {
       for (let i = 0; i <= (arraySize - 1); i++) {
-        let dayHigh = pinescript.arrayGet(state.dailyHighs, i);
-        let dayLow = pinescript.arrayGet(state.dailyLows, i);
-        let dayBar = ((i < barsArraySize) ? pinescript.arrayGet(state.dailyBars, i) : bar_index);
-        let dayADR = pinescript.arrayGet(state.dailyADRs, i);
+        var dayHigh = pinescript.arrayGet(state.dailyHighs, i);
+        var dayLow = pinescript.arrayGet(state.dailyLows, i);
+        var dayBar = ((i < barsArraySize) ? pinescript.arrayGet(state.dailyBars, i) : bar_index);
+        var dayADR = pinescript.arrayGet(state.dailyADRs, i);
         if ((((!pinescript.na(dayHigh) && !pinescript.na(dayLow)) && !pinescript.na(dayADR)) && (dayADR > 0))) {
-          let candleSize = (dayHigh - dayLow);
-          let candleSizePct = ((candleSize / dayADR) * 100);
+          var candleSize = (dayHigh - dayLow);
+          var candleSizePct = ((candleSize / dayADR) * 100);
           if ((candleSizePct >= minCandleSizePct)) {
-            let [upper, lower, range] = pinescript.unpack(calcGoldenPocket(dayHigh, dayLow, fixedZoneHeight), 3);
-            strength = calcStrength(candleSize, dayADR);
-            let newZone = ZoneData.new(upper, lower, dayBar, i, strength);
+            var [upper, lower, range] = pinescript.unpack(calcGoldenPocket(dayHigh, dayLow, fixedZoneHeight), 3);
+            var strength = calcStrength(candleSize, dayADR);
+            var newZone = ZoneData.new(upper, lower, dayBar, i, strength);
             pinescript.arrayPush(tempZones, newZone);
           }
         }
       }
-      let tempZonesSize = pinescript.arraySize(tempZones);
+      var tempZonesSize = pinescript.arraySize(tempZones);
       if ((tempZonesSize > 0)) {
-        let mergedIndices = pinescript.arrayNew();
+        var mergedIndices = pinescript.arrayNew();
         for (let i = 0; i <= (tempZonesSize - 1); i++) {
           pinescript.arrayPush(mergedIndices, false);
         }
         for (let i = 0; i <= (tempZonesSize - 1); i++) {
           if (!pinescript.arrayGet(mergedIndices, i)) {
-            let zone1 = pinescript.arrayGet(tempZones, i);
+            var zone1 = pinescript.arrayGet(tempZones, i);
             if (((i + 1) < tempZonesSize)) {
               for (let j = (i + 1); j <= (tempZonesSize - 1); j++) {
                 if (!pinescript.arrayGet(mergedIndices, j)) {
-                  let zone2 = pinescript.arrayGet(tempZones, j);
+                  var zone2 = pinescript.arrayGet(tempZones, j);
                   if (zonesOverlap(zone1.upper, zone1.lower, zone2.upper, zone2.lower)) {
-                    let [mergedUpper, mergedLower] = pinescript.unpack(mergeZones(zone1.upper, zone1.lower, zone2.upper, zone2.lower), 2);
+                    var [mergedUpper, mergedLower] = pinescript.unpack(mergeZones(zone1.upper, zone1.lower, zone2.upper, zone2.lower), 2);
                     zone1.upper = mergedUpper;
                     zone1.lower = mergedLower;
                     zone1.age = pinescript.max(zone1.age, zone2.age);
@@ -1825,34 +1984,34 @@ function main() {
   }
   if ((barstate.islast && (pinescript.arraySize(state.zones) > 0))) {
     if ((pinescript.arraySize(box.all) > 0)) {
-      for (const existingBox of box.all) {
+      for (const existingBox of (box.all ?? [])) {
         pinescript.boxDelete(existingBox);
       }
     }
     if ((pinescript.arraySize(label.all) > 0)) {
-      for (const existingLabel of label.all) {
+      for (const existingLabel of (label.all ?? [])) {
         pinescript.labelDelete(existingLabel);
       }
     }
-    let minDist = 999999;
-    let maxDist = 0;
+    var minDist = 999999;
+    var maxDist = 0;
     for (let i = 0; i <= (pinescript.arraySize(state.zones) - 1); i++) {
-      let zone = pinescript.arrayGet(state.zones, i);
+      var zone = pinescript.arrayGet(state.zones, i);
       if (!pinescript.na(zone)) {
-        let distanceInPrice = 0;
+        var distanceInPrice = 0;
         if ((close > zone.upper)) {
           distanceInPrice = (close - zone.upper);
         } else {
           if ((close < zone.lower)) {
             distanceInPrice = (zone.lower - close);
           } else {
-            let distToUpper = (zone.upper - close);
-            let distToLower = (close - zone.lower);
+            var distToUpper = (zone.upper - close);
+            var distToLower = (close - zone.lower);
             distanceInPrice = pinescript.min(distToUpper, distToLower);
           }
         }
-        let pipSize = ((syminfo.type === "forex") ? ((syminfo.currency === "JPY") ? 0.01 : 0.0001) : 0.01);
-        let distancePips = (distanceInPrice / pipSize);
+        var pipSize = ((syminfo.type === "forex") ? ((syminfo.currency === "JPY") ? 0.01 : 0.0001) : 0.01);
+        var distancePips = (distanceInPrice / pipSize);
         minDist = pinescript.min(minDist, distancePips);
         maxDist = pinescript.max(maxDist, distancePips);
       }
@@ -1874,17 +2033,17 @@ function main() {
         }
         pipSize = ((syminfo.type === "forex") ? ((syminfo.currency === "JPY") ? 0.01 : 0.0001) : 0.01);
         distancePips = (distanceInPrice / pipSize);
-        let normalizedDist = ((maxDist > minDist) ? ((distancePips - minDist) / (maxDist - minDist)) : 0.5);
-        let r = 255;
-        let g = pinescript.round((215 - ((215 - 140) * normalizedDist)));
-        let b = pinescript.round(0);
-        let heatmapColor = pinescript.color.new(pinescript.color.rgb(r, g, b), 20);
-        let maxLookback = pinescript.min(2000, bar_index);
-        let safeStartBar = pinescript.max(zone.startBar, (bar_index - maxLookback));
-        let boxId = pinescript.boxNew(({ left: safeStartBar, top: zone.upper, right: (bar_index + 50), bottom: zone.lower, border_color: pinescript.color.new(heatmapColor, 70), border_width: 1, bgcolor: heatmapColor, extend: extend.right }));
+        var normalizedDist = ((maxDist > minDist) ? ((distancePips - minDist) / (maxDist - minDist)) : 0.5);
+        var r = 255;
+        var g = pinescript.round((215 - ((215 - 140) * normalizedDist)));
+        var b = pinescript.round(0);
+        var heatmapColor = pinescript.color.new(pinescript.color.rgb(r, g, b), 20);
+        var maxLookback = pinescript.min(2000, bar_index);
+        var safeStartBar = pinescript.max(zone.startBar, (bar_index - maxLookback));
+        var boxId = pinescript.boxNew(({ left: safeStartBar, top: zone.upper, right: (bar_index + 50), bottom: zone.lower, border_color: pinescript.color.new(heatmapColor, 70), border_width: 1, bgcolor: heatmapColor, extend: extend.right }));
         if (showLabels) {
-          let ageText = ((zone.age === 0) ? "TODAY" : (pinescript.strToString(zone.age) + " DAYS"));
-          let strengthText = (pinescript.strToString(zone.strength, "#") + "/10");
+          var ageText = ((zone.age === 0) ? "TODAY" : (pinescript.strToString(zone.age) + " DAYS"));
+          var strengthText = (pinescript.strToString(zone.strength, "#") + "/10");
           distanceInPrice = 0;
           if ((close > zone.upper)) {
             distanceInPrice = (close - zone.upper);
@@ -1899,9 +2058,9 @@ function main() {
           }
           pipSize = ((syminfo.type === "forex") ? ((syminfo.currency === "JPY") ? 0.01 : 0.0001) : 0.01);
           distancePips = (distanceInPrice / pipSize);
-          let distanceText = (pinescript.strToString(pinescript.round(distancePips)) + " PIPS");
-          let labelText = ((((("GOLDEN POCKET ||| AGE " + ageText) + " ||| STRENGTH ") + strengthText) + " ||| DISTANCE ") + distanceText);
-          let labelY = ((zone.upper + zone.lower) / 2);
+          var distanceText = (pinescript.strToString(pinescript.round(distancePips)) + " PIPS");
+          var labelText = ((((("GOLDEN POCKET ||| AGE " + ageText) + " ||| STRENGTH ") + strengthText) + " ||| DISTANCE ") + distanceText);
+          var labelY = ((zone.upper + zone.lower) / 2);
           pinescript.labelNew(({ x: (bar_index + 25), y: labelY, text: labelText, color: pinescript.color.new(pinescript.color.black, 100), textcolor: textColor, size: pinescript.size.large, style: label.style_label_center, xloc: xloc.bar_index }));
         }
       }
@@ -1951,6 +2110,10 @@ function run(data, options = {}) {
     rt.__shapeIdx = 0;
     globalThis.bar_index = i;
     globalThis.last_bar_index = n - 1;
+    globalThis.time_tradingday = inTime[i];
+    globalThis.time_close = inTime[i];
+    globalThis.last_bar_time = inTime[n - 1];
+    globalThis.timenow = inTime[n - 1];
     globalThis.barstate = {
       isfirst: i === 0, islast: i === n - 1, isrealtime: false, ishistory: true,
       isconfirmed: true, isnew: true, islastconfirmedhistory: i === n - 1,

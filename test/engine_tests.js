@@ -173,6 +173,17 @@ plot(ta.ema(close, 3), "e")`,
   assertSeries(rt.plots['e'].data, expected, 'ema mismatch');
 });
 
+await test('math.todegrees / math.toradians convert correctly', async () => {
+  const rt = await runPine(
+    `//@version=5
+indicator("t")
+plot(math.todegrees(math.toradians(close)), "d")`,
+    rampData,
+  );
+  // toradians then todegrees is a round-trip, so output equals the input series.
+  assertSeries(rt.plots['d'].data, ramp, 'todegrees/toradians round-trip mismatch');
+});
+
 console.log('='.repeat(60));
 console.log(`Results: ${passed} passed, ${failed} failed out of ${passed + failed} tests`);
 if (failed > 0) process.exit(1);

@@ -42,6 +42,80 @@ const pinescript = {
     if (value != null && typeof value[Symbol.iterator] === 'function') return Array.from(value);
     return new Array(count || 0).fill(null);
   },
+  __decArr: function(arr) {
+    if (!Array.isArray(arr) || arr.__pineDecorated) return arr;
+    const self = this;
+    const def = (name, fn) => Object.defineProperty(arr, name, { value: fn, writable: true, configurable: true });
+    Object.defineProperty(arr, '__pineDecorated', { value: true, configurable: true });
+    def('get', (i) => (arr[i] === undefined ? null : arr[i]));
+    def('set', (i, v) => { arr[i] = v; return v; });
+    def('size', () => arr.length);
+    def('clear', () => { arr.length = 0; });
+    def('insert', (i, v) => { arr.splice(i, 0, v); });
+    def('remove', (i) => arr.splice(i, 1)[0]);
+    def('contains', (v) => arr.includes(v));
+    def('indexof', (v) => arr.indexOf(v));
+    def('lastindexof', (v) => arr.lastIndexOf(v));
+    def('first', () => (arr.length ? arr[0] : null));
+    def('last', () => (arr.length ? arr[arr.length - 1] : null));
+    def('sum', () => arr.reduce((a, b) => a + b, 0));
+    def('avg', () => (arr.length ? arr.reduce((a, b) => a + b, 0) / arr.length : 0));
+    def('min', () => (arr.length ? Math.min(...arr) : null));
+    def('max', () => (arr.length ? Math.max(...arr) : null));
+    def('range', () => (arr.length ? Math.max(...arr) - Math.min(...arr) : null));
+    // Statistical methods that route to the array.* built-ins (these names are not
+    // native to JS arrays, so attaching them here is safe from recursion).
+    def('median', () => self.arrayMedian(arr));
+    def('mode', () => self.arrayMode(arr));
+    def('stdev', () => self.arrayStdev(arr));
+    def('variance', () => self.arrayVariance(arr));
+    def('covariance', (other) => self.arrayCovariance(arr, other));
+    def('percentile_linear_interpolation', (p) => self.arrayPercentileLinearInterpolation(arr, p));
+    def('percentile_nearest_rank', (p) => self.arrayPercentileNearestRank(arr, p));
+    def('abs', () => self.__decArr(self.arrayAbs(arr)));
+    def('binary_search', (v) => self.arrayBinarySearch(arr, v));
+    // Pine's array.sort takes an order string, not a comparator. Use the native
+    // sort via .call so we don't recurse through this overridden method.
+    def('sort', (order) => { Array.prototype.sort.call(arr, (a, b) => (order === 'descending' ? b - a : a - b)); return arr; });
+    def('sort_indices', (order) => self.__decArr(arr.map((_, i) => i).sort((a, b) => (order === 'descending' ? arr[b] - arr[a] : arr[a] - arr[b]))));
+    // join/slice/reverse/concat/includes/fill already exist natively on Array with
+    // compatible semantics, so we deliberately leave them to the native methods.
+    return arr;
+  },
+  __decMap: function(m) {
+    if (!(m instanceof Map) || m.__pineDecorated) return m;
+    const def = (name, fn) => Object.defineProperty(m, name, { value: fn, writable: true, configurable: true });
+    Object.defineProperty(m, '__pineDecorated', { value: true, configurable: true });
+    def('put', (k, v) => { m.set(k, v); return v; });
+    def('contains', (k) => m.has(k));
+    def('remove', (k) => m.delete(k));
+    def('keys', () => Array.from(Map.prototype.keys.call(m)));
+    def('values', () => Array.from(Map.prototype.values.call(m)));
+    def('size_', () => m.size);
+    return m;
+  },
+  __decMatrix: function(m) {
+    if (!m || typeof m !== 'object' || m.__pineDecorated) return m;
+    const self = this;
+    const def = (name, fn) => Object.defineProperty(m, name, { value: fn, writable: true, configurable: true });
+    Object.defineProperty(m, '__pineDecorated', { value: true, configurable: true });
+    def('get', (r, c) => self.matrixGet(m, r, c));
+    def('set', (r, c, v) => self.matrixSet(m, r, c, v));
+    def('rows_', () => m.rows);
+    def('columns', () => m.cols);
+    def('fill', (v) => self.matrixFill(m, v));
+    return m;
+  },
+  __decDraw: function(obj) {
+    if (!obj || typeof obj !== 'object') return obj;
+    const p = new Proxy(obj, {
+      get(t, k) {
+        if (k in t || typeof k === 'symbol') return t[k];
+        return function() { return p; };
+      },
+    });
+    return p;
+  },
   alertcondition: function(condition, ...rest) {
     if (globalThis.__pineRuntime) {
       globalThis.__pineRuntime.alerts.push({ condition, args: rest });
@@ -49,6 +123,32 @@ const pinescript = {
     return null;
   },
   barcolor: function(color) { return null; },
+  plotchar: function(series, ...rest) {
+    const rt = globalThis.__pineRuntime;
+    if (!rt) return series;
+    const bar = rt.__barIndex | 0;
+    const ord = (rt.__shapeIdx = (rt.__shapeIdx | 0) + 1) - 1;
+    let key = 'char_' + ord;
+    for (const r of rest) {
+      if (typeof r === 'string') { key = r; break; }
+      if (r && typeof r === 'object' && r.title) { key = String(r.title); break; }
+    }
+    let s = rt.plotshapes[key];
+    if (!s) s = rt.plotshapes[key] = { title: key, data: [] };
+    s.data[bar] = this.__scalar(series);
+    return series;
+  },
+  plotarrow: function(series, ...rest) {
+    const rt = globalThis.__pineRuntime;
+    if (!rt) return series;
+    const bar = rt.__barIndex | 0;
+    const ord = (rt.__plotIdx = (rt.__plotIdx | 0) + 1) - 1;
+    const key = 'arrow_' + ord;
+    let p = rt.plots[key];
+    if (!p) p = rt.plots[key] = { title: key, data: [] };
+    p.data[bar] = this.__scalar(series);
+    return series;
+  },
   bgcolor: function(color, title, editable, showLast) {
     return null;
   },
@@ -470,6 +570,12 @@ const pinescript = {
   atan: function(value) {
     return Math.atan(value);
   },
+  todegrees: function(radians) {
+    return radians * (180 / Math.PI);
+  },
+  toradians: function(degrees) {
+    return degrees * (Math.PI / 180);
+  },
   floor: function(value) {
     return Math.floor(value);
   },
@@ -641,7 +747,7 @@ const pinescript = {
     return series;
   },
   lineNew: function(x1, y1, x2, y2, opts = {}) {
-    return { x1, y1, x2, y2, opts, _type: 'line' };
+    return this.__decDraw({ x1, y1, x2, y2, opts, _type: 'line' });
   },
   lineDelete: function(l) {
     return null;
@@ -661,7 +767,7 @@ const pinescript = {
     return point === 0 || point === 'y1' ? line.y1 : line.y2;
   },
   labelNew: function(x, y, text = '', opts = {}) {
-    return { x, y, text, opts, _type: 'label' };
+    return this.__decDraw({ x, y, text, opts, _type: 'label' });
   },
   labelDelete: function(l) {
     return null;
@@ -676,7 +782,7 @@ const pinescript = {
     return label.text || '';
   },
   boxNew: function(left, top, right, bottom, opts = {}) {
-    return { left, top, right, bottom, opts, _type: 'box' };
+    return this.__decDraw({ left, top, right, bottom, opts, _type: 'box' });
   },
   boxDelete: function(box) {
     return null;
@@ -694,7 +800,7 @@ const pinescript = {
     return box;
   },
   polylineNew: function(points, opts = {}) {
-    return { points: points || [], opts, _type: 'polyline' };
+    return this.__decDraw({ points: points || [], opts, _type: 'polyline' });
   },
   polylineDelete: function(poly) {
     return null;
@@ -765,7 +871,7 @@ const pinescript = {
     return { time: _time ?? null, price: _price ?? null };
   },
   mapNew: function() {
-    return new Map();
+    return this.__decMap(new Map());
   },
   mapSize: function(m) {
     return m instanceof Map ? m.size : 0;
@@ -800,7 +906,7 @@ const pinescript = {
     const r = Math.max(0, rows ?? 0);
     const c = Math.max(0, cols ?? 0);
     const data = Array.from({ length: r }, () => Array.from({ length: c }, () => initialValue));
-    return { rows: r, cols: c, data };
+    return this.__decMatrix({ rows: r, cols: c, data });
   },
   matrixRows: function(m) {
     return m?.rows ?? 0;
@@ -923,11 +1029,62 @@ const pinescript = {
     }
     return null;
   },
+  __jacobiEigen: function(m) {
+    if (!m || !Array.isArray(m.data)) return null;
+    const n = m.rows ?? 0;
+    if (n === 0 || n !== (m.cols ?? 0)) return null;
+    // Work on a copy so the input matrix is untouched.
+    const a = m.data.map(row => row.slice());
+    const v = Array.from({ length: n }, (_, i) => Array.from({ length: n }, (_, j) => (i === j ? 1 : 0)));
+    for (let sweep = 0; sweep < 100; sweep++) {
+      let off = 0;
+      for (let p = 0; p < n; p++) for (let q = p + 1; q < n; q++) off += a[p][q] * a[p][q];
+      if (off < 1e-20) break;
+      for (let p = 0; p < n; p++) {
+        for (let q = p + 1; q < n; q++) {
+          if (Math.abs(a[p][q]) < 1e-18) continue;
+          const theta = (a[q][q] - a[p][p]) / (2 * a[p][q]);
+          const t = Math.sign(theta || 1) / (Math.abs(theta) + Math.sqrt(theta * theta + 1));
+          const cos = 1 / Math.sqrt(t * t + 1);
+          const sin = t * cos;
+          for (let k = 0; k < n; k++) {
+            const akp = a[k][p], akq = a[k][q];
+            a[k][p] = cos * akp - sin * akq;
+            a[k][q] = sin * akp + cos * akq;
+          }
+          for (let k = 0; k < n; k++) {
+            const apk = a[p][k], aqk = a[q][k];
+            a[p][k] = cos * apk - sin * aqk;
+            a[q][k] = sin * apk + cos * aqk;
+          }
+          for (let k = 0; k < n; k++) {
+            const vkp = v[k][p], vkq = v[k][q];
+            v[k][p] = cos * vkp - sin * vkq;
+            v[k][q] = sin * vkp + cos * vkq;
+          }
+        }
+      }
+    }
+    // Sort eigenpairs by eigenvalue, descending.
+    const order = Array.from({ length: n }, (_, i) => i).sort((i, j) => a[j][j] - a[i][i]);
+    const values = order.map(i => a[i][i]);
+    const vectors = Array.from({ length: n }, (_, r) => order.map(c => v[r][c]));
+    return { values, vectors };
+  },
+  matrixEigenvalues: function(m) {
+    const e = this.__jacobiEigen(m);
+    return this.__decArr(e ? e.values : []);
+  },
+  matrixEigenvectors: function(m) {
+    const e = this.__jacobiEigen(m);
+    if (!e) return this.__decMatrix({ rows: 0, cols: 0, data: [] });
+    return this.__decMatrix({ rows: e.vectors.length, cols: e.vectors.length, data: e.vectors });
+  },
   requestSecurity: function(symbol, timeframe, expression) {
     return expression;
   },
   arrayNew: function(initialSize = 0, initialValue = 0) {
-    return Array(initialSize).fill(initialValue);
+    return this.__decArr(Array(initialSize).fill(initialValue));
   },
   arraySize: function(arr) {
     return arr ? arr.length : 0;
@@ -978,10 +1135,10 @@ const pinescript = {
     return arr;
   },
   arraySlice: function(arr, startIndex = 0, endIndex = null) {
-    if (!arr) return [];
+    if (!arr) return this.__decArr([]);
     const start = Number(startIndex) || 0;
     const end = endIndex === null || endIndex === undefined ? arr.length : Number(endIndex) || 0;
-    return arr.slice(start, end);
+    return this.__decArr(arr.slice(start, end));
   },
   arraySort: function(arr, order = 'ascending') {
     if (arr) arr.sort((a, b) => order === 'ascending' ? a - b : b - a);
@@ -1191,7 +1348,7 @@ const pinescript = {
     const info = { ticker: 'AAPL', tickerid: 'NASDAQ:AAPL', prefix: 'NASDAQ', root: 'AAPL', suffix: '' };
     return info[type] || '';
   },
-  timenow: 1781574528607,
+  timenow: 1782784153393,
   barstate: "LAST",
   dividends: {},
   splits: {},
@@ -1245,11 +1402,11 @@ const pinescript = {
   arrayConcat: function(arr1, arr2) {
     if (!arr1) return arr2 || [];
     if (!arr2) return arr1;
-    return arr1.concat(arr2);
+    return this.__decArr(arr1.concat(arr2));
   },
   arrayCopy: function(arr) {
-    if (!arr) return [];
-    return [...arr];
+    if (!arr) return this.__decArr([]);
+    return this.__decArr([...arr]);
   },
   arrayBinarySearch: function(arr, value) {
     if (!arr || arr.length === 0) return -1;
@@ -1339,7 +1496,7 @@ globalThis.input.timeframe = globalThis.input.timeframe || ((defval) => defval);
 
 globalThis.array = globalThis.array || {
 
-  from: (...items) => items,
+  from: (...items) => pinescript.__decArr(items),
 
   size: (arr) => pinescript.arraySize(arr),
 
@@ -1508,6 +1665,8 @@ globalThis.line = globalThis.line || __pineNS({ style_solid: "solid", style_dash
 
 globalThis.box = globalThis.box || __pineNS({});
 
+globalThis.color = globalThis.color || __pineNS(Object.assign(function(c) { return c; }, { new: function(c, t) { return c; }, rgb: function(r, g, b, t) { return "#rgb(" + [r, g, b].join(",") + ")"; }, from_gradient: function(v, lo, hi, c1, c2) { return c1; }, r: function() { return 0; }, g: function() { return 0; }, b: function() { return 0; }, t: function() { return 0; }, aqua: "#00BCD4", black: "#363A45", blue: "#2962FF", fuchsia: "#E040FB", gray: "#787B86", green: "#4CAF50", lime: "#00E676", maroon: "#880E4F", navy: "#311B92", olive: "#808000", orange: "#FF9800", purple: "#9C27B0", red: "#FF5252", silver: "#B2B5BE", teal: "#00897B", white: "#FFFFFF", yellow: "#FFEB3B" }));
+
 globalThis.label = globalThis.label || __pineNS({ style_label_down: "label_down", style_label_up: "label_up", style_none: "none" });
 
 globalThis.polyline = globalThis.polyline || __pineNS({});
@@ -1520,7 +1679,9 @@ globalThis.map = globalThis.map || __pineNS({});
 
 globalThis.session = globalThis.session || __pineNS({ regular: "regular", extended: "extended" });
 
-globalThis.dayofweek = globalThis.dayofweek || __pineNS({ sunday: 1, monday: 2, tuesday: 3, wednesday: 4, thursday: 5, friday: 6, saturday: 7 });
+globalThis.ticker = globalThis.ticker || __pineNS({});
+
+globalThis.dayofweek = globalThis.dayofweek || __pineNS(Object.assign(function(t) { return new Date(t != null ? t : (globalThis.time || 0)).getUTCDay() + 1; }, { sunday: 1, monday: 2, tuesday: 3, wednesday: 4, thursday: 5, friday: 6, saturday: 7 }));
 
 globalThis.timeframe = __pineNS(Object.assign(globalThis.timeframe || {}, { period: (globalThis.timeframe && globalThis.timeframe.period) || "D", isintraday: false, isdaily: true, multiplier: 1 }));
 
@@ -1567,8 +1728,6 @@ globalThis.float = globalThis.float || function(x) { return x == null ? null : N
 globalThis.bool = globalThis.bool || function(x) { return Boolean(x); };
 
 globalThis.string = globalThis.string || function(x) { return x == null ? null : String(x); };
-
-globalThis.dayofweek = globalThis.dayofweek || __pineNS({ sunday: 1, monday: 2, tuesday: 3, wednesday: 4, thursday: 5, friday: 6, saturday: 7 });
 
 globalThis.str = globalThis.str || __pineNS({});
 
@@ -1655,7 +1814,7 @@ pinescript.text = { align_center: "center" };
 
 pinescript.table = {
 
-  new: function(position, columns, rows, opts) { return { position, columns, rows, opts: opts || {}, cells: [] }; },
+  new: function(position, columns, rows, opts) { return pinescript.__decDraw({ position, columns, rows, opts: opts || {}, cells: [] }); },
 
   cell: function(table, column, row, text, opts) {
 
@@ -1696,35 +1855,37 @@ function main() {
   null;
   // Study: Smart Trader, Episode 03, by Ata Sabancı | Candles and Tradelines
   // Options: {"shorttitle":"ST-EP03","overlay":true,"max_bars_back":5000,"max_labels_count":500,"max_boxes_count":500,"max_lines_count":500}
-  let G_MAIN = "═══ Main Settings ═══";
-  let i_window = pinescript.inputInt(100, "Window Bars", ({ minval: 1, group: G_MAIN }));
-  let i_groups = pinescript.inputInt(20, "Group Count", ({ minval: 1, group: G_MAIN }));
-  let i_calcBasis = pinescript.inputString("Closed (bar[1])", "Calculation Basis", ({ options: ["Closed (bar[1])", "Current (bar[0])"], group: G_MAIN }));
-  let baseOff = ((i_calcBasis === "Current (bar[0])") ? 0 : 1);
-  let i_showGroupNums = pinescript.inputBool(true, "Show Group Numbers", ({ group: G_MAIN }));
-  let i_showGroupBoxes = pinescript.inputBool(true, "Show Group Boxes", ({ group: G_MAIN }));
-  let i_boxColor = pinescript.inputColor(pinescript.color.gray, "Box Color", ({ group: G_MAIN }));
-  let i_boxTransp = pinescript.inputInt(85, "Box Transparency", ({ minval: 0, maxval: 100, group: G_MAIN }));
-  let i_globalTextSizeStr = pinescript.inputString("Small", "Global Text Size", ({ options: ["Tiny", "Small", "Normal", "Large"], group: G_MAIN, tooltip: "Applies to ALL text elements on chart: labels, dashboard, trend lines, etc." }));
-  let GLOBAL_TEXT_SIZE = ((i_globalTextSizeStr === "Tiny") ? pinescript.size.tiny : ((i_globalTextSizeStr === "Normal") ? pinescript.size.normal : ((i_globalTextSizeStr === "Large") ? pinescript.size.large : pinescript.size.small)));
-  let G_ANALYTICS = "═══ Block Analytics ═══";
-  let i_showCompositeCandle = pinescript.inputBool(false, "Show Composite Candle", ({ group: G_ANALYTICS, tooltip: "Displays a ghost-like composite candle at the center of each block representing aggregated OHLC." }));
-  let i_compositeCandleTransp = pinescript.inputInt(50, "Composite Candle Transparency", ({ minval: 50, maxval: 95, group: G_ANALYTICS, tooltip: "Transparency level for the ghost-like composite candle (higher = more transparent)." }));
-  let i_dimOriginalCandles = pinescript.inputBool(true, "Dim Original Candles", ({ group: G_ANALYTICS, tooltip: "When composite candles are shown, dims the original chart candles to make composites stand out." }));
-  let i_originalCandleDimLevel = pinescript.inputInt(95, "Original Candle Dim Level", ({ minval: 50, maxval: 95, group: G_ANALYTICS, tooltip: "Transparency level for dimmed original candles (higher = more transparent/faded)." }));
-  let groupSize = pinescript.max(1, int(pinescript.round((float(i_window) / i_groups))));
-  let effWindow = (groupSize * i_groups);
-  let _dimBullish = pinescript.color.new(pinescript.color.rgb(34, 197, 94), i_originalCandleDimLevel);
-  let _dimBearish = pinescript.color.new(pinescript.color.rgb(239, 68, 68), i_originalCandleDimLevel);
-  let _dimNeutral = pinescript.color.new(pinescript.color.rgb(120, 120, 120), i_originalCandleDimLevel);
-  let _originalCandleColor = ((close > open) ? _dimBullish : ((close < open) ? _dimBearish : _dimNeutral));
+  var G_MAIN = "═══ Main Settings ═══";
+  var i_window = pinescript.inputInt(100, "Window Bars", ({ minval: 1, group: G_MAIN }));
+  var i_groups = pinescript.inputInt(20, "Group Count", ({ minval: 1, group: G_MAIN }));
+  var i_calcBasis = pinescript.inputString("Closed (bar[1])", "Calculation Basis", ({ options: ["Closed (bar[1])", "Current (bar[0])"], group: G_MAIN }));
+  var baseOff = ((i_calcBasis === "Current (bar[0])") ? 0 : 1);
+  var i_showGroupNums = pinescript.inputBool(true, "Show Group Numbers", ({ group: G_MAIN }));
+  var i_showGroupBoxes = pinescript.inputBool(true, "Show Group Boxes", ({ group: G_MAIN }));
+  var i_boxColor = pinescript.inputColor(pinescript.color.gray, "Box Color", ({ group: G_MAIN }));
+  var i_boxTransp = pinescript.inputInt(85, "Box Transparency", ({ minval: 0, maxval: 100, group: G_MAIN }));
+  var i_globalTextSizeStr = pinescript.inputString("Small", "Global Text Size", ({ options: ["Tiny", "Small", "Normal", "Large"], group: G_MAIN, tooltip: "Applies to ALL text elements on chart: labels, dashboard, trend lines, etc." }));
+  var GLOBAL_TEXT_SIZE = ((i_globalTextSizeStr === "Tiny") ? pinescript.size.tiny : ((i_globalTextSizeStr === "Normal") ? pinescript.size.normal : ((i_globalTextSizeStr === "Large") ? pinescript.size.large : pinescript.size.small)));
+  var G_ANALYTICS = "═══ Block Analytics ═══";
+  var i_showCompositeCandle = pinescript.inputBool(false, "Show Composite Candle", ({ group: G_ANALYTICS, tooltip: "Displays a ghost-like composite candle at the center of each block representing aggregated OHLC." }));
+  var i_compositeCandleTransp = pinescript.inputInt(50, "Composite Candle Transparency", ({ minval: 50, maxval: 95, group: G_ANALYTICS, tooltip: "Transparency level for the ghost-like composite candle (higher = more transparent)." }));
+  var i_dimOriginalCandles = pinescript.inputBool(true, "Dim Original Candles", ({ group: G_ANALYTICS, tooltip: "When composite candles are shown, dims the original chart candles to make composites stand out." }));
+  var i_originalCandleDimLevel = pinescript.inputInt(95, "Original Candle Dim Level", ({ minval: 50, maxval: 95, group: G_ANALYTICS, tooltip: "Transparency level for dimmed original candles (higher = more transparent/faded)." }));
+  var groupSize = pinescript.max(1, int(pinescript.round((float(i_window) / i_groups))));
+  var effWindow = (groupSize * i_groups);
+  var _dimBullish = pinescript.color.new(pinescript.color.rgb(34, 197, 94), i_originalCandleDimLevel);
+  var _dimBearish = pinescript.color.new(pinescript.color.rgb(239, 68, 68), i_originalCandleDimLevel);
+  var _dimNeutral = pinescript.color.new(pinescript.color.rgb(120, 120, 120), i_originalCandleDimLevel);
+  var _originalCandleColor = ((close > open) ? _dimBullish : ((close < open) ? _dimBearish : _dimNeutral));
   pinescript.barcolor(((i_showCompositeCandle && i_dimOriginalCandles) ? _originalCandleColor : null));
   function clear(_this) {
     if (!pinescript.na(_this.upperLine)) {
       pinescript.lineDelete(_this.upperLine);
     }
     if (!pinescript.na(_this.lowerLine)) {
-      pinescript.lineDelete(_this.lowerLine);
+      return pinescript.lineDelete(_this.lowerLine);
+    } else {
+      return null;
     }
   }
   function init(_this) {
@@ -1801,6 +1962,8 @@ function main() {
       for (let j = 0; j <= (pinescript.arraySize(state.lblNums) - 1); j++) {
         label.set_size(pinescript.arrayGet(state.lblNums, j), GLOBAL_TEXT_SIZE);
       }
+    } else {
+      return null;
     }
   }
   function f_ensureBoxCount(n) {
@@ -1857,13 +2020,13 @@ function main() {
       pinescript.arrayPop(state.coreBoxes);
     }
   }
-  let DIR_UP = 1;
-  let DIR_DOWN = -1;
-  let DIR_RANGE = 0;
-  let G_NARRATIVE = "═══ Market Narrative ═══";
-  let i_narrativeEnable = pinescript.inputBool(true, "Enable Market Narrative", ({ group: G_NARRATIVE, tooltip: "Displays -generated market analysis based on calculated data. Educational purposes only." }));
-  let i_narrativeLang = pinescript.inputString("English", "Narrative Language", ({ options: ["English", "Türkçe", "हिन्दी", "العربية"], group: G_NARRATIVE, tooltip: "Select language for market narrative output." }));
-  let i_narrativeShowDisclaimer = pinescript.inputBool(true, "Show Educational Disclaimer", ({ group: G_NARRATIVE, tooltip: "Display legal disclaimer: Not investment advice, educational purposes only." }));
+  var DIR_UP = 1;
+  var DIR_DOWN = -1;
+  var DIR_RANGE = 0;
+  var G_NARRATIVE = "═══ Market Narrative ═══";
+  var i_narrativeEnable = pinescript.inputBool(true, "Enable Market Narrative", ({ group: G_NARRATIVE, tooltip: "Displays -generated market analysis based on calculated data. Educational purposes only." }));
+  var i_narrativeLang = pinescript.inputString("English", "Narrative Language", ({ options: ["English", "Türkçe", "हिन्दी", "العربية"], group: G_NARRATIVE, tooltip: "Select language for market narrative output." }));
+  var i_narrativeShowDisclaimer = pinescript.inputBool(true, "Show Educational Disclaimer", ({ group: G_NARRATIVE, tooltip: "Display legal disclaimer: Not investment advice, educational purposes only." }));
   function f_L(en, tr, hi, ar) {
     return ((i_narrativeLang === "Türkçe") ? tr : ((i_narrativeLang === "हिन्दी") ? hi : ((i_narrativeLang === "العربية") ? ar : en)));
   }
@@ -1877,7 +2040,7 @@ function main() {
     return ((q >= 80) ? f_L("HIGH", "YÜKSEK", "उच्च", "مرتفع") : ((q >= 60) ? f_L("MEDIUM", "ORTA", "मध्यम", "متوسط") : f_L("LOW", "DÜŞÜK", "निम्न", "منخفض")));
   }
   function f_channelStatusStr(upperA, lowerA) {
-    let diff = (pinescript.abs(upperA) - pinescript.abs(lowerA));
+    var diff = (pinescript.abs(upperA) - pinescript.abs(lowerA));
     return ((diff > 3) ? f_L("EXPANDING", "GENİŞLEYEN", "विस्तारित", "متوسع") : ((diff < -3) ? f_L("CONTRACTING", "DARALAN", "संकुचित", "متقلص") : f_L("PARALLEL", "PARALEL", "समानांतर", "متوازي")));
   }
   function f_dominanceStr(delta) {
@@ -2128,56 +2291,56 @@ function main() {
   }
   function f_isHigherPosition(a, b) {
     if ((!a.valid || !b.valid)) {
-      DIR_RANGE;
+      return DIR_RANGE;
     } else {
-      let midA = ((a.newHigh + a.newLow) / 2);
-      let midB = ((b.newHigh + b.newLow) / 2);
-      ((midA > midB) ? DIR_UP : ((midA < midB) ? DIR_DOWN : DIR_RANGE));
+      var midA = ((a.newHigh + a.newLow) / 2);
+      var midB = ((b.newHigh + b.newLow) / 2);
+      return ((midA > midB) ? DIR_UP : ((midA < midB) ? DIR_DOWN : DIR_RANGE));
     }
   }
   function f_yangZhangVolatility(period) {
-    let sumOvSq = 0;
-    let sumOv = 0;
-    let sumClSq = 0;
-    let sumCl = 0;
-    let sumRS = 0;
-    let n = pinescript.max(2, period);
+    var sumOvSq = 0;
+    var sumOv = 0;
+    var sumClSq = 0;
+    var sumCl = 0;
+    var sumRS = 0;
+    var n = pinescript.max(2, period);
     for (let i = 0; i <= (n - 1); i++) {
-      let ov = pinescript.log((pinescript.hist(0, open, i) / pinescript.hist(1, close, (i + 1))));
+      var ov = pinescript.log((pinescript.hist(0, open, i) / pinescript.hist(1, close, (i + 1))));
       sumOv += ov;
       sumOvSq += (ov * ov);
-      let cl = pinescript.log((pinescript.hist(2, close, i) / pinescript.hist(3, open, i)));
+      var cl = pinescript.log((pinescript.hist(2, close, i) / pinescript.hist(3, open, i)));
       sumCl += cl;
       sumClSq += (cl * cl);
-      let logHO = pinescript.log((pinescript.hist(4, high, i) / pinescript.hist(5, open, i)));
-      let logHC = pinescript.log((pinescript.hist(6, high, i) / pinescript.hist(7, close, i)));
-      let logLO = pinescript.log((pinescript.hist(8, low, i) / pinescript.hist(9, open, i)));
-      let logLC = pinescript.log((pinescript.hist(10, low, i) / pinescript.hist(11, close, i)));
+      var logHO = pinescript.log((pinescript.hist(4, high, i) / pinescript.hist(5, open, i)));
+      var logHC = pinescript.log((pinescript.hist(6, high, i) / pinescript.hist(7, close, i)));
+      var logLO = pinescript.log((pinescript.hist(8, low, i) / pinescript.hist(9, open, i)));
+      var logLC = pinescript.log((pinescript.hist(10, low, i) / pinescript.hist(11, close, i)));
       sumRS += ((logHO * logHC) + (logLO * logLC));
     }
-    let nm1 = float((n - 1));
-    let varOv = ((sumOvSq / nm1) - ((sumOv * sumOv) / (float(n) * nm1)));
-    let varCl = ((sumClSq / nm1) - ((sumCl * sumCl) / (float(n) * nm1)));
-    let varRS = (sumRS / float(n));
-    let k = (0.34 / (1.34 + (float((n + 1)) / float((n - 1)))));
-    let varYZ = ((varOv + (k * varCl)) + ((1 - k) * varRS));
-    let sigma = pinescript.sqrt(pinescript.max(0, varYZ));
+    var nm1 = float((n - 1));
+    var varOv = ((sumOvSq / nm1) - ((sumOv * sumOv) / (float(n) * nm1)));
+    var varCl = ((sumClSq / nm1) - ((sumCl * sumCl) / (float(n) * nm1)));
+    var varRS = (sumRS / float(n));
+    var k = (0.34 / (1.34 + (float((n + 1)) / float((n - 1)))));
+    var varYZ = ((varOv + (k * varCl)) + ((1 - k) * varRS));
+    var sigma = pinescript.sqrt(pinescript.max(0, varYZ));
     return (sigma * close);
   }
   function f_calcChannelAngle(priceChange, barSpan, yzVolPrice) {
     if (((barSpan === 0) || (yzVolPrice <= 0))) {
-      0;
+      return 0;
     } else {
-      let expectedMove = (yzVolPrice * pinescript.sqrt(float(barSpan)));
-      let normalizedChange = ((expectedMove > 0) ? (priceChange / expectedMove) : 0);
-      pinescript.todegrees(pinescript.atan(normalizedChange));
+      var expectedMove = (yzVolPrice * pinescript.sqrt(float(barSpan)));
+      var normalizedChange = ((expectedMove > 0) ? (priceChange / expectedMove) : 0);
+      return pinescript.todegrees(pinescript.atan(normalizedChange));
     }
   }
   function f_clearAllChannels() {
-    let n = pinescript.arraySize(state.trendChannels);
+    var n = pinescript.arraySize(state.trendChannels);
     if ((n > 0)) {
       for (let i = 0; i <= (n - 1); i++) {
-        let ch = pinescript.arrayGet(state.trendChannels, i);
+        var ch = pinescript.arrayGet(state.trendChannels, i);
         clear(ch);
       }
     }
@@ -2185,26 +2348,30 @@ function main() {
   }
   function f_lockBlockTrend(blockIdx, trendType) {
     if ((blockIdx < pinescript.arraySize(state.analyticsData))) {
-      let blk = pinescript.arrayGet(state.analyticsData, blockIdx);
+      var blk = pinescript.arrayGet(state.analyticsData, blockIdx);
       if (!blk.trendLocked) {
         blk.trendType = trendType;
         blk.trendLocked = true;
-        pinescript.arraySet(state.analyticsData, blockIdx, blk);
+        return pinescript.arraySet(state.analyticsData, blockIdx, blk);
+      } else {
+        return null;
       }
+    } else {
+      return null;
     }
   }
   function f_findSegmentExtremes(segStart, segEnd) {
-    let highestHigh = null;
-    let lowestHigh = null;
-    let highestLow = null;
-    let lowestLow = null;
-    let highestHighIdx = null;
-    let lowestHighIdx = null;
-    let highestLowIdx = null;
-    let lowestLowIdx = null;
+    var highestHigh = null;
+    var lowestHigh = null;
+    var highestLow = null;
+    var lowestLow = null;
+    var highestHighIdx = null;
+    var lowestHighIdx = null;
+    var highestLowIdx = null;
+    var lowestLowIdx = null;
     for (let i = segStart; i <= segEnd; i++) {
       if ((i < pinescript.arraySize(state.analyticsData))) {
-        let blk = pinescript.arrayGet(state.analyticsData, i);
+        var blk = pinescript.arrayGet(state.analyticsData, i);
         if (blk.valid) {
           if ((pinescript.na(highestHigh) || (blk.newHigh > highestHigh))) {
             highestHigh = blk.newHigh;
@@ -2228,15 +2395,15 @@ function main() {
     return [highestHigh, lowestHigh, highestLow, lowestLow, highestHighIdx, lowestHighIdx, highestLowIdx, lowestLowIdx];
   }
   function f_detectTrendChannels(rangeThreshold, yzVol) {
-    let numBlocks = pinescript.arraySize(state.analyticsData);
+    var numBlocks = pinescript.arraySize(state.analyticsData);
     if ((numBlocks < 2)) {
-      false;
+      return false;
     } else {
-      let i = 0;
+      var i = 0;
       while ((i < (numBlocks - 1))) {
-        let newerBlk = pinescript.arrayGet(state.analyticsData, i);
-        let olderBlk = pinescript.arrayGet(state.analyticsData, (i + 1));
-        let dir = 0;
+        var newerBlk = pinescript.arrayGet(state.analyticsData, i);
+        var olderBlk = pinescript.arrayGet(state.analyticsData, (i + 1));
+        var dir = 0;
         if (newerBlk.trendLocked) {
           dir = newerBlk.trendType;
         } else {
@@ -2247,13 +2414,13 @@ function main() {
           i += 1;
           continue;
         }
-        let segStart = i;
-        let segEnd = (i + 1);
+        var segStart = i;
+        var segEnd = (i + 1);
         f_lockBlockTrend(segStart, dir);
         while ((segEnd < (numBlocks - 1))) {
-          let blkNewer = pinescript.arrayGet(state.analyticsData, segEnd);
-          let blkOlder = pinescript.arrayGet(state.analyticsData, (segEnd + 1));
-          let nextDir = 0;
+          var blkNewer = pinescript.arrayGet(state.analyticsData, segEnd);
+          var blkOlder = pinescript.arrayGet(state.analyticsData, (segEnd + 1));
+          var nextDir = 0;
           if (blkNewer.trendLocked) {
             nextDir = blkNewer.trendType;
           } else {
@@ -2268,21 +2435,21 @@ function main() {
           }
         }
         f_lockBlockTrend(segEnd, dir);
-        let [highestHigh, lowestHigh, highestLow, lowestLow, hhIdx, lhIdx, hlIdx, llIdx] = pinescript.unpack(f_findSegmentExtremes(segStart, segEnd), 8);
+        var [highestHigh, lowestHigh, highestLow, lowestLow, hhIdx, lhIdx, hlIdx, llIdx] = pinescript.unpack(f_findSegmentExtremes(segStart, segEnd), 8);
         if ((((!pinescript.na(highestHigh) && !pinescript.na(lowestHigh)) && !pinescript.na(highestLow)) && !pinescript.na(lowestLow))) {
-          let blkOldest = pinescript.arrayGet(state.analyticsData, segEnd);
-          let blkNewest = pinescript.arrayGet(state.analyticsData, segStart);
-          let segmentX1 = blkOldest.centerIdx;
-          let segmentX2 = blkNewest.centerIdx;
-          let upperSlope = null;
-          let lowerSlope = null;
-          let upperY1 = null;
-          let upperY2 = null;
-          let lowerY1 = null;
-          let lowerY2 = null;
+          var blkOldest = pinescript.arrayGet(state.analyticsData, segEnd);
+          var blkNewest = pinescript.arrayGet(state.analyticsData, segStart);
+          var segmentX1 = blkOldest.centerIdx;
+          var segmentX2 = blkNewest.centerIdx;
+          var upperSlope = null;
+          var lowerSlope = null;
+          var upperY1 = null;
+          var upperY2 = null;
+          var lowerY1 = null;
+          var lowerY2 = null;
           if ((dir === DIR_DOWN)) {
-            let upperSpan = (lhIdx - hhIdx);
-            let lowerSpan = (llIdx - hlIdx);
+            var upperSpan = (lhIdx - hhIdx);
+            var lowerSpan = (llIdx - hlIdx);
             upperSlope = ((upperSpan !== 0) ? ((lowestHigh - highestHigh) / upperSpan) : 0);
             lowerSlope = ((lowerSpan !== 0) ? ((lowestLow - highestLow) / lowerSpan) : 0);
             upperY1 = (highestHigh + (upperSlope * (segmentX1 - hhIdx)));
@@ -2291,8 +2458,8 @@ function main() {
             lowerY2 = (highestLow + (lowerSlope * (segmentX2 - hlIdx)));
           } else {
             if ((dir === DIR_UP)) {
-              let upperSpan = (hhIdx - lhIdx);
-              let lowerSpan = (hlIdx - llIdx);
+              upperSpan = (hhIdx - lhIdx);
+              lowerSpan = (hlIdx - llIdx);
               upperSlope = ((upperSpan !== 0) ? ((highestHigh - lowestHigh) / upperSpan) : 0);
               lowerSlope = ((lowerSpan !== 0) ? ((highestLow - lowestLow) / lowerSpan) : 0);
               upperY1 = (lowestHigh + (upperSlope * (segmentX1 - lhIdx)));
@@ -2308,89 +2475,91 @@ function main() {
               lowerY2 = blkNewest.newLow;
             }
           }
-          let midY1 = ((upperY1 + lowerY1) / 2);
-          let midY2 = ((upperY2 + lowerY2) / 2);
-          let priceChange = (midY2 - midY1);
-          let segmentSpan = pinescript.abs((segmentX2 - segmentX1));
-          let angleDeg = f_calcChannelAngle(priceChange, segmentSpan, yzVol);
-          let upperX1 = segmentX1;
-          let upperX2 = segmentX2;
-          let lowerX1 = segmentX1;
-          let lowerX2 = segmentX2;
-          let finalType = dir;
+          var midY1 = ((upperY1 + lowerY1) / 2);
+          var midY2 = ((upperY2 + lowerY2) / 2);
+          var priceChange = (midY2 - midY1);
+          var segmentSpan = pinescript.abs((segmentX2 - segmentX1));
+          var angleDeg = f_calcChannelAngle(priceChange, segmentSpan, yzVol);
+          var upperX1 = segmentX1;
+          var upperX2 = segmentX2;
+          var lowerX1 = segmentX1;
+          var lowerX2 = segmentX2;
+          var finalType = dir;
           if ((pinescript.abs(angleDeg) <= rangeThreshold)) {
             finalType = 0;
           }
-          let channel = TrendChannel.new(finalType, (segStart + 1), (segEnd + 1), angleDeg, upperX1, upperX2, lowerX1, lowerX2, upperY1, upperY2, lowerY1, lowerY2, null, null);
+          var channel = TrendChannel.new(finalType, (segStart + 1), (segEnd + 1), angleDeg, upperX1, upperX2, lowerX1, lowerX2, upperY1, upperY2, lowerY1, lowerY2, null, null);
           pinescript.arrayPush(state.trendChannels, channel);
         }
         i = (segEnd + 1);
       }
-      true;
+      return true;
     }
   }
   function f_drawAllChannels(projLen, upCol, dnCol, rangeCol, lineWidth, lineStyle, showRange) {
-    let lstyle = ((lineStyle === "solid") ? line.style_solid : ((lineStyle === "dashed") ? line.style_dashed : line.style_dotted));
-    let n = pinescript.arraySize(state.trendChannels);
+    var lstyle = ((lineStyle === "solid") ? line.style_solid : ((lineStyle === "dashed") ? line.style_dashed : line.style_dotted));
+    var n = pinescript.arraySize(state.trendChannels);
     if ((n > 0)) {
       for (let i = 0; i <= (n - 1); i++) {
-        let ch = pinescript.arrayGet(state.trendChannels, i);
+        var ch = pinescript.arrayGet(state.trendChannels, i);
         if (((ch.channelType === DIR_RANGE) && !showRange)) {
           continue;
         }
-        let chCol = ((ch.channelType === DIR_UP) ? upCol : ((ch.channelType === DIR_DOWN) ? dnCol : rangeCol));
-        let currentProjLen = ((i === 0) ? projLen : 0);
-        let upperBarSpan = (ch.upperX2 - ch.upperX1);
-        let lowerBarSpan = (ch.lowerX2 - ch.lowerX1);
-        let upperSlope = ((upperBarSpan > 0) ? ((ch.upperY2 - ch.upperY1) / upperBarSpan) : 0);
-        let lowerSlope = ((lowerBarSpan > 0) ? ((ch.lowerY2 - ch.lowerY1) / lowerBarSpan) : 0);
-        let upperX2Proj = (ch.upperX2 + currentProjLen);
-        let lowerX2Proj = (ch.lowerX2 + currentProjLen);
-        let upperY2Proj = (ch.upperY2 + (upperSlope * currentProjLen));
-        let lowerY2Proj = (ch.lowerY2 + (lowerSlope * currentProjLen));
-        let upperLn = pinescript.lineNew(ch.upperX1, ch.upperY1, upperX2Proj, upperY2Proj, ({ xloc: xloc.bar_index, extend: extend.none, color: chCol, width: lineWidth, style: lstyle }));
-        let lowerLn = pinescript.lineNew(ch.lowerX1, ch.lowerY1, lowerX2Proj, lowerY2Proj, ({ xloc: xloc.bar_index, extend: extend.none, color: chCol, width: lineWidth, style: lstyle }));
+        var chCol = ((ch.channelType === DIR_UP) ? upCol : ((ch.channelType === DIR_DOWN) ? dnCol : rangeCol));
+        var currentProjLen = ((i === 0) ? projLen : 0);
+        var upperBarSpan = (ch.upperX2 - ch.upperX1);
+        var lowerBarSpan = (ch.lowerX2 - ch.lowerX1);
+        var upperSlope = ((upperBarSpan > 0) ? ((ch.upperY2 - ch.upperY1) / upperBarSpan) : 0);
+        var lowerSlope = ((lowerBarSpan > 0) ? ((ch.lowerY2 - ch.lowerY1) / lowerBarSpan) : 0);
+        var upperX2Proj = (ch.upperX2 + currentProjLen);
+        var lowerX2Proj = (ch.lowerX2 + currentProjLen);
+        var upperY2Proj = (ch.upperY2 + (upperSlope * currentProjLen));
+        var lowerY2Proj = (ch.lowerY2 + (lowerSlope * currentProjLen));
+        var upperLn = pinescript.lineNew(ch.upperX1, ch.upperY1, upperX2Proj, upperY2Proj, ({ xloc: xloc.bar_index, extend: extend.none, color: chCol, width: lineWidth, style: lstyle }));
+        var lowerLn = pinescript.lineNew(ch.lowerX1, ch.lowerY1, lowerX2Proj, lowerY2Proj, ({ xloc: xloc.bar_index, extend: extend.none, color: chCol, width: lineWidth, style: lstyle }));
         ch.upperLine = upperLn;
         ch.lowerLine = lowerLn;
         pinescript.arraySet(state.trendChannels, i, ch);
       }
+    } else {
+      return null;
     }
   }
-  let G_VOL = "═══ Volume Engine ═══";
-  let G_DASH = "═══ Smart Dashboard ═══";
-  let i_calcMethod = pinescript.inputString("Geometry (Approx)", "Calculation Method", ({ options: ["Geometry (Approx)", "Intrabar (Precise)"], group: G_VOL }));
-  let i_useCustomLTF = pinescript.inputBool(true, "Use custom lower timeframe", ({ group: G_VOL }));
-  let i_customLTF = input.timeframe("15S", "Lower timeframe (LTF)", ({ group: G_VOL }));
-  let i_globalPeriodBoxes = pinescript.inputInt(5, "Global Period (Boxes)", ({ minval: 1, maxval: 200, group: G_VOL }));
-  let i_showDash = pinescript.inputBool(true, "Show Dashboard", ({ group: G_DASH }));
-  let i_dashPos = pinescript.inputString(pinescript.position.top_right, "Position", ({ options: [pinescript.position.top_right, pinescript.position.bottom_right, pinescript.position.bottom_left], group: G_DASH }));
-  let G_TREND = "═══ Multi-Segment Trend ═══";
-  let i_trendEnable = pinescript.inputBool(true, "Enable Trend Detection", ({ group: G_TREND, tooltip: "Multi-segment trend system using ghost candle HH/HL/LH/LL pattern detection." }));
-  let i_rangeAngleThreshold = pinescript.inputFloat(10, "Range Angle Threshold (°)", ({ minval: 1, maxval: 45, step: 1, group: G_TREND, tooltip: "Lines with angle ≤ this value are classified as RANGE." }));
-  let i_trendMinBlocks = pinescript.inputInt(2, "Minimum Blocks per Segment", ({ minval: 2, maxval: 10, group: G_TREND, tooltip: "Minimum blocks required to draw a segment line." }));
-  let i_showRangeSegments = pinescript.inputBool(true, "Show Range Segments", ({ group: G_TREND, tooltip: "Draw lines for range/sideways segments." }));
-  let i_trendUpColor = pinescript.inputColor(pinescript.color.rgb(34, 197, 94), "Uptrend Line Color", ({ group: G_TREND, tooltip: "Color for uptrend support lines (green)." }));
-  let i_trendDnColor = pinescript.inputColor(pinescript.color.rgb(239, 68, 68), "Downtrend Line Color", ({ group: G_TREND, tooltip: "Color for downtrend resistance lines (red)." }));
-  let i_trendRangeColor = pinescript.inputColor(pinescript.color.rgb(148, 163, 184), "Range Line Color", ({ group: G_TREND, tooltip: "Color for range/sideways lines (gray)." }));
-  let i_trendLineWidth = pinescript.inputInt(2, "Trend Line Width", ({ minval: 1, maxval: 5, group: G_TREND }));
-  let i_trendLineStyle = pinescript.inputString("solid", "Trend Line Style", ({ options: ["solid", "dashed", "dotted"], group: G_TREND }));
-  let i_trendProject = pinescript.inputBool(true, "Project to Future", ({ group: G_TREND, tooltip: "Extend trend lines into the future by one block width." }));
-  let G_CORE = "═══ Core Calculation ═══";
-  let i_coreEnable = pinescript.inputBool(true, "Enable Core Calculation", ({ group: G_CORE }));
-  let i_coreDrawLines = pinescript.inputBool(true, "Draw Core Lines", ({ group: G_CORE }));
-  let i_coreProjectFwd = pinescript.inputBool(true, "Offset / Projection (to Future)", ({ group: G_CORE }));
-  let i_coreNearestOnly = pinescript.inputBool(true, "Nearest Only (1 Up / 1 Down)", ({ group: G_CORE }));
-  let i_coreShowMax = pinescript.inputBool(true, "Include MAX Buy/Sell Levels", ({ group: G_CORE }));
-  let i_coreShowMin = pinescript.inputBool(true, "Include MIN Buy/Sell Levels", ({ group: G_CORE }));
-  let i_pocEnable = pinescript.inputBool(true, "Enable POC", ({ group: G_CORE }));
-  let i_pocShowNearest = pinescript.inputBool(true, "Show POC Nearest Up/Down", ({ group: G_CORE }));
-  let i_pocBinProfile = pinescript.inputBool(true, "POC: Volume Profile Bins (All Plans)", ({ group: G_CORE, tooltip: "True Volume Profile POC — available on ALL TradingView plans (Free, Plus, Premium, Ultimate).nnHow it works: Divides each block's price range into equal bins, distributes each bar's volume proportionally across the bins its range overlaps, and selects the bin with the highest accumulated volume as the Point of Control.nnThis is significantly more accurate than the default single-bar method (which simply uses the average price of the highest-volume bar). When ON, POC reflects the actual high-volume price zone across all bars in the block.nnWhen OFF, the original single-bar method is used as fallback.nnNote: A future update will add native TradingView Footprint POC via request.footprint(), which provides tick-level precision but requires a Premium or Ultimate plan." }));
-  let i_pocBinCount = pinescript.inputInt(25, "POC Bin Resolution", ({ minval: 10, maxval: 100, group: G_CORE, tooltip: "Number of equal price bins used to build the Volume Profile within each block.nnHigher values = finer price resolution = more precise POC, but heavier computation.nLower values = coarser resolution = faster, but POC may be less precise.nnRecommended ranges:n• 10–15: Fast, suitable for high-timeframe or low-volatility instruments.n• 20–30: Good balance for most instruments and timeframes (default: 25).n• 50–100: High precision for scalping or tick-level analysis on lower timeframes.nnThis setting has no effect when 'POC: Volume Profile Bins' is OFF." }));
-  let i_coreLineWidth = pinescript.inputInt(1, "Line Width", ({ minval: 1, maxval: 4, group: G_CORE }));
-  let _coreBuyCol = pinescript.color.rgb(59, 130, 246);
-  let _coreSellCol = pinescript.color.rgb(244, 63, 94);
-  let _pocCol = pinescript.color.rgb(234, 179, 8);
-  let _pocColDim = pinescript.color.new(_pocCol, 25);
+  var G_VOL = "═══ Volume Engine ═══";
+  var G_DASH = "═══ Smart Dashboard ═══";
+  var i_calcMethod = pinescript.inputString("Geometry (Approx)", "Calculation Method", ({ options: ["Geometry (Approx)", "Intrabar (Precise)"], group: G_VOL }));
+  var i_useCustomLTF = pinescript.inputBool(true, "Use custom lower timeframe", ({ group: G_VOL }));
+  var i_customLTF = input.timeframe("15S", "Lower timeframe (LTF)", ({ group: G_VOL }));
+  var i_globalPeriodBoxes = pinescript.inputInt(5, "Global Period (Boxes)", ({ minval: 1, maxval: 200, group: G_VOL }));
+  var i_showDash = pinescript.inputBool(true, "Show Dashboard", ({ group: G_DASH }));
+  var i_dashPos = pinescript.inputString(pinescript.position.top_right, "Position", ({ options: [pinescript.position.top_right, pinescript.position.bottom_right, pinescript.position.bottom_left], group: G_DASH }));
+  var G_TREND = "═══ Multi-Segment Trend ═══";
+  var i_trendEnable = pinescript.inputBool(true, "Enable Trend Detection", ({ group: G_TREND, tooltip: "Multi-segment trend system using ghost candle HH/HL/LH/LL pattern detection." }));
+  var i_rangeAngleThreshold = pinescript.inputFloat(10, "Range Angle Threshold (°)", ({ minval: 1, maxval: 45, step: 1, group: G_TREND, tooltip: "Lines with angle ≤ this value are classified as RANGE." }));
+  var i_trendMinBlocks = pinescript.inputInt(2, "Minimum Blocks per Segment", ({ minval: 2, maxval: 10, group: G_TREND, tooltip: "Minimum blocks required to draw a segment line." }));
+  var i_showRangeSegments = pinescript.inputBool(true, "Show Range Segments", ({ group: G_TREND, tooltip: "Draw lines for range/sideways segments." }));
+  var i_trendUpColor = pinescript.inputColor(pinescript.color.rgb(34, 197, 94), "Uptrend Line Color", ({ group: G_TREND, tooltip: "Color for uptrend support lines (green)." }));
+  var i_trendDnColor = pinescript.inputColor(pinescript.color.rgb(239, 68, 68), "Downtrend Line Color", ({ group: G_TREND, tooltip: "Color for downtrend resistance lines (red)." }));
+  var i_trendRangeColor = pinescript.inputColor(pinescript.color.rgb(148, 163, 184), "Range Line Color", ({ group: G_TREND, tooltip: "Color for range/sideways lines (gray)." }));
+  var i_trendLineWidth = pinescript.inputInt(2, "Trend Line Width", ({ minval: 1, maxval: 5, group: G_TREND }));
+  var i_trendLineStyle = pinescript.inputString("solid", "Trend Line Style", ({ options: ["solid", "dashed", "dotted"], group: G_TREND }));
+  var i_trendProject = pinescript.inputBool(true, "Project to Future", ({ group: G_TREND, tooltip: "Extend trend lines into the future by one block width." }));
+  var G_CORE = "═══ Core Calculation ═══";
+  var i_coreEnable = pinescript.inputBool(true, "Enable Core Calculation", ({ group: G_CORE }));
+  var i_coreDrawLines = pinescript.inputBool(true, "Draw Core Lines", ({ group: G_CORE }));
+  var i_coreProjectFwd = pinescript.inputBool(true, "Offset / Projection (to Future)", ({ group: G_CORE }));
+  var i_coreNearestOnly = pinescript.inputBool(true, "Nearest Only (1 Up / 1 Down)", ({ group: G_CORE }));
+  var i_coreShowMax = pinescript.inputBool(true, "Include MAX Buy/Sell Levels", ({ group: G_CORE }));
+  var i_coreShowMin = pinescript.inputBool(true, "Include MIN Buy/Sell Levels", ({ group: G_CORE }));
+  var i_pocEnable = pinescript.inputBool(true, "Enable POC", ({ group: G_CORE }));
+  var i_pocShowNearest = pinescript.inputBool(true, "Show POC Nearest Up/Down", ({ group: G_CORE }));
+  var i_pocBinProfile = pinescript.inputBool(true, "POC: Volume Profile Bins (All Plans)", ({ group: G_CORE, tooltip: "True Volume Profile POC — available on ALL TradingView plans (Free, Plus, Premium, Ultimate).nnHow it works: Divides each block's price range into equal bins, distributes each bar's volume proportionally across the bins its range overlaps, and selects the bin with the highest accumulated volume as the Point of Control.nnThis is significantly more accurate than the default single-bar method (which simply uses the average price of the highest-volume bar). When ON, POC reflects the actual high-volume price zone across all bars in the block.nnWhen OFF, the original single-bar method is used as fallback.nnNote: A future update will add native TradingView Footprint POC via request.footprint(), which provides tick-level precision but requires a Premium or Ultimate plan." }));
+  var i_pocBinCount = pinescript.inputInt(25, "POC Bin Resolution", ({ minval: 10, maxval: 100, group: G_CORE, tooltip: "Number of equal price bins used to build the Volume Profile within each block.nnHigher values = finer price resolution = more precise POC, but heavier computation.nLower values = coarser resolution = faster, but POC may be less precise.nnRecommended ranges:n• 10–15: Fast, suitable for high-timeframe or low-volatility instruments.n• 20–30: Good balance for most instruments and timeframes (default: 25).n• 50–100: High precision for scalping or tick-level analysis on lower timeframes.nnThis setting has no effect when 'POC: Volume Profile Bins' is OFF." }));
+  var i_coreLineWidth = pinescript.inputInt(1, "Line Width", ({ minval: 1, maxval: 4, group: G_CORE }));
+  var _coreBuyCol = pinescript.color.rgb(59, 130, 246);
+  var _coreSellCol = pinescript.color.rgb(244, 63, 94);
+  var _pocCol = pinescript.color.rgb(234, 179, 8);
+  var _pocColDim = pinescript.color.new(_pocCol, 25);
   if (state.lnCoreUp === undefined) state.lnCoreUp = null;
   if (state.lnCoreDn === undefined) state.lnCoreDn = null;
   if (state.lnPOCUp === undefined) state.lnPOCUp = null;
@@ -2399,19 +2568,19 @@ function main() {
   if (state.lblCoreDn === undefined) state.lblCoreDn = null;
   if (state.lblPOCUp === undefined) state.lblPOCUp = null;
   if (state.lblPOCDn === undefined) state.lblPOCDn = null;
-  let _T_MAX_BUY = 0;
-  let _T_MAX_SELL = 1;
-  let _T_MIN_BUY = 2;
-  let _T_MIN_SELL = 3;
-  let _T_POC = 10;
+  var _T_MAX_BUY = 0;
+  var _T_MAX_SELL = 1;
+  var _T_MIN_BUY = 2;
+  var _T_MIN_SELL = 3;
+  var _T_POC = 10;
   if (state._consSrc === undefined) state._consSrc = pinescript.arrayNew();
   if (state._consType === undefined) state._consType = pinescript.arrayNew();
   if (state._consPrice === undefined) state._consPrice = pinescript.arrayNew();
-  let _CONS_MAX = 260;
+  var _CONS_MAX = 260;
   function f_isConsumed(src, typ, prc) {
-    let tol = (syminfo.mintick * 0.5);
-    let hit = false;
-    let n = pinescript.arraySize(state._consSrc);
+    var tol = (syminfo.mintick * 0.5);
+    var hit = false;
+    var n = pinescript.arraySize(state._consSrc);
     if ((n > 0)) {
       for (let i = 0; i <= (n - 1); i++) {
         if ((((pinescript.arrayGet(state._consSrc, i) === src) && (pinescript.arrayGet(state._consType, i) === typ)) && (pinescript.abs((pinescript.arrayGet(state._consPrice, i) - prc)) <= tol))) {
@@ -2439,7 +2608,7 @@ function main() {
     }
   }
   function f_ensureLine(l, col, st) {
-    let out = l;
+    var out = l;
     if (pinescript.na(out)) {
       out = pinescript.lineNew(bar_index, close, bar_index, close, ({ xloc: xloc.bar_index, extend: extend.none, color: col, style: st, width: i_coreLineWidth }));
     } else {
@@ -2453,7 +2622,9 @@ function main() {
     if (!pinescript.na(l)) {
       pinescript.lineSetXY(l, x, y);
       pinescript.lineSetXY(l, x, y);
-      line.set_color(l, pinescript.color.new(pinescript.color.gray, 100));
+      return line.set_color(l, pinescript.color.new(pinescript.color.gray, 100));
+    } else {
+      return null;
     }
   }
   function f_setHLine(l, x1, x2, y, col) {
@@ -2461,14 +2632,16 @@ function main() {
       pinescript.lineSetXY(l, x1, y);
       pinescript.lineSetXY(l, x2, y);
       line.set_color(l, col);
-      line.set_width(l, i_coreLineWidth);
+      return line.set_width(l, i_coreLineWidth);
+    } else {
+      return null;
     }
   }
   function f_typeName(typ) {
     return ((typ === _T_MAX_BUY) ? "MAX BUY" : ((typ === _T_MAX_SELL) ? "MAX SELL" : ((typ === _T_MIN_BUY) ? "MIN BUY" : ((typ === _T_MIN_SELL) ? "MIN SELL" : "LEVEL"))));
   }
   function f_ensureLabel(lb, col) {
-    let out = lb;
+    var out = lb;
     if (pinescript.na(out)) {
       out = pinescript.labelNew(bar_index, close, "", ({ style: label.style_label_left, size: GLOBAL_TEXT_SIZE, textcolor: col, color: pinescript.color.new(pinescript.color.black, 85) }));
     } else {
@@ -2480,7 +2653,9 @@ function main() {
     if (!pinescript.na(lb)) {
       pinescript.labelSetText(lb, "");
       label.set_xy(lb, bar_index, close);
-      label.set_textcolor(lb, pinescript.color.new(pinescript.color.gray, 100));
+      return label.set_textcolor(lb, pinescript.color.new(pinescript.color.gray, 100));
+    } else {
+      return null;
     }
   }
   function f_setLineLabel(lb, x, y, txt, col) {
@@ -2489,29 +2664,31 @@ function main() {
       pinescript.labelSetText(lb, txt);
       label.set_textcolor(lb, col);
       label.set_style(lb, label.style_label_left);
-      label.set_size(lb, GLOBAL_TEXT_SIZE);
+      return label.set_size(lb, GLOBAL_TEXT_SIZE);
+    } else {
+      return null;
     }
   }
   function f_pickNearestExt(refP) {
-    let upP = null;
-    let upDist = null;
-    let upSrc = null;
-    let upTyp = null;
-    let upBox = null;
-    let dnP = null;
-    let dnDist = null;
-    let dnSrc = null;
-    let dnTyp = null;
-    let dnBox = null;
+    var upP = null;
+    var upDist = null;
+    var upSrc = null;
+    var upTyp = null;
+    var upBox = null;
+    var dnP = null;
+    var dnDist = null;
+    var dnSrc = null;
+    var dnTyp = null;
+    var dnBox = null;
     for (let gi = 0; gi <= (i_groups - 1); gi++) {
-      let bc = pinescript.arrayGet(state.coreBoxes, gi);
+      var bc = pinescript.arrayGet(state.coreBoxes, gi);
       if (bc.valid) {
         if (i_coreShowMax) {
-          let p1 = bc.maxBuyHigh;
-          let s1 = (bar_index - bc.maxBuyOff);
+          var p1 = bc.maxBuyHigh;
+          var s1 = (bar_index - bc.maxBuyOff);
           if ((!pinescript.na(p1) && !f_isConsumed(s1, _T_MAX_BUY, p1))) {
             if ((p1 > refP)) {
-              let d1 = (p1 - refP);
+              var d1 = (p1 - refP);
               if ((pinescript.na(upDist) || (d1 < upDist))) {
                 upDist = d1;
                 upP = p1;
@@ -2521,7 +2698,7 @@ function main() {
               }
             }
             if ((p1 < refP)) {
-              let d1d = (refP - p1);
+              var d1d = (refP - p1);
               if ((pinescript.na(dnDist) || (d1d < dnDist))) {
                 dnDist = d1d;
                 dnP = p1;
@@ -2531,11 +2708,11 @@ function main() {
               }
             }
           }
-          let p2 = bc.maxSellLow;
-          let s2 = (bar_index - bc.maxSellOff);
+          var p2 = bc.maxSellLow;
+          var s2 = (bar_index - bc.maxSellOff);
           if ((!pinescript.na(p2) && !f_isConsumed(s2, _T_MAX_SELL, p2))) {
             if ((p2 > refP)) {
-              let d2 = (p2 - refP);
+              var d2 = (p2 - refP);
               if ((pinescript.na(upDist) || (d2 < upDist))) {
                 upDist = d2;
                 upP = p2;
@@ -2545,7 +2722,7 @@ function main() {
               }
             }
             if ((p2 < refP)) {
-              let d2d = (refP - p2);
+              var d2d = (refP - p2);
               if ((pinescript.na(dnDist) || (d2d < dnDist))) {
                 dnDist = d2d;
                 dnP = p2;
@@ -2557,11 +2734,11 @@ function main() {
           }
         }
         if (i_coreShowMin) {
-          let p3 = bc.minBuyHigh;
-          let s3 = (bar_index - bc.minBuyOff);
+          var p3 = bc.minBuyHigh;
+          var s3 = (bar_index - bc.minBuyOff);
           if ((!pinescript.na(p3) && !f_isConsumed(s3, _T_MIN_BUY, p3))) {
             if ((p3 > refP)) {
-              let d3 = (p3 - refP);
+              var d3 = (p3 - refP);
               if ((pinescript.na(upDist) || (d3 < upDist))) {
                 upDist = d3;
                 upP = p3;
@@ -2571,7 +2748,7 @@ function main() {
               }
             }
             if ((p3 < refP)) {
-              let d3d = (refP - p3);
+              var d3d = (refP - p3);
               if ((pinescript.na(dnDist) || (d3d < dnDist))) {
                 dnDist = d3d;
                 dnP = p3;
@@ -2581,11 +2758,11 @@ function main() {
               }
             }
           }
-          let p4 = bc.minSellLow;
-          let s4 = (bar_index - bc.minSellOff);
+          var p4 = bc.minSellLow;
+          var s4 = (bar_index - bc.minSellOff);
           if ((!pinescript.na(p4) && !f_isConsumed(s4, _T_MIN_SELL, p4))) {
             if ((p4 > refP)) {
-              let d4 = (p4 - refP);
+              var d4 = (p4 - refP);
               if ((pinescript.na(upDist) || (d4 < upDist))) {
                 upDist = d4;
                 upP = p4;
@@ -2595,7 +2772,7 @@ function main() {
               }
             }
             if ((p4 < refP)) {
-              let d4d = (refP - p4);
+              var d4d = (refP - p4);
               if ((pinescript.na(dnDist) || (d4d < dnDist))) {
                 dnDist = d4d;
                 dnP = p4;
@@ -2611,22 +2788,22 @@ function main() {
     return [upP, upSrc, upTyp, upBox, dnP, dnSrc, dnTyp, dnBox];
   }
   function f_pickNearestPOC(refP) {
-    let upP = null;
-    let upSrc = null;
-    let upDist = null;
-    let upBox = null;
-    let dnP = null;
-    let dnSrc = null;
-    let dnDist = null;
-    let dnBox = null;
+    var upP = null;
+    var upSrc = null;
+    var upDist = null;
+    var upBox = null;
+    var dnP = null;
+    var dnSrc = null;
+    var dnDist = null;
+    var dnBox = null;
     for (let gi = 0; gi <= (i_groups - 1); gi++) {
-      let bc = pinescript.arrayGet(state.coreBoxes, gi);
+      var bc = pinescript.arrayGet(state.coreBoxes, gi);
       if (bc.valid) {
-        let p = bc.pocPrice;
-        let src = (bar_index - bc.pocOff);
+        var p = bc.pocPrice;
+        var src = (bar_index - bc.pocOff);
         if ((!pinescript.na(p) && !f_isConsumed(src, _T_POC, p))) {
           if ((p > refP)) {
-            let d = (p - refP);
+            var d = (p - refP);
             if ((pinescript.na(upDist) || (d < upDist))) {
               upDist = d;
               upP = p;
@@ -2635,7 +2812,7 @@ function main() {
             }
           }
           if ((p < refP)) {
-            let d2 = (refP - p);
+            var d2 = (refP - p);
             if ((pinescript.na(dnDist) || (d2 < dnDist))) {
               dnDist = d2;
               dnP = p;
@@ -2649,8 +2826,8 @@ function main() {
     return [upP, upSrc, upBox, dnP, dnSrc, dnBox];
   }
   function f_classifyCandlePattern(bodyR, upperR, lowerR, isBull) {
-    let pattern = "STANDARD";
-    let bias = "NEUTRAL";
+    var pattern = "STANDARD";
+    var bias = "NEUTRAL";
     if ((bodyR < 10)) {
       if (((lowerR > 65) && (upperR < 15))) {
         pattern = "DRAGONFLY";
@@ -2703,67 +2880,67 @@ function main() {
     return [pattern, bias];
   }
   function f_calcRangeStatus(barRange, atr) {
-    let ratio = ((atr > 0) ? (barRange / atr) : 1);
-    let status = ((ratio > 1.5) ? "WIDE" : ((ratio < 0.6) ? "NARROW" : "NORMAL"));
+    var ratio = ((atr > 0) ? (barRange / atr) : 1);
+    var status = ((ratio > 1.5) ? "WIDE" : ((ratio < 0.6) ? "NARROW" : "NORMAL"));
     return [ratio, status];
   }
   function f_calcVolumeStatus(vol, period, offset) {
-    let sumVol = 0;
-    let count = 0;
+    var sumVol = 0;
+    var count = 0;
     for (let i = offset; i <= ((offset + period) - 1); i++) {
-      let v = pinescript.hist(12, volume, i);
+      var v = pinescript.hist(12, volume, i);
       if (!pinescript.na(v)) {
         sumVol += v;
         count += 1;
       }
     }
-    let avgVol = ((count > 0) ? (sumVol / count) : null);
-    let ratio = ((!pinescript.na(avgVol) && (avgVol > 0)) ? (vol / avgVol) : 1);
-    let status = ((ratio > 2) ? "SPIKE" : ((ratio < 0.5) ? "LOW" : "NORMAL"));
+    var avgVol = ((count > 0) ? (sumVol / count) : null);
+    var ratio = ((!pinescript.na(avgVol) && (avgVol > 0)) ? (vol / avgVol) : 1);
+    var status = ((ratio > 2) ? "SPIKE" : ((ratio < 0.5) ? "LOW" : "NORMAL"));
     return [ratio, status];
   }
   function f_calcPressureStatus(buyVol, sellVol) {
-    let total = (buyVol + sellVol);
+    var total = (buyVol + sellVol);
     if ((total === 0)) {
-      "BALANCED";
+      return "BALANCED";
     } else {
-      let buyPct = ((buyVol / total) * 100);
-      ((buyPct > 55) ? "BUYING" : ((buyPct < 45) ? "SELLING" : "BALANCED"));
+      var buyPct = ((buyVol / total) * 100);
+      return ((buyPct > 55) ? "BUYING" : ((buyPct < 45) ? "SELLING" : "BALANCED"));
     }
   }
   function f_analyzeCurrentBar(offset, atr, buyV, sellV) {
-    let h = pinescript.hist(13, high, offset);
-    let l = pinescript.hist(14, low, offset);
-    let o = pinescript.hist(15, open, offset);
-    let c = pinescript.hist(16, close, offset);
-    let v = pinescript.hist(17, volume, offset);
-    let barRange = (h - l);
-    let bodySize = pinescript.abs((c - o));
-    let upperWick = (h - pinescript.max(o, c));
-    let lowerWick = (pinescript.min(o, c) - l);
-    let bodyR = ((barRange > 0) ? ((bodySize / barRange) * 100) : 0);
-    let upperR = ((barRange > 0) ? ((upperWick / barRange) * 100) : 0);
-    let lowerR = ((barRange > 0) ? ((lowerWick / barRange) * 100) : 0);
-    let isBull = (c > o);
-    let [pattern, patternBias] = pinescript.unpack(f_classifyCandlePattern(bodyR, upperR, lowerR, isBull), 2);
-    let [rangeRatio, rangeStatus] = pinescript.unpack(f_calcRangeStatus(barRange, atr), 2);
-    let [volRatio, volStatus] = pinescript.unpack(f_calcVolumeStatus(v, 20, offset), 2);
-    let delta = (buyV - sellV);
-    let pressure = f_calcPressureStatus(buyV, sellV);
+    var h = pinescript.hist(13, high, offset);
+    var l = pinescript.hist(14, low, offset);
+    var o = pinescript.hist(15, open, offset);
+    var c = pinescript.hist(16, close, offset);
+    var v = pinescript.hist(17, volume, offset);
+    var barRange = (h - l);
+    var bodySize = pinescript.abs((c - o));
+    var upperWick = (h - pinescript.max(o, c));
+    var lowerWick = (pinescript.min(o, c) - l);
+    var bodyR = ((barRange > 0) ? ((bodySize / barRange) * 100) : 0);
+    var upperR = ((barRange > 0) ? ((upperWick / barRange) * 100) : 0);
+    var lowerR = ((barRange > 0) ? ((lowerWick / barRange) * 100) : 0);
+    var isBull = (c > o);
+    var [pattern, patternBias] = pinescript.unpack(f_classifyCandlePattern(bodyR, upperR, lowerR, isBull), 2);
+    var [rangeRatio, rangeStatus] = pinescript.unpack(f_calcRangeStatus(barRange, atr), 2);
+    var [volRatio, volStatus] = pinescript.unpack(f_calcVolumeStatus(v, 20, offset), 2);
+    var delta = (buyV - sellV);
+    var pressure = f_calcPressureStatus(buyV, sellV);
     return CurrentBarAnalysis.new(barRange, bodySize, upperWick, lowerWick, bodyR, upperR, lowerR, pattern, patternBias, isBull, rangeRatio, rangeStatus, volRatio, volStatus, buyV, sellV, delta, pressure);
   }
   function f_analyzeComposite(blk1, blk2) {
-    let result = CompositeAnalysis.new();
+    var result = CompositeAnalysis.new();
     if (blk1.valid) {
-      let cRange = (blk1.newHigh - blk1.newLow);
-      let cBody = pinescript.abs((blk1.newClose - blk1.newOpen));
-      let cUpper = (blk1.newHigh - pinescript.max(blk1.newOpen, blk1.newClose));
-      let cLower = (pinescript.min(blk1.newOpen, blk1.newClose) - blk1.newLow);
-      let cBodyR = ((cRange > 0) ? ((cBody / cRange) * 100) : 0);
-      let cUpperR = ((cRange > 0) ? ((cUpper / cRange) * 100) : 0);
-      let cLowerR = ((cRange > 0) ? ((cLower / cRange) * 100) : 0);
-      let isBull = (blk1.newClose > blk1.newOpen);
-      [pattern, bias] = pinescript.unpack(f_classifyCandlePattern(cBodyR, cUpperR, cLowerR, isBull), 2);
+      var cRange = (blk1.newHigh - blk1.newLow);
+      var cBody = pinescript.abs((blk1.newClose - blk1.newOpen));
+      var cUpper = (blk1.newHigh - pinescript.max(blk1.newOpen, blk1.newClose));
+      var cLower = (pinescript.min(blk1.newOpen, blk1.newClose) - blk1.newLow);
+      var cBodyR = ((cRange > 0) ? ((cBody / cRange) * 100) : 0);
+      var cUpperR = ((cRange > 0) ? ((cUpper / cRange) * 100) : 0);
+      var cLowerR = ((cRange > 0) ? ((cLower / cRange) * 100) : 0);
+      var isBull = (blk1.newClose > blk1.newOpen);
+      var [pattern, bias] = pinescript.unpack(f_classifyCandlePattern(cBodyR, cUpperR, cLowerR, isBull), 2);
       result.compRange = cRange;
       result.compBodySize = cBody;
       result.compUpperWick = cUpper;
@@ -2772,12 +2949,12 @@ function main() {
       result.compositePattern = pattern;
       result.compositeBias = bias;
       if (blk2.valid) {
-        let b1High = blk1.newHigh;
-        let b1Low = blk1.newLow;
-        let b2High = blk2.newHigh;
-        let b2Low = blk2.newLow;
-        let b1Body = pinescript.abs((blk1.newClose - blk1.newOpen));
-        let b2Body = pinescript.abs((blk2.newClose - blk2.newOpen));
+        var b1High = blk1.newHigh;
+        var b1Low = blk1.newLow;
+        var b2High = blk2.newHigh;
+        var b2Low = blk2.newLow;
+        var b1Body = pinescript.abs((blk1.newClose - blk1.newOpen));
+        var b2Body = pinescript.abs((blk2.newClose - blk2.newOpen));
         if (((b1High <= b2High) && (b1Low >= b2Low))) {
           result.blockRelation = "INSIDE";
           result.blockRelationBias = "NEUTRAL";
@@ -2803,15 +2980,15 @@ function main() {
     return result;
   }
   function f_analyzeTrendContext(channels, quality) {
-    let result = TrendContext.new();
-    let numChannels = pinescript.arraySize(channels);
+    var result = TrendContext.new();
+    var numChannels = pinescript.arraySize(channels);
     if ((numChannels > 0)) {
-      let current = pinescript.arrayGet(channels, 0);
+      var current = pinescript.arrayGet(channels, 0);
       result.currentType = current.channelType;
       result.currentBlocks = ((current.endBlock - current.startBlock) + 1);
       result.currentLabel = ((current.channelType === DIR_UP) ? "UPTREND" : ((current.channelType === DIR_DOWN) ? "DOWNTREND" : "RANGE"));
       if ((numChannels > 1)) {
-        let prev = pinescript.arrayGet(channels, 1);
+        var prev = pinescript.arrayGet(channels, 1);
         result.prevType = prev.channelType;
         result.prevLabel = ((prev.channelType === DIR_UP) ? "UPTREND" : ((prev.channelType === DIR_DOWN) ? "DOWNTREND" : "RANGE"));
         if ((result.prevType !== result.currentType)) {
@@ -2835,8 +3012,8 @@ function main() {
       result.trendChanges = 0;
       if ((numChannels > 1)) {
         for (let i = 0; i <= (numChannels - 2); i++) {
-          let ch1 = pinescript.arrayGet(channels, i);
-          let ch2 = pinescript.arrayGet(channels, (i + 1));
+          var ch1 = pinescript.arrayGet(channels, i);
+          var ch2 = pinescript.arrayGet(channels, (i + 1));
           if ((ch1.channelType !== ch2.channelType)) {
             result.trendChanges += 1;
           }
@@ -2851,7 +3028,7 @@ function main() {
     result.qualityScore = quality;
     result.confidenceLevel = ((quality >= 80) ? "HIGH" : ((quality >= 60) ? "MEDIUM" : "LOW"));
     if ((numChannels > 0)) {
-      let ch = pinescript.arrayGet(channels, 0);
+      var ch = pinescript.arrayGet(channels, 0);
       result.strengthRating = ((pinescript.abs(ch.angleDeg) > 45) ? "VERY_STRONG" : ((pinescript.abs(ch.angleDeg) > 30) ? "STRONG" : ((pinescript.abs(ch.angleDeg) > 15) ? "MODERATE" : "WEAK")));
     } else {
       result.strengthRating = "WEAK";
@@ -2860,12 +3037,12 @@ function main() {
   }
   function f_checkProximity(price, level, threshold) {
     if (pinescript.na(level)) {
-      [false, 0];
+      return [false, 0];
     } else {
-      let dist = pinescript.abs((price - level));
-      let pct = ((price !== 0) ? ((dist / price) * 100) : 0);
-      let isNear = (pct <= threshold);
-      [isNear, pct];
+      var dist = pinescript.abs((price - level));
+      var pct = ((price !== 0) ? ((dist / price) * 100) : 0);
+      var isNear = (pct <= threshold);
+      return [isNear, pct];
     }
   }
   function f_connect(key) {
@@ -2878,19 +3055,19 @@ function main() {
     return ((relation === "ENGULFING") ? f_L("completely encompasses the previous block, indicating increased power in current direction", "önceki bloğu tamamen kapsar ve mevcut yöndeki gücün arttığını gösterir", "पिछले ब्लॉक को पूरी तरह घेरता है, वर्तमान दिशा में बढ़ी शक्ति का संकेत देता है", "تبتلع الكتلة السابقة بالكامل، مما يدل على تزايد القوة في الاتجاه الحالي") : ((relation === "INSIDE") ? f_L("is completely within the previous block range, indicating reduced volatility and potential accumulation", "tamamen önceki blok aralığında ve azalan oynaklık gösterir", "पिछले ब्लॉक के दायरे में है, कम अस्थिरता का संकेत देता है", "تقع بالكامل ضمن نطاق الكتلة السابقة، مما يدل على انخفاض التذبذب واحتمال التجميع") : ((relation === "OUTSIDE") ? f_L("exceeds the previous block range, indicating increased volatility and market strength", "önceki blok aralığını aşar ve artan oynaklık gösterir", "पिछले ब्लॉक की सीमा से अधिक है, बढ़ी अस्थिरता का संकेत देता है", "تتجاوز نطاق الكتلة السابقة، مما يدل على تزايد التذبذب وقوة السوق") : "")));
   }
   function f_wrapNarrative(txt, maxWords, maxChars) {
-    let lines = pinescript.arrayNew();
-    let words = pinescript.strSplit(txt, " ");
-    let n = pinescript.arraySize(words);
+    var lines = pinescript.arrayNew();
+    var words = pinescript.strSplit(txt, " ");
+    var n = pinescript.arraySize(words);
     if ((n > 0)) {
-      let line = "";
-      let wcnt = 0;
+      var line = "";
+      var wcnt = 0;
       for (let i = 0; i <= (n - 1); i++) {
-        let w = pinescript.arrayGet(words, i);
+        var w = pinescript.arrayGet(words, i);
         if ((pinescript.strLength(w) === 0)) {
           continue;
         }
-        let cand = ((wcnt === 0) ? w : ((line + " ") + w));
-        let overflow = ((wcnt >= maxWords) || (pinescript.strLength(cand) > maxChars));
+        var cand = ((wcnt === 0) ? w : ((line + " ") + w));
+        var overflow = ((wcnt >= maxWords) || (pinescript.strLength(cand) > maxChars));
         if ((overflow && (wcnt > 0))) {
           pinescript.arrayPush(lines, line);
           line = w;
@@ -2907,8 +3084,8 @@ function main() {
     return lines;
   }
   function f_buildProfessionalNarrativeParts(cBar, comp, ctx, ch, trendBuy, trendSell, trendDelta, trendDeltaPct, bodyStatus, upperPinChg, lowerPinChg, volMom, channelPos, posStatus, resistPrice, supportPrice, lvls, contradictions, hasDivergence) {
-    let narrative = "";
-    let currentPrice = pinescript.hist(18, close, baseOff);
+    var narrative = "";
+    var currentPrice = pinescript.hist(18, close, baseOff);
     narrative += (((f_connect("CURRENT_CANDLE") + " ") + f_patternDesc(cBar.pattern)) + " ");
     narrative += (((f_connect("WITH_RANGE") + " ") + f_rangeStatusStr(cBar.rangeStatus)) + ". ");
     if ((cBar.pressureStatus === "BUYING")) {
@@ -2936,7 +3113,7 @@ function main() {
     if (((comp.blockRelation !== "NORMAL") && (comp.blockRelation !== ""))) {
       narrative += (((f_connect("CURRENT_BLOCK") + " ") + f_blockRelDesc(comp.blockRelation, comp.blockRelationBias)) + ". ");
     }
-    let part1 = narrative;
+    var part1 = narrative;
     narrative = "";
     if (hasDivergence) {
       narrative += (((f_connect("HOWEVER") + ", ") + f_connect("IMPORTANT_CONTRADICTION")) + ": ");
@@ -2974,7 +3151,7 @@ function main() {
     } else {
       narrative += (f_L("decreased market participation", "azalan piyasa katılımı", "घटती बाजार भागीदारी", "تراجع المشاركة في السوق") + ". ");
     }
-    let part2 = narrative;
+    var part2 = narrative;
     narrative = "";
     narrative += ((f_connect("CANDLE_BODIES") + " ") + f_bodyStatusStr(bodyStatus));
     if ((bodyStatus === "EXPANDING")) {
@@ -3009,19 +3186,19 @@ function main() {
         }
       }
     }
-    let part3 = narrative;
+    var part3 = narrative;
     narrative = "";
-    let pocUpLevel = (lvls.hasPOCUp ? lvls.pocUp : null);
-    let pocDnLevel = (lvls.hasPOCDn ? lvls.pocDn : null);
-    let coreUpLevel = (lvls.hasCoreUp ? lvls.coreUp : null);
-    let coreDnLevel = (lvls.hasCoreDn ? lvls.coreDn : null);
-    let [nearResist, resistPct] = pinescript.unpack(f_checkProximity(currentPrice, resistPrice, 2), 2);
-    let [nearSupport, supportPct] = pinescript.unpack(f_checkProximity(currentPrice, supportPrice, 2), 2);
-    let [nearPOCUp, pocUpPct] = pinescript.unpack(f_checkProximity(currentPrice, pocUpLevel, 1.5), 2);
-    let [nearPOCDn, pocDnPct] = pinescript.unpack(f_checkProximity(currentPrice, pocDnLevel, 1.5), 2);
-    let [nearCoreUp, coreUpPct] = pinescript.unpack(f_checkProximity(currentPrice, coreUpLevel, 1), 2);
-    let [nearCoreDn, coreDnPct] = pinescript.unpack(f_checkProximity(currentPrice, coreDnLevel, 1), 2);
-    let hasKeyEvent = (((((nearResist || nearSupport) || nearPOCUp) || nearPOCDn) || nearCoreUp) || nearCoreDn);
+    var pocUpLevel = (lvls.hasPOCUp ? lvls.pocUp : null);
+    var pocDnLevel = (lvls.hasPOCDn ? lvls.pocDn : null);
+    var coreUpLevel = (lvls.hasCoreUp ? lvls.coreUp : null);
+    var coreDnLevel = (lvls.hasCoreDn ? lvls.coreDn : null);
+    var [nearResist, resistPct] = pinescript.unpack(f_checkProximity(currentPrice, resistPrice, 2), 2);
+    var [nearSupport, supportPct] = pinescript.unpack(f_checkProximity(currentPrice, supportPrice, 2), 2);
+    var [nearPOCUp, pocUpPct] = pinescript.unpack(f_checkProximity(currentPrice, pocUpLevel, 1.5), 2);
+    var [nearPOCDn, pocDnPct] = pinescript.unpack(f_checkProximity(currentPrice, pocDnLevel, 1.5), 2);
+    var [nearCoreUp, coreUpPct] = pinescript.unpack(f_checkProximity(currentPrice, coreUpLevel, 1), 2);
+    var [nearCoreDn, coreDnPct] = pinescript.unpack(f_checkProximity(currentPrice, coreDnLevel, 1), 2);
+    var hasKeyEvent = (((((nearResist || nearSupport) || nearPOCUp) || nearPOCDn) || nearCoreUp) || nearCoreDn);
     if (hasKeyEvent) {
       narrative += (f_connect("KEY_NOTE") + ": ");
       if (nearResist) {
@@ -3044,26 +3221,26 @@ function main() {
       }
     } else {
       if ((!pinescript.na(resistPrice) && !pinescript.na(supportPrice))) {
-        let resistDist = (resistPrice - currentPrice);
-        let supportDist = (currentPrice - supportPrice);
+        var resistDist = (resistPrice - currentPrice);
+        var supportDist = (currentPrice - supportPrice);
         narrative += (((((((f_connect("DISTANCE_TO_LEVELS") + " ") + pinescript.strToString(resistDist, "#.##")) + ", ") + f_connect("TO_SUPPORT")) + " ") + pinescript.strToString(supportDist, "#.##")) + ". ");
       }
       if ((!pinescript.na(pocUpLevel) || !pinescript.na(pocDnLevel))) {
-        let dUp = (!pinescript.na(pocUpLevel) ? pinescript.abs((currentPrice - pocUpLevel)) : null);
-        let dDn = (!pinescript.na(pocDnLevel) ? pinescript.abs((currentPrice - pocDnLevel)) : null);
-        let nearestPOC = (pinescript.na(dUp) ? pocDnLevel : (pinescript.na(dDn) ? pocUpLevel : ((dUp <= dDn) ? pocUpLevel : pocDnLevel)));
-        let [, pocPct] = pinescript.unpack(f_checkProximity(currentPrice, nearestPOC, 100), 2);
+        var dUp = (!pinescript.na(pocUpLevel) ? pinescript.abs((currentPrice - pocUpLevel)) : null);
+        var dDn = (!pinescript.na(pocDnLevel) ? pinescript.abs((currentPrice - pocDnLevel)) : null);
+        var nearestPOC = (pinescript.na(dUp) ? pocDnLevel : (pinescript.na(dDn) ? pocUpLevel : ((dUp <= dDn) ? pocUpLevel : pocDnLevel)));
+        var [, pocPct] = pinescript.unpack(f_checkProximity(currentPrice, nearestPOC, 100), 2);
         narrative += ((((f_L(" Nearest POC: ", " En yakın POC: ", " निकटतम POC: ", " أقرب POC: ") + pinescript.strToString(nearestPOC, format.mintick)) + " (") + pinescript.strToString(pocPct, "#.##")) + "%). ");
       }
       if ((!pinescript.na(coreUpLevel) || !pinescript.na(coreDnLevel))) {
-        let cdUp = (!pinescript.na(coreUpLevel) ? pinescript.abs((currentPrice - coreUpLevel)) : null);
-        let cdDn = (!pinescript.na(coreDnLevel) ? pinescript.abs((currentPrice - coreDnLevel)) : null);
-        let nearestCore = (pinescript.na(cdUp) ? coreDnLevel : (pinescript.na(cdDn) ? coreUpLevel : ((cdUp <= cdDn) ? coreUpLevel : coreDnLevel)));
-        let [, corePct] = pinescript.unpack(f_checkProximity(currentPrice, nearestCore, 100), 2);
+        var cdUp = (!pinescript.na(coreUpLevel) ? pinescript.abs((currentPrice - coreUpLevel)) : null);
+        var cdDn = (!pinescript.na(coreDnLevel) ? pinescript.abs((currentPrice - coreDnLevel)) : null);
+        var nearestCore = (pinescript.na(cdUp) ? coreDnLevel : (pinescript.na(cdDn) ? coreUpLevel : ((cdUp <= cdDn) ? coreUpLevel : coreDnLevel)));
+        var [, corePct] = pinescript.unpack(f_checkProximity(currentPrice, nearestCore, 100), 2);
         narrative += ((((f_L(" Nearest core level: ", " En yakın çekirdek seviye: ", " निकटतम कोर स्तर: ", " أقرب مستوى جوهري: ") + pinescript.strToString(nearestCore, format.mintick)) + " (") + pinescript.strToString(corePct, "#.##")) + "%). ");
       }
     }
-    let part4 = narrative;
+    var part4 = narrative;
     narrative = "";
     narrative += (f_connect("OVERALL") + ", ");
     if (((contradictions > 0) || hasDivergence)) {
@@ -3090,8 +3267,8 @@ function main() {
         }
       }
     }
-    let part5 = narrative;
-    let parts = pinescript.arrayNew();
+    var part5 = narrative;
+    var parts = pinescript.arrayNew();
     pinescript.arrayPush(parts, part1);
     pinescript.arrayPush(parts, part2);
     pinescript.arrayPush(parts, part3);
@@ -3103,13 +3280,13 @@ function main() {
     return (useCustom ? customTF : (timeframe.isseconds ? "1S" : (timeframe.isintraday ? "1" : (timeframe.isdaily ? "5" : "60"))));
   }
   function f_ltfVol(ltf) {
-    let [u, d, dl] = pinescript.unpack(tvta.requestUpAndDownVolume(ltf), 3);
+    var [u, d, dl] = pinescript.unpack(tvta.requestUpAndDownVolume(ltf), 3);
     return [pinescript.abs(u), pinescript.abs(d), dl];
   }
   function f_geoVol() {
-    let r = (high - low);
-    let b = null;
-    let s = null;
+    var r = (high - low);
+    var b = null;
+    var s = null;
     if (pinescript.na(volume)) {
       b = null;
       s = null;
@@ -3127,24 +3304,24 @@ function main() {
   if (state.vBuy === undefined) state.vBuy = null;
   if (state.vSell === undefined) state.vSell = null;
   if (state.vDel === undefined) state.vDel = null;
-  let ltf = f_resolveLTF(i_useCustomLTF, i_customLTF);
+  var ltf = f_resolveLTF(i_useCustomLTF, i_customLTF);
   if ((i_calcMethod === "Intrabar (Precise)")) {
-    let [b1, s1, d1] = pinescript.unpack(f_ltfVol(ltf), 3);
+    var [b1, s1, d1] = pinescript.unpack(f_ltfVol(ltf), 3);
     state.vBuy = b1;
     state.vSell = s1;
     state.vDel = d1;
   } else {
-    let [b2, s2, d2] = pinescript.unpack(f_geoVol(), 3);
+    var [b2, s2, d2] = pinescript.unpack(f_geoVol(), 3);
     state.vBuy = b2;
     state.vSell = s2;
     state.vDel = d2;
   }
   function f_binProfilePOC(startOff, endOff, numBins) {
-    let blockHigh = null;
-    let blockLow = null;
+    var blockHigh = null;
+    var blockLow = null;
     for (let k = startOff; k <= endOff; k++) {
-      let h = pinescript.hist(19, high, k);
-      let l = pinescript.hist(20, low, k);
+      var h = pinescript.hist(19, high, k);
+      var l = pinescript.hist(20, low, k);
       if ((pinescript.na(blockHigh) || (h > blockHigh))) {
         blockHigh = h;
       }
@@ -3152,34 +3329,34 @@ function main() {
         blockLow = l;
       }
     }
-    let resultPrice = null;
-    let resultOff = null;
-    let resultVol = 0;
+    var resultPrice = null;
+    var resultOff = null;
+    var resultVol = 0;
     if (((!pinescript.na(blockHigh) && !pinescript.na(blockLow)) && (blockHigh > blockLow))) {
-      let binSize = ((blockHigh - blockLow) / numBins);
-      let binVol = pinescript.arrayNew(numBins, 0);
+      var binSize = ((blockHigh - blockLow) / numBins);
+      var binVol = pinescript.arrayNew(numBins, 0);
       for (let k = startOff; k <= endOff; k++) {
-        let barH = pinescript.hist(21, high, k);
-        let barL = pinescript.hist(22, low, k);
-        let barTotalVol = (pinescript.nz(pinescript.hist(23, state.vBuy, k), 0) + pinescript.nz(pinescript.hist(24, state.vSell, k), 0));
+        var barH = pinescript.hist(21, high, k);
+        var barL = pinescript.hist(22, low, k);
+        var barTotalVol = (pinescript.nz(pinescript.hist(23, state.vBuy, k), 0) + pinescript.nz(pinescript.hist(24, state.vSell, k), 0));
         if (((barTotalVol > 0) && (barH > barL))) {
-          let firstBin = pinescript.max(0, int(pinescript.floor(((barL - blockLow) / binSize))));
-          let lastBin = pinescript.min((numBins - 1), int(pinescript.floor((((barH - blockLow) - (syminfo.mintick * 0.01)) / binSize))));
+          var firstBin = pinescript.max(0, int(pinescript.floor(((barL - blockLow) / binSize))));
+          var lastBin = pinescript.min((numBins - 1), int(pinescript.floor((((barH - blockLow) - (syminfo.mintick * 0.01)) / binSize))));
           lastBin = pinescript.max(firstBin, lastBin);
-          let barRange = (barH - barL);
+          var barRange = (barH - barL);
           for (let b = firstBin; b <= lastBin; b++) {
-            let bLow = (blockLow + (b * binSize));
-            let bHigh = (bLow + binSize);
-            let overlap = (pinescript.min(barH, bHigh) - pinescript.max(barL, bLow));
-            let proportion = ((barRange > 0) ? pinescript.max(0, (overlap / barRange)) : 0);
+            var bLow = (blockLow + (b * binSize));
+            var bHigh = (bLow + binSize);
+            var overlap = (pinescript.min(barH, bHigh) - pinescript.max(barL, bLow));
+            var proportion = ((barRange > 0) ? pinescript.max(0, (overlap / barRange)) : 0);
             pinescript.arraySet(binVol, b, (pinescript.arrayGet(binVol, b) + (barTotalVol * proportion)));
           }
         }
       }
-      let maxVol = 0;
-      let maxBin = 0;
+      var maxVol = 0;
+      var maxBin = 0;
       for (let b = 0; b <= (numBins - 1); b++) {
-        let bv = pinescript.arrayGet(binVol, b);
+        var bv = pinescript.arrayGet(binVol, b);
         if ((bv > maxVol)) {
           maxVol = bv;
           maxBin = b;
@@ -3187,9 +3364,9 @@ function main() {
       }
       resultPrice = (blockLow + ((maxBin + 0.5) * binSize));
       resultVol = maxVol;
-      let minDist = null;
+      var minDist = null;
       for (let k = startOff; k <= endOff; k++) {
-        let dist = pinescript.abs((pinescript.hist(25, hlc3, k) - resultPrice));
+        var dist = pinescript.abs((pinescript.hist(25, hlc3, k) - resultPrice));
         if ((pinescript.na(minDist) || (dist < minDist))) {
           minDist = dist;
           resultOff = k;
@@ -3198,15 +3375,15 @@ function main() {
     }
     return [resultPrice, resultOff, resultVol];
   }
-  let globalAvgRange = pinescript.atr(20);
-  let globalYZVol = f_yangZhangVolatility(20);
-  let histBarsDash = pinescript.max(0, ((bar_index - baseOff) + 1));
+  var globalAvgRange = pinescript.atr(20);
+  var globalYZVol = f_yangZhangVolatility(20);
+  var histBarsDash = pinescript.max(0, ((bar_index - baseOff) + 1));
   histBarsDash = pinescript.min(histBarsDash, 5000);
-  let scannableBars = 0;
+  var scannableBars = 0;
   if ((i_calcMethod === "Intrabar (Precise)")) {
-    let probe = pinescript.min(histBarsDash, effWindow);
+    var probe = pinescript.min(histBarsDash, effWindow);
     for (let off = baseOff; off <= ((baseOff + probe) - 1); off++) {
-      let ok = ((!pinescript.na(pinescript.hist(26, state.vBuy, off)) && !pinescript.na(pinescript.hist(27, state.vSell, off))) && !pinescript.na(pinescript.hist(28, state.vDel, off)));
+      var ok = ((!pinescript.na(pinescript.hist(26, state.vBuy, off)) && !pinescript.na(pinescript.hist(27, state.vSell, off))) && !pinescript.na(pinescript.hist(28, state.vDel, off)));
       if (ok) {
         scannableBars += 1;
       } else {
@@ -3218,10 +3395,10 @@ function main() {
   }
   if (state.lastAnalyticsBar === undefined) state.lastAnalyticsBar = -1;
   if (barstate.islast) {
-    let maxOff = ((baseOff + effWindow) - 1);
-    let enoughHistory = (bar_index >= maxOff);
-    let isNewBarForAnalytics = (bar_index !== state.lastAnalyticsBar);
-    let shouldRebuildAnalytics = ((baseOff === 0) || isNewBarForAnalytics);
+    var maxOff = ((baseOff + effWindow) - 1);
+    var enoughHistory = (bar_index >= maxOff);
+    var isNewBarForAnalytics = (bar_index !== state.lastAnalyticsBar);
+    var shouldRebuildAnalytics = ((baseOff === 0) || isNewBarForAnalytics);
     if (shouldRebuildAnalytics) {
       state.lastAnalyticsBar = bar_index;
     }
@@ -3232,8 +3409,8 @@ function main() {
       if (i_showGroupNums) {
         f_ensureLabelCount(i_groups);
         for (let gi = 0; gi <= (i_groups - 1); gi++) {
-          let endOff = ((baseOff + ((gi + 1) * groupSize)) - 1);
-          let lb = pinescript.arrayGet(state.lblNums, gi);
+          var endOff = ((baseOff + ((gi + 1) * groupSize)) - 1);
+          var lb = pinescript.arrayGet(state.lblNums, gi);
           label.set_xy(lb, (bar_index - endOff), pinescript.hist(29, high, endOff));
           pinescript.labelSetText(lb, pinescript.strToString((gi + 1)));
         }
@@ -3252,46 +3429,46 @@ function main() {
           f_ensureCompositeUpperWickCount(0);
           f_ensureCompositeLowerWickCount(0);
         }
-        let bullishCol = pinescript.color.rgb(34, 197, 94);
-        let bearishCol = pinescript.color.rgb(239, 68, 68);
-        let neutralCol = pinescript.color.rgb(156, 163, 175);
+        var bullishCol = pinescript.color.rgb(34, 197, 94);
+        var bearishCol = pinescript.color.rgb(239, 68, 68);
+        var neutralCol = pinescript.color.rgb(156, 163, 175);
         for (let gi = 0; gi <= (i_groups - 1); gi++) {
           if (!shouldRebuildAnalytics) {
-            let startOff = (baseOff + (gi * groupSize));
-            let endOff = ((baseOff + ((gi + 1) * groupSize)) - 1);
-            let xRight = (bar_index - startOff);
-            let xLeft = (bar_index - endOff);
-            let bx = pinescript.arrayGet(state.grpBoxes, gi);
+            var startOff = (baseOff + (gi * groupSize));
+            endOff = ((baseOff + ((gi + 1) * groupSize)) - 1);
+            var xRight = (bar_index - startOff);
+            var xLeft = (bar_index - endOff);
+            var bx = pinescript.arrayGet(state.grpBoxes, gi);
             box.set_lefttop(bx, xLeft, pinescript.hist(30, high, endOff));
             box.set_rightbottom(bx, xRight, pinescript.hist(31, low, startOff));
             continue;
           }
-          let startOff = (baseOff + (gi * groupSize));
-          let endOff = ((baseOff + ((gi + 1) * groupSize)) - 1);
-          let top = null;
-          let bot = null;
-          let sumBuyBlock = 0;
-          let sumSellBlock = 0;
-          let sumUpperPin = 0;
-          let sumLowerPin = 0;
-          let sumBody = 0;
-          let compOpen = null;
-          let compHigh = null;
-          let compLow = null;
-          let compClose = null;
+          startOff = (baseOff + (gi * groupSize));
+          endOff = ((baseOff + ((gi + 1) * groupSize)) - 1);
+          var top = null;
+          var bot = null;
+          var sumBuyBlock = 0;
+          var sumSellBlock = 0;
+          var sumUpperPin = 0;
+          var sumLowerPin = 0;
+          var sumBody = 0;
+          var compOpen = null;
+          var compHigh = null;
+          var compLow = null;
+          var compClose = null;
           for (let k = startOff; k <= endOff; k++) {
-            let h = pinescript.hist(32, high, k);
-            let l = pinescript.hist(33, low, k);
-            let o = pinescript.hist(34, open, k);
-            let c = pinescript.hist(35, close, k);
+            var h = pinescript.hist(32, high, k);
+            var l = pinescript.hist(33, low, k);
+            var o = pinescript.hist(34, open, k);
+            var c = pinescript.hist(35, close, k);
             if ((pinescript.na(top) || (h > top))) {
               top = h;
             }
             if ((pinescript.na(bot) || (l < bot))) {
               bot = l;
             }
-            let bVol = pinescript.hist(36, state.vBuy, k);
-            let sVol = pinescript.hist(37, state.vSell, k);
+            var bVol = pinescript.hist(36, state.vBuy, k);
+            var sVol = pinescript.hist(37, state.vSell, k);
             if ((!pinescript.na(bVol) && !pinescript.na(sVol))) {
               sumBuyBlock += bVol;
               sumSellBlock += sVol;
@@ -3312,42 +3489,42 @@ function main() {
               compLow = l;
             }
           }
-          let xRight = (bar_index - startOff);
-          let xLeft = (bar_index - endOff);
-          let xCenter = int(pinescript.round(((xLeft + xRight) / 2)));
-          let bx = pinescript.arrayGet(state.grpBoxes, gi);
+          xRight = (bar_index - startOff);
+          xLeft = (bar_index - endOff);
+          var xCenter = int(pinescript.round(((xLeft + xRight) / 2)));
+          bx = pinescript.arrayGet(state.grpBoxes, gi);
           box.set_lefttop(bx, xLeft, top);
           box.set_rightbottom(bx, xRight, bot);
           box.set_bgcolor(bx, pinescript.color.new(i_boxColor, i_boxTransp));
           box.set_border_color(bx, pinescript.color.new(pinescript.color.black, 100));
           box.set_border_width(bx, 0);
-          let n = groupSize;
-          let blockDelta = (sumBuyBlock - sumSellBlock);
-          let blockHeight = (top - bot);
-          let blockArea = (blockHeight * n);
-          let ba = BlockAnalytics.new(true, sumBuyBlock, sumSellBlock, blockDelta, blockHeight, blockArea, ((n > 0) ? (sumUpperPin / n) : null), ((n > 0) ? (sumLowerPin / n) : null), ((n > 0) ? (sumBody / n) : null), compOpen, compHigh, compLow, compClose, xLeft, xRight, xCenter, bot);
+          var n = groupSize;
+          var blockDelta = (sumBuyBlock - sumSellBlock);
+          var blockHeight = (top - bot);
+          var blockArea = (blockHeight * n);
+          var ba = BlockAnalytics.new(true, sumBuyBlock, sumSellBlock, blockDelta, blockHeight, blockArea, ((n > 0) ? (sumUpperPin / n) : null), ((n > 0) ? (sumLowerPin / n) : null), ((n > 0) ? (sumBody / n) : null), compOpen, compHigh, compLow, compClose, xLeft, xRight, xCenter, bot);
           pinescript.arraySet(state.analyticsData, gi, ba);
           if (((((i_showCompositeCandle && !pinescript.na(compOpen)) && !pinescript.na(compHigh)) && !pinescript.na(compLow)) && !pinescript.na(compClose))) {
-            let candleCol = ((blockDelta > 0) ? bullishCol : ((blockDelta < 0) ? bearishCol : neutralCol));
-            let wickCol = pinescript.color.new(candleCol, (i_compositeCandleTransp - 15));
-            let bodyCol = pinescript.color.new(candleCol, i_compositeCandleTransp);
-            let borderCol = pinescript.color.new(candleCol, (i_compositeCandleTransp - 25));
-            let bodyTop = pinescript.max(compOpen, compClose);
-            let bodyBot = pinescript.min(compOpen, compClose);
-            let bodyLeft = (xCenter - 1);
-            let bodyRight = (xCenter + 1);
-            let bodyBox = pinescript.arrayGet(state.compositeBodies, gi);
+            var candleCol = ((blockDelta > 0) ? bullishCol : ((blockDelta < 0) ? bearishCol : neutralCol));
+            var wickCol = pinescript.color.new(candleCol, (i_compositeCandleTransp - 15));
+            var bodyCol = pinescript.color.new(candleCol, i_compositeCandleTransp);
+            var borderCol = pinescript.color.new(candleCol, (i_compositeCandleTransp - 25));
+            var bodyTop = pinescript.max(compOpen, compClose);
+            var bodyBot = pinescript.min(compOpen, compClose);
+            var bodyLeft = (xCenter - 1);
+            var bodyRight = (xCenter + 1);
+            var bodyBox = pinescript.arrayGet(state.compositeBodies, gi);
             box.set_lefttop(bodyBox, bodyLeft, bodyTop);
             box.set_rightbottom(bodyBox, bodyRight, bodyBot);
             box.set_bgcolor(bodyBox, bodyCol);
             box.set_border_color(bodyBox, borderCol);
             box.set_border_width(bodyBox, 1);
-            let upperWick = pinescript.arrayGet(state.compositeUpperWicks, gi);
+            var upperWick = pinescript.arrayGet(state.compositeUpperWicks, gi);
             pinescript.lineSetXY(upperWick, xCenter, bodyTop);
             pinescript.lineSetXY(upperWick, xCenter, compHigh);
             line.set_color(upperWick, wickCol);
             line.set_width(upperWick, 1);
-            let lowerWick = pinescript.arrayGet(state.compositeLowerWicks, gi);
+            var lowerWick = pinescript.arrayGet(state.compositeLowerWicks, gi);
             pinescript.lineSetXY(lowerWick, xCenter, bodyBot);
             pinescript.lineSetXY(lowerWick, xCenter, compLow);
             line.set_color(lowerWick, wickCol);
@@ -3373,13 +3550,13 @@ function main() {
       pinescript.arrayPop(state.g_binPocVol);
     }
     for (let _gi = 0; _gi <= (i_groups - 1); _gi++) {
-      let _sOff = (baseOff + (_gi * groupSize));
-      let _eOff = ((baseOff + ((_gi + 1) * groupSize)) - 1);
-      let _blockHigh = null;
-      let _blockLow = null;
+      var _sOff = (baseOff + (_gi * groupSize));
+      var _eOff = ((baseOff + ((_gi + 1) * groupSize)) - 1);
+      var _blockHigh = null;
+      var _blockLow = null;
       for (let k = _sOff; k <= _eOff; k++) {
-        let _h = pinescript.hist(38, high, k);
-        let _l = pinescript.hist(39, low, k);
+        var _h = pinescript.hist(38, high, k);
+        var _l = pinescript.hist(39, low, k);
         if ((pinescript.na(_blockHigh) || (_h > _blockHigh))) {
           _blockHigh = _h;
         }
@@ -3387,34 +3564,34 @@ function main() {
           _blockLow = _l;
         }
       }
-      let _bp = null;
-      let _bo = null;
-      let _bv = 0;
+      var _bp = null;
+      var _bo = null;
+      var _bv = 0;
       if (((!pinescript.na(_blockHigh) && !pinescript.na(_blockLow)) && (_blockHigh > _blockLow))) {
-        let _binSize = ((_blockHigh - _blockLow) / i_pocBinCount);
-        let _binVol = pinescript.arrayNew(i_pocBinCount, 0);
+        var _binSize = ((_blockHigh - _blockLow) / i_pocBinCount);
+        var _binVol = pinescript.arrayNew(i_pocBinCount, 0);
         for (let k = _sOff; k <= _eOff; k++) {
-          let _barH = pinescript.hist(40, high, k);
-          let _barL = pinescript.hist(41, low, k);
-          let _barTotalVol = (pinescript.nz(pinescript.hist(42, state.vBuy, k), 0) + pinescript.nz(pinescript.hist(43, state.vSell, k), 0));
+          var _barH = pinescript.hist(40, high, k);
+          var _barL = pinescript.hist(41, low, k);
+          var _barTotalVol = (pinescript.nz(pinescript.hist(42, state.vBuy, k), 0) + pinescript.nz(pinescript.hist(43, state.vSell, k), 0));
           if (((_barTotalVol > 0) && (_barH > _barL))) {
-            let _firstBin = pinescript.max(0, int(pinescript.floor(((_barL - _blockLow) / _binSize))));
-            let _lastBin = pinescript.min((i_pocBinCount - 1), int(pinescript.floor((((_barH - _blockLow) - (syminfo.mintick * 0.01)) / _binSize))));
+            var _firstBin = pinescript.max(0, int(pinescript.floor(((_barL - _blockLow) / _binSize))));
+            var _lastBin = pinescript.min((i_pocBinCount - 1), int(pinescript.floor((((_barH - _blockLow) - (syminfo.mintick * 0.01)) / _binSize))));
             _lastBin = pinescript.max(_firstBin, _lastBin);
-            let _barRange = (_barH - _barL);
+            var _barRange = (_barH - _barL);
             for (let b = _firstBin; b <= _lastBin; b++) {
-              let _bLow = (_blockLow + (b * _binSize));
-              let _bHigh = (_bLow + _binSize);
-              let _overlap = (pinescript.min(_barH, _bHigh) - pinescript.max(_barL, _bLow));
-              let _proportion = ((_barRange > 0) ? pinescript.max(0, (_overlap / _barRange)) : 0);
+              var _bLow = (_blockLow + (b * _binSize));
+              var _bHigh = (_bLow + _binSize);
+              var _overlap = (pinescript.min(_barH, _bHigh) - pinescript.max(_barL, _bLow));
+              var _proportion = ((_barRange > 0) ? pinescript.max(0, (_overlap / _barRange)) : 0);
               pinescript.arraySet(_binVol, b, (pinescript.arrayGet(_binVol, b) + (_barTotalVol * _proportion)));
             }
           }
         }
-        let _maxVol = 0;
-        let _maxBin = 0;
+        var _maxVol = 0;
+        var _maxBin = 0;
         for (let b = 0; b <= (i_pocBinCount - 1); b++) {
-          let _bvol = pinescript.arrayGet(_binVol, b);
+          var _bvol = pinescript.arrayGet(_binVol, b);
           if ((_bvol > _maxVol)) {
             _maxVol = _bvol;
             _maxBin = b;
@@ -3422,9 +3599,9 @@ function main() {
         }
         _bp = (_blockLow + ((_maxBin + 0.5) * _binSize));
         _bv = _maxVol;
-        let _minDist = null;
+        var _minDist = null;
         for (let k = _sOff; k <= _eOff; k++) {
-          let _dist = pinescript.abs((pinescript.hist(44, hlc3, k) - _bp));
+          var _dist = pinescript.abs((pinescript.hist(44, hlc3, k) - _bp));
           if ((pinescript.na(_minDist) || (_dist < _minDist))) {
             _minDist = _dist;
             _bo = k;
@@ -3437,14 +3614,14 @@ function main() {
     }
   }
   if (barstate.islast) {
-    let enoughHistoryCore = (bar_index >= ((baseOff + effWindow) - 1));
-    let refX = (bar_index - baseOff);
-    let projLen = (i_coreProjectFwd ? groupSize : 0);
-    let x2 = (refX + projLen);
-    let refPrice = pinescript.hist(45, close, baseOff);
-    let hiBasis = pinescript.hist(46, high, baseOff);
-    let loBasis = pinescript.hist(47, low, baseOff);
-    let minKeepSrc = (bar_index - ((effWindow + groupSize) + 25));
+    var enoughHistoryCore = (bar_index >= ((baseOff + effWindow) - 1));
+    var refX = (bar_index - baseOff);
+    var projLen = (i_coreProjectFwd ? groupSize : 0);
+    var x2 = (refX + projLen);
+    var refPrice = pinescript.hist(45, close, baseOff);
+    var hiBasis = pinescript.hist(46, high, baseOff);
+    var loBasis = pinescript.hist(47, low, baseOff);
+    var minKeepSrc = (bar_index - ((effWindow + groupSize) + 25));
     f_pruneConsumed(minKeepSrc);
     state.lnCoreUp = f_ensureLine(state.lnCoreUp, _coreBuyCol, line.style_solid);
     state.lnCoreDn = f_ensureLine(state.lnCoreDn, _coreSellCol, line.style_solid);
@@ -3461,8 +3638,8 @@ function main() {
       state.g_pocDnP = null;
     } else {
       f_ensureCoreCount(i_groups);
-      let validBarsCore = ((i_calcMethod === "Intrabar (Precise)") ? scannableBars : pinescript.min(histBarsDash, effWindow));
-      let validGroupsCore = ((groupSize > 0) ? int(pinescript.floor((float(validBarsCore) / groupSize))) : 0);
+      var validBarsCore = ((i_calcMethod === "Intrabar (Precise)") ? scannableBars : pinescript.min(histBarsDash, effWindow));
+      var validGroupsCore = ((groupSize > 0) ? int(pinescript.floor((float(validBarsCore) / groupSize))) : 0);
       validGroupsCore = pinescript.min(validGroupsCore, i_groups);
       if (!i_coreEnable) {
         for (let gi = 0; gi <= (i_groups - 1); gi++) {
@@ -3470,31 +3647,31 @@ function main() {
         }
       } else {
         for (let gi = 0; gi <= (i_groups - 1); gi++) {
-          let gActive = (gi < validGroupsCore);
-          let startOff = (baseOff + (gi * groupSize));
-          let endOff = ((baseOff + ((gi + 1) * groupSize)) - 1);
-          let _bpP = pinescript.arrayGet(state.g_binPocPrice, gi);
-          let _bpOff = pinescript.arrayGet(state.g_binPocOff, gi);
-          let _bpV = pinescript.arrayGet(state.g_binPocVol, gi);
+          var gActive = (gi < validGroupsCore);
+          startOff = (baseOff + (gi * groupSize));
+          endOff = ((baseOff + ((gi + 1) * groupSize)) - 1);
+          var _bpP = pinescript.arrayGet(state.g_binPocPrice, gi);
+          var _bpOff = pinescript.arrayGet(state.g_binPocOff, gi);
+          var _bpV = pinescript.arrayGet(state.g_binPocVol, gi);
           if (!gActive) {
             pinescript.arraySet(state.coreBoxes, gi, f_coreEmpty());
           } else {
-            let gValid = true;
-            let sumB = 0;
-            let sumS = 0;
-            let maxB = -1;
-            let maxBOff = null;
-            let minB = null;
-            let minBOff = null;
-            let maxS = -1;
-            let maxSOff = null;
-            let minS = null;
-            let minSOff = null;
-            let pocV = -1;
-            let pocOff = null;
+            var gValid = true;
+            var sumB = 0;
+            var sumS = 0;
+            var maxB = -1;
+            var maxBOff = null;
+            var minB = null;
+            var minBOff = null;
+            var maxS = -1;
+            var maxSOff = null;
+            var minS = null;
+            var minSOff = null;
+            var pocV = -1;
+            var pocOff = null;
             for (let k = startOff; k <= endOff; k++) {
-              let b = pinescript.hist(48, state.vBuy, k);
-              let s = pinescript.hist(49, state.vSell, k);
+              var b = pinescript.hist(48, state.vBuy, k);
+              var s = pinescript.hist(49, state.vSell, k);
               if ((pinescript.na(b) || pinescript.na(s))) {
                 gValid = false;
               } else {
@@ -3516,7 +3693,7 @@ function main() {
                   minS = s;
                   minSOff = k;
                 }
-                let tv = (b + s);
+                var tv = (b + s);
                 if ((tv > pocV)) {
                   pocV = tv;
                   pocOff = k;
@@ -3526,31 +3703,31 @@ function main() {
             if ((((((!gValid || pinescript.na(maxBOff)) || pinescript.na(maxSOff)) || pinescript.na(minBOff)) || pinescript.na(minSOff)) || pinescript.na(pocOff))) {
               pinescript.arraySet(state.coreBoxes, gi, f_coreEmpty());
             } else {
-              let finalPocPrice = pinescript.hist(50, hlc3, pocOff);
-              let finalPocOff = pocOff;
-              let finalPocVol = pocV;
+              var finalPocPrice = pinescript.hist(50, hlc3, pocOff);
+              var finalPocOff = pocOff;
+              var finalPocVol = pocV;
               if ((i_pocBinProfile && !pinescript.na(_bpP))) {
                 finalPocPrice = _bpP;
                 finalPocOff = pinescript.nz(_bpOff, pocOff);
                 finalPocVol = _bpV;
               }
-              let bc = BoxCore.new(true, sumB, sumS, (sumB - sumS), finalPocPrice, finalPocOff, finalPocVol, maxB, maxBOff, pinescript.hist(51, high, maxBOff), maxS, maxSOff, pinescript.hist(52, low, maxSOff), minB, minBOff, pinescript.hist(53, high, minBOff), minS, minSOff, pinescript.hist(54, low, minSOff));
+              var bc = BoxCore.new(true, sumB, sumS, (sumB - sumS), finalPocPrice, finalPocOff, finalPocVol, maxB, maxBOff, pinescript.hist(51, high, maxBOff), maxS, maxSOff, pinescript.hist(52, low, maxSOff), minB, minBOff, pinescript.hist(53, high, minBOff), minS, minSOff, pinescript.hist(54, low, minSOff));
               pinescript.arraySet(state.coreBoxes, gi, bc);
             }
           }
         }
       }
-      let showCoreNearest = ((i_coreDrawLines && i_coreNearestOnly) && (i_coreShowMax || i_coreShowMin));
-      let extUpP = null;
-      let extUpSrc = null;
-      let extUpTyp = null;
-      let extUpBox = null;
-      let extDnP = null;
-      let extDnSrc = null;
-      let extDnTyp = null;
-      let extDnBox = null;
+      var showCoreNearest = ((i_coreDrawLines && i_coreNearestOnly) && (i_coreShowMax || i_coreShowMin));
+      var extUpP = null;
+      var extUpSrc = null;
+      var extUpTyp = null;
+      var extUpBox = null;
+      var extDnP = null;
+      var extDnSrc = null;
+      var extDnTyp = null;
+      var extDnBox = null;
       if ((showCoreNearest && i_coreEnable)) {
-        let [_eUpP, _eUpSrc, _eUpTyp, _eUpBox, _eDnP, _eDnSrc, _eDnTyp, _eDnBox] = pinescript.unpack(f_pickNearestExt(refPrice), 8);
+        var [_eUpP, _eUpSrc, _eUpTyp, _eUpBox, _eDnP, _eDnSrc, _eDnTyp, _eDnBox] = pinescript.unpack(f_pickNearestExt(refPrice), 8);
         extUpP = _eUpP;
         extUpSrc = _eUpSrc;
         extUpTyp = _eUpTyp;
@@ -3560,15 +3737,15 @@ function main() {
         extDnTyp = _eDnTyp;
         extDnBox = _eDnBox;
       }
-      let showPOCNearest = ((i_pocEnable && i_pocShowNearest) && i_coreEnable);
-      let pocUpP = null;
-      let pocUpSrc = null;
-      let pocUpBox = null;
-      let pocDnP = null;
-      let pocDnSrc = null;
-      let pocDnBox = null;
+      var showPOCNearest = ((i_pocEnable && i_pocShowNearest) && i_coreEnable);
+      var pocUpP = null;
+      var pocUpSrc = null;
+      var pocUpBox = null;
+      var pocDnP = null;
+      var pocDnSrc = null;
+      var pocDnBox = null;
       if (showPOCNearest) {
-        let [_pUpP, _pUpSrc, _pUpBox, _pDnP, _pDnSrc, _pDnBox] = pinescript.unpack(f_pickNearestPOC(refPrice), 6);
+        var [_pUpP, _pUpSrc, _pUpBox, _pDnP, _pDnSrc, _pDnBox] = pinescript.unpack(f_pickNearestPOC(refPrice), 6);
         pocUpP = _pUpP;
         pocUpSrc = _pUpSrc;
         pocUpBox = _pUpBox;
@@ -3584,7 +3761,7 @@ function main() {
         pocDnBox = null;
       }
       for (let pass = 0; pass <= 1; pass++) {
-        let changed = false;
+        var changed = false;
         if ((((showCoreNearest && !pinescript.na(extUpP)) && (loBasis <= extUpP)) && (extUpP <= hiBasis))) {
           f_markConsumed(extUpSrc, extUpTyp, extUpP);
           (changed = true);
@@ -3603,7 +3780,7 @@ function main() {
         }
         if (changed) {
           if (showCoreNearest) {
-            let [_extUpP, _extUpSrc, _extUpTyp, _extUpBox, _extDnP, _extDnSrc, _extDnTyp, _extDnBox] = pinescript.unpack(f_pickNearestExt(refPrice), 8);
+            var [_extUpP, _extUpSrc, _extUpTyp, _extUpBox, _extDnP, _extDnSrc, _extDnTyp, _extDnBox] = pinescript.unpack(f_pickNearestExt(refPrice), 8);
             extUpP = _extUpP;
             extUpSrc = _extUpSrc;
             extUpTyp = _extUpTyp;
@@ -3614,7 +3791,7 @@ function main() {
             extDnBox = _extDnBox;
           }
           if (showPOCNearest) {
-            let [_pocUpP, _pocUpSrc, _pocUpBox, _pocDnP, _pocDnSrc, _pocDnBox] = pinescript.unpack(f_pickNearestPOC(refPrice), 6);
+            var [_pocUpP, _pocUpSrc, _pocUpBox, _pocDnP, _pocDnSrc, _pocDnBox] = pinescript.unpack(f_pickNearestPOC(refPrice), 6);
             pocUpP = _pocUpP;
             pocUpSrc = _pocUpSrc;
             pocUpBox = _pocUpBox;
@@ -3663,36 +3840,36 @@ function main() {
   }
   if (state.lastTrendCalcBar === undefined) state.lastTrendCalcBar = -1;
   if (barstate.islast) {
-    let isNewBar = (bar_index !== state.lastTrendCalcBar);
-    let shouldUpdateTrends = ((baseOff === 0) || isNewBar);
+    var isNewBar = (bar_index !== state.lastTrendCalcBar);
+    var shouldUpdateTrends = ((baseOff === 0) || isNewBar);
     if (shouldUpdateTrends) {
       f_clearAllChannels();
       state.lastTrendCalcBar = bar_index;
       if ((i_trendEnable && (pinescript.arraySize(state.analyticsData) >= i_trendMinBlocks))) {
         f_detectTrendChannels(i_rangeAngleThreshold, globalYZVol);
-        let projLen = (i_trendProject ? (groupSize + 2) : 0);
+        projLen = (i_trendProject ? (groupSize + 2) : 0);
         f_drawAllChannels(projLen, i_trendUpColor, i_trendDnColor, i_trendRangeColor, i_trendLineWidth, i_trendLineStyle, i_showRangeSegments);
         if ((pinescript.arraySize(state.trendChannels) > 0)) {
-          let latestCh = pinescript.arrayGet(state.trendChannels, 0);
-          let upperBarSpan = (latestCh.upperX2 - latestCh.upperX1);
-          let lowerBarSpan = (latestCh.lowerX2 - latestCh.lowerX1);
-          let upperSlope = ((upperBarSpan > 0) ? ((latestCh.upperY2 - latestCh.upperY1) / upperBarSpan) : 0);
-          let lowerSlope = ((lowerBarSpan > 0) ? ((latestCh.lowerY2 - latestCh.lowerY1) / lowerBarSpan) : 0);
-          let upperX2Proj = (latestCh.upperX2 + projLen);
-          let lowerX2Proj = (latestCh.lowerX2 + projLen);
-          let upperY2Proj = (latestCh.upperY2 + (upperSlope * projLen));
-          let lowerY2Proj = (latestCh.lowerY2 + (lowerSlope * projLen));
-          let upperAngleDeg = (((upperBarSpan > 0) && (globalYZVol > 0)) ? pinescript.todegrees(pinescript.atan(((upperSlope * pinescript.sqrt(float(upperBarSpan))) / globalYZVol))) : 0);
-          let lowerAngleDeg = (((lowerBarSpan > 0) && (globalYZVol > 0)) ? pinescript.todegrees(pinescript.atan(((lowerSlope * pinescript.sqrt(float(lowerBarSpan))) / globalYZVol))) : 0);
-          let currentPrice = pinescript.hist(55, close, baseOff);
-          let resistDiff = (upperY2Proj - currentPrice);
-          let supportDiff = (currentPrice - lowerY2Proj);
-          let resistPct = ((currentPrice !== 0) ? ((resistDiff / currentPrice) * 100) : 0);
-          let supportPct = ((currentPrice !== 0) ? ((supportDiff / currentPrice) * 100) : 0);
-          let chCol = ((latestCh.channelType === DIR_UP) ? i_trendUpColor : ((latestCh.channelType === DIR_DOWN) ? i_trendDnColor : i_trendRangeColor));
-          let blockRange = ((("Blk " + pinescript.strToString(latestCh.startBlock)) + "-") + pinescript.strToString(latestCh.endBlock));
-          let upperText = (((((((((("▲ Upper | " + blockRange) + " | ") + pinescript.strToString(upperY2Proj, format.mintick)) + " (+") + pinescript.strToString(resistDiff, "#.##")) + " | +") + pinescript.strToString(resistPct, "#.##")) + "%) | ") + pinescript.strToString(upperAngleDeg, "#.#")) + "°");
-          let lowerText = (((((((((("▼ Lower | " + blockRange) + " | ") + pinescript.strToString(lowerY2Proj, format.mintick)) + " (-") + pinescript.strToString(supportDiff, "#.##")) + " | -") + pinescript.strToString(supportPct, "#.##")) + "%) | ") + pinescript.strToString(lowerAngleDeg, "#.#")) + "°");
+          var latestCh = pinescript.arrayGet(state.trendChannels, 0);
+          var upperBarSpan = (latestCh.upperX2 - latestCh.upperX1);
+          var lowerBarSpan = (latestCh.lowerX2 - latestCh.lowerX1);
+          var upperSlope = ((upperBarSpan > 0) ? ((latestCh.upperY2 - latestCh.upperY1) / upperBarSpan) : 0);
+          var lowerSlope = ((lowerBarSpan > 0) ? ((latestCh.lowerY2 - latestCh.lowerY1) / lowerBarSpan) : 0);
+          var upperX2Proj = (latestCh.upperX2 + projLen);
+          var lowerX2Proj = (latestCh.lowerX2 + projLen);
+          var upperY2Proj = (latestCh.upperY2 + (upperSlope * projLen));
+          var lowerY2Proj = (latestCh.lowerY2 + (lowerSlope * projLen));
+          var upperAngleDeg = (((upperBarSpan > 0) && (globalYZVol > 0)) ? pinescript.todegrees(pinescript.atan(((upperSlope * pinescript.sqrt(float(upperBarSpan))) / globalYZVol))) : 0);
+          var lowerAngleDeg = (((lowerBarSpan > 0) && (globalYZVol > 0)) ? pinescript.todegrees(pinescript.atan(((lowerSlope * pinescript.sqrt(float(lowerBarSpan))) / globalYZVol))) : 0);
+          var currentPrice = pinescript.hist(55, close, baseOff);
+          var resistDiff = (upperY2Proj - currentPrice);
+          var supportDiff = (currentPrice - lowerY2Proj);
+          var resistPct = ((currentPrice !== 0) ? ((resistDiff / currentPrice) * 100) : 0);
+          var supportPct = ((currentPrice !== 0) ? ((supportDiff / currentPrice) * 100) : 0);
+          var chCol = ((latestCh.channelType === DIR_UP) ? i_trendUpColor : ((latestCh.channelType === DIR_DOWN) ? i_trendDnColor : i_trendRangeColor));
+          var blockRange = ((("Blk " + pinescript.strToString(latestCh.startBlock)) + "-") + pinescript.strToString(latestCh.endBlock));
+          var upperText = (((((((((("▲ Upper | " + blockRange) + " | ") + pinescript.strToString(upperY2Proj, format.mintick)) + " (+") + pinescript.strToString(resistDiff, "#.##")) + " | +") + pinescript.strToString(resistPct, "#.##")) + "%) | ") + pinescript.strToString(upperAngleDeg, "#.#")) + "°");
+          var lowerText = (((((((((("▼ Lower | " + blockRange) + " | ") + pinescript.strToString(lowerY2Proj, format.mintick)) + " (-") + pinescript.strToString(supportDiff, "#.##")) + " | -") + pinescript.strToString(supportPct, "#.##")) + "%) | ") + pinescript.strToString(lowerAngleDeg, "#.#")) + "°");
           if (pinescript.na(state.lblTrendResist)) {
             state.lblTrendResist = pinescript.labelNew(upperX2Proj, upperY2Proj, upperText, ({ style: label.style_label_left, size: GLOBAL_TEXT_SIZE, textcolor: chCol, color: pinescript.color.new(pinescript.color.black, 85), tooltip: "Upper channel line: Block range | Price | Distance | Angle" }));
           } else {
@@ -3726,14 +3903,14 @@ function main() {
       }
     }
   }
-  let maxBoxesByHist = ((groupSize > 0) ? int(pinescript.floor((float(pinescript.min(histBarsDash, effWindow)) / groupSize))) : 0);
-  let maxBoxesByScan = ((groupSize > 0) ? int(pinescript.floor((float(scannableBars) / groupSize))) : 0);
-  let maxBoxesAllowedDash = pinescript.max(0, pinescript.min(i_groups, maxBoxesByHist));
+  var maxBoxesByHist = ((groupSize > 0) ? int(pinescript.floor((float(pinescript.min(histBarsDash, effWindow)) / groupSize))) : 0);
+  var maxBoxesByScan = ((groupSize > 0) ? int(pinescript.floor((float(scannableBars) / groupSize))) : 0);
+  var maxBoxesAllowedDash = pinescript.max(0, pinescript.min(i_groups, maxBoxesByHist));
   if ((i_calcMethod === "Intrabar (Precise)")) {
     maxBoxesAllowedDash = pinescript.min(maxBoxesAllowedDash, maxBoxesByScan);
   }
-  let boxesEff = pinescript.max(0, pinescript.min(i_globalPeriodBoxes, maxBoxesAllowedDash));
-  let globalPeriodBars = (boxesEff * groupSize);
+  var boxesEff = pinescript.max(0, pinescript.min(i_globalPeriodBoxes, maxBoxesAllowedDash));
+  var globalPeriodBars = (boxesEff * groupSize);
   function f_fmtVol(v) {
     return (pinescript.na(v) ? "-" : pinescript.strToString(v, format.volume));
   }
@@ -3741,8 +3918,8 @@ function main() {
     return (pinescript.na(v) ? "-" : pinescript.strToString(v, format.mintick));
   }
   if (state.dashT === undefined) state.dashT = null;
-  let DASH_COLS = 4;
-  let DASH_ROWS = 50;
+  var DASH_COLS = 4;
+  var DASH_ROWS = 50;
   if (i_showDash) {
     if (pinescript.na(state.dashT)) {
       state.dashT = pinescript.table.new(i_dashPos, DASH_COLS, DASH_ROWS, ({ frame_color: pinescript.color.new(pinescript.color.white, 85), frame_width: 1, border_color: pinescript.color.new(pinescript.color.white, 92), border_width: 1 }));
@@ -3755,31 +3932,31 @@ function main() {
   }
   if (((i_showDash && !pinescript.na(state.dashT)) && barstate.islast)) {
     clear(pinescript.table, state.dashT, 0, 0, (DASH_COLS - 1), (DASH_ROWS - 1));
-    let latestTrend = ((pinescript.arraySize(state.trendChannels) > 0) ? pinescript.arrayGet(state.trendChannels, 0) : null);
-    let trendValid = (!pinescript.na(latestTrend) && i_trendEnable);
-    let trendBuy = 0;
-    let trendSell = 0;
-    let sumUpperPin = 0;
-    let sumLowerPin = 0;
-    let sumBody = 0;
-    let firstBlockUpperPin = null;
-    let lastBlockUpperPin = null;
-    let firstBlockLowerPin = null;
-    let lastBlockLowerPin = null;
-    let firstBlockBody = null;
-    let lastBlockBody = null;
-    let firstBlockVol = null;
-    let lastBlockVol = null;
-    let firstBlockDelta = null;
-    let lastBlockDelta = null;
-    let trendBlocks = 0;
+    var latestTrend = ((pinescript.arraySize(state.trendChannels) > 0) ? pinescript.arrayGet(state.trendChannels, 0) : null);
+    var trendValid = (!pinescript.na(latestTrend) && i_trendEnable);
+    var trendBuy = 0;
+    var trendSell = 0;
+    sumUpperPin = 0;
+    sumLowerPin = 0;
+    sumBody = 0;
+    var firstBlockUpperPin = null;
+    var lastBlockUpperPin = null;
+    var firstBlockLowerPin = null;
+    var lastBlockLowerPin = null;
+    var firstBlockBody = null;
+    var lastBlockBody = null;
+    var firstBlockVol = null;
+    var lastBlockVol = null;
+    var firstBlockDelta = null;
+    var lastBlockDelta = null;
+    var trendBlocks = 0;
     if (trendValid) {
-      let trendStart = (latestTrend.startBlock - 1);
-      let trendEnd = (latestTrend.endBlock - 1);
+      var trendStart = (latestTrend.startBlock - 1);
+      var trendEnd = (latestTrend.endBlock - 1);
       trendBlocks = ((trendEnd - trendStart) + 1);
       for (let i = trendStart; i <= trendEnd; i++) {
         if ((i < pinescript.arraySize(state.analyticsData))) {
-          let ba = pinescript.arrayGet(state.analyticsData, i);
+          ba = pinescript.arrayGet(state.analyticsData, i);
           if (ba.valid) {
             trendBuy += ba.totalBuy;
             trendSell += ba.totalSell;
@@ -3804,53 +3981,53 @@ function main() {
         }
       }
     }
-    let trendDelta = (trendBuy - trendSell);
-    let trendDeltaPct = (((trendBuy + trendSell) > 0) ? ((trendDelta / (trendBuy + trendSell)) * 100) : 0);
-    let avgUpperPin = ((trendBlocks > 0) ? (sumUpperPin / trendBlocks) : null);
-    let avgLowerPin = ((trendBlocks > 0) ? (sumLowerPin / trendBlocks) : null);
-    let avgBody = ((trendBlocks > 0) ? (sumBody / trendBlocks) : null);
-    let upperPinChg = (((!pinescript.na(firstBlockUpperPin) && !pinescript.na(lastBlockUpperPin)) && (firstBlockUpperPin !== 0)) ? (((lastBlockUpperPin - firstBlockUpperPin) / firstBlockUpperPin) * 100) : 0);
-    let lowerPinChg = (((!pinescript.na(firstBlockLowerPin) && !pinescript.na(lastBlockLowerPin)) && (firstBlockLowerPin !== 0)) ? (((lastBlockLowerPin - firstBlockLowerPin) / firstBlockLowerPin) * 100) : 0);
-    let bodyStatus = ((!pinescript.na(firstBlockBody) && !pinescript.na(lastBlockBody)) ? ((lastBlockBody > firstBlockBody) ? "EXPANDING" : ((lastBlockBody < firstBlockBody) ? "CONTRACTING" : "STABLE")) : "-");
-    let volMom = ((!pinescript.na(firstBlockVol) && !pinescript.na(lastBlockVol)) ? ((lastBlockVol > firstBlockVol) ? "INCREASING ▲" : "DECREASING ▼") : "-");
-    let deltaDir = ((!pinescript.na(firstBlockDelta) && !pinescript.na(lastBlockDelta)) ? ((lastBlockDelta > firstBlockDelta) ? "POSITIVE ▲" : "NEGATIVE ▼") : "-");
-    let pinRatio = (((!pinescript.na(avgUpperPin) && !pinescript.na(avgLowerPin)) && (avgLowerPin !== 0)) ? (avgUpperPin / avgLowerPin) : 1);
-    let control = ((trendDelta > 0) ? "BUYERS" : ((trendDelta < 0) ? "SELLERS" : "BALANCED"));
-    let currentPrice = pinescript.hist(56, close, baseOff);
-    let projLenCh = ((trendValid && i_trendProject) ? (groupSize + 2) : 0);
-    let upperChPrice = null;
-    let lowerChPrice = null;
+    var trendDelta = (trendBuy - trendSell);
+    var trendDeltaPct = (((trendBuy + trendSell) > 0) ? ((trendDelta / (trendBuy + trendSell)) * 100) : 0);
+    var avgUpperPin = ((trendBlocks > 0) ? (sumUpperPin / trendBlocks) : null);
+    var avgLowerPin = ((trendBlocks > 0) ? (sumLowerPin / trendBlocks) : null);
+    var avgBody = ((trendBlocks > 0) ? (sumBody / trendBlocks) : null);
+    var upperPinChg = (((!pinescript.na(firstBlockUpperPin) && !pinescript.na(lastBlockUpperPin)) && (firstBlockUpperPin !== 0)) ? (((lastBlockUpperPin - firstBlockUpperPin) / firstBlockUpperPin) * 100) : 0);
+    var lowerPinChg = (((!pinescript.na(firstBlockLowerPin) && !pinescript.na(lastBlockLowerPin)) && (firstBlockLowerPin !== 0)) ? (((lastBlockLowerPin - firstBlockLowerPin) / firstBlockLowerPin) * 100) : 0);
+    var bodyStatus = ((!pinescript.na(firstBlockBody) && !pinescript.na(lastBlockBody)) ? ((lastBlockBody > firstBlockBody) ? "EXPANDING" : ((lastBlockBody < firstBlockBody) ? "CONTRACTING" : "STABLE")) : "-");
+    var volMom = ((!pinescript.na(firstBlockVol) && !pinescript.na(lastBlockVol)) ? ((lastBlockVol > firstBlockVol) ? "INCREASING ▲" : "DECREASING ▼") : "-");
+    var deltaDir = ((!pinescript.na(firstBlockDelta) && !pinescript.na(lastBlockDelta)) ? ((lastBlockDelta > firstBlockDelta) ? "POSITIVE ▲" : "NEGATIVE ▼") : "-");
+    var pinRatio = (((!pinescript.na(avgUpperPin) && !pinescript.na(avgLowerPin)) && (avgLowerPin !== 0)) ? (avgUpperPin / avgLowerPin) : 1);
+    var control = ((trendDelta > 0) ? "BUYERS" : ((trendDelta < 0) ? "SELLERS" : "BALANCED"));
+    currentPrice = pinescript.hist(56, close, baseOff);
+    var projLenCh = ((trendValid && i_trendProject) ? (groupSize + 2) : 0);
+    var upperChPrice = null;
+    var lowerChPrice = null;
     if (trendValid) {
-      let upperSpanCh = (latestTrend.upperX2 - latestTrend.upperX1);
-      let lowerSpanCh = (latestTrend.lowerX2 - latestTrend.lowerX1);
-      let upperSlopeCh = ((upperSpanCh !== 0) ? ((latestTrend.upperY2 - latestTrend.upperY1) / upperSpanCh) : 0);
-      let lowerSlopeCh = ((lowerSpanCh !== 0) ? ((latestTrend.lowerY2 - latestTrend.lowerY1) / lowerSpanCh) : 0);
+      var upperSpanCh = (latestTrend.upperX2 - latestTrend.upperX1);
+      var lowerSpanCh = (latestTrend.lowerX2 - latestTrend.lowerX1);
+      var upperSlopeCh = ((upperSpanCh !== 0) ? ((latestTrend.upperY2 - latestTrend.upperY1) / upperSpanCh) : 0);
+      var lowerSlopeCh = ((lowerSpanCh !== 0) ? ((latestTrend.lowerY2 - latestTrend.lowerY1) / lowerSpanCh) : 0);
       upperChPrice = (latestTrend.upperY2 + (upperSlopeCh * projLenCh));
       lowerChPrice = (latestTrend.lowerY2 + (lowerSlopeCh * projLenCh));
     }
-    let resistPrice = upperChPrice;
-    let supportPrice = lowerChPrice;
-    let resistDiff = (!pinescript.na(resistPrice) ? (resistPrice - currentPrice) : null);
-    let supportDiff = (!pinescript.na(supportPrice) ? (currentPrice - supportPrice) : null);
-    let resistPct = ((!pinescript.na(resistDiff) && (currentPrice !== 0)) ? ((resistDiff / currentPrice) * 100) : null);
-    let supportPct = ((!pinescript.na(supportDiff) && (currentPrice !== 0)) ? ((supportDiff / currentPrice) * 100) : null);
-    let channelWidth = ((!pinescript.na(resistPrice) && !pinescript.na(supportPrice)) ? (resistPrice - supportPrice) : null);
-    let rrRatio = (((!pinescript.na(resistDiff) && !pinescript.na(supportDiff)) && (supportDiff !== 0)) ? (resistDiff / supportDiff) : null);
-    let channelPos = ((!pinescript.na(channelWidth) && (channelWidth !== 0)) ? (((currentPrice - supportPrice) / channelWidth) * 100) : null);
-    let posStatus = (!pinescript.na(channelPos) ? ((channelPos > 70) ? "OVERBOUGHT" : ((channelPos < 30) ? "OVERSOLD" : "NEUTRAL")) : "-");
-    let quality = 50;
-    let contradictions = 0;
+    var resistPrice = upperChPrice;
+    var supportPrice = lowerChPrice;
+    resistDiff = (!pinescript.na(resistPrice) ? (resistPrice - currentPrice) : null);
+    supportDiff = (!pinescript.na(supportPrice) ? (currentPrice - supportPrice) : null);
+    resistPct = ((!pinescript.na(resistDiff) && (currentPrice !== 0)) ? ((resistDiff / currentPrice) * 100) : null);
+    supportPct = ((!pinescript.na(supportDiff) && (currentPrice !== 0)) ? ((supportDiff / currentPrice) * 100) : null);
+    var channelWidth = ((!pinescript.na(resistPrice) && !pinescript.na(supportPrice)) ? (resistPrice - supportPrice) : null);
+    var rrRatio = (((!pinescript.na(resistDiff) && !pinescript.na(supportDiff)) && (supportDiff !== 0)) ? (resistDiff / supportDiff) : null);
+    var channelPos = ((!pinescript.na(channelWidth) && (channelWidth !== 0)) ? (((currentPrice - supportPrice) / channelWidth) * 100) : null);
+    var posStatus = (!pinescript.na(channelPos) ? ((channelPos > 70) ? "OVERBOUGHT" : ((channelPos < 30) ? "OVERSOLD" : "NEUTRAL")) : "-");
+    var quality = 50;
+    var contradictions = 0;
     if (trendValid) {
-      let absAngle = pinescript.abs(latestTrend.angleDeg);
-      let angleRange = (45 - i_rangeAngleThreshold);
-      let angleScore = ((angleRange > 0) ? (15 * pinescript.max(0, pinescript.min(1, ((absAngle - i_rangeAngleThreshold) / angleRange)))) : 0);
+      var absAngle = pinescript.abs(latestTrend.angleDeg);
+      var angleRange = (45 - i_rangeAngleThreshold);
+      var angleScore = ((angleRange > 0) ? (15 * pinescript.max(0, pinescript.min(1, ((absAngle - i_rangeAngleThreshold) / angleRange)))) : 0);
       quality += angleScore;
-      let totalPairs = 0;
-      let consistentPairs = 0;
+      var totalPairs = 0;
+      var consistentPairs = 0;
       for (let i = (latestTrend.startBlock - 1); i <= (latestTrend.endBlock - 1); i++) {
         if (((i < pinescript.arraySize(state.analyticsData)) && ((i + 1) < pinescript.arraySize(state.analyticsData)))) {
-          let d1 = pinescript.arrayGet(state.analyticsData, i).delta;
-          let d2 = pinescript.arrayGet(state.analyticsData, (i + 1)).delta;
+          d1 = pinescript.arrayGet(state.analyticsData, i).delta;
+          d2 = pinescript.arrayGet(state.analyticsData, (i + 1)).delta;
           if ((!pinescript.na(d1) && !pinescript.na(d2))) {
             totalPairs += 1;
             if ((pinescript.sign(d1) === pinescript.sign(d2))) {
@@ -3859,21 +4036,21 @@ function main() {
           }
         }
       }
-      let deltaConsistent = ((totalPairs > 0) && (consistentPairs === totalPairs));
-      let deltaRatio = ((totalPairs > 0) ? (float(consistentPairs) / float(totalPairs)) : 0);
+      var deltaConsistent = ((totalPairs > 0) && (consistentPairs === totalPairs));
+      var deltaRatio = ((totalPairs > 0) ? (float(consistentPairs) / float(totalPairs)) : 0);
       quality += (10 * deltaRatio);
       if (((!pinescript.na(firstBlockVol) && !pinescript.na(lastBlockVol)) && (firstBlockVol > 0))) {
-        let volGrowth = ((lastBlockVol - firstBlockVol) / firstBlockVol);
-        let volScore = (10 * pinescript.max(0, pinescript.min(1, (volGrowth / 0.5))));
+        var volGrowth = ((lastBlockVol - firstBlockVol) / firstBlockVol);
+        var volScore = (10 * pinescript.max(0, pinescript.min(1, (volGrowth / 0.5))));
         quality += volScore;
       }
       if (((!pinescript.na(firstBlockBody) && !pinescript.na(lastBlockBody)) && (firstBlockBody > 0))) {
-        let bodyGrowth = ((lastBlockBody - firstBlockBody) / firstBlockBody);
-        let bodyScore = (10 * pinescript.max(0, pinescript.min(1, (bodyGrowth / 0.5))));
+        var bodyGrowth = ((lastBlockBody - firstBlockBody) / firstBlockBody);
+        var bodyScore = (10 * pinescript.max(0, pinescript.min(1, (bodyGrowth / 0.5))));
         quality += bodyScore;
       }
-      let pinTotal = (pinescript.nz(avgUpperPin, 0) + pinescript.nz(avgLowerPin, 0));
-      let pinScore = 0;
+      var pinTotal = (pinescript.nz(avgUpperPin, 0) + pinescript.nz(avgLowerPin, 0));
+      var pinScore = 0;
       if ((pinTotal > 0)) {
         if ((latestTrend.channelType === DIR_UP)) {
           pinScore = (8 * pinescript.max(0, pinescript.min(1, (((pinescript.nz(avgLowerPin, 0) / pinTotal) - 0.5) / 0.3))));
@@ -3883,7 +4060,7 @@ function main() {
           }
         }
       }
-      let pinAligned = (pinScore > 4);
+      var pinAligned = (pinScore > 4);
       quality += pinScore;
       if ((((latestTrend.channelType === DIR_UP) && (trendDelta < 0)) || ((latestTrend.channelType === DIR_DOWN) && (trendDelta > 0)))) {
         contradictions += 1;
@@ -3897,28 +4074,28 @@ function main() {
       }
     }
     quality = pinescript.max(0, pinescript.min(100, quality));
-    let confidenceLevel = ((quality >= 80) ? "HIGH" : ((quality >= 60) ? "MEDIUM" : "LOW"));
-    let strengthRating = (trendValid ? ((pinescript.abs(latestTrend.angleDeg) > 45) ? "VERY STRONG" : ((pinescript.abs(latestTrend.angleDeg) > 30) ? "STRONG" : ((pinescript.abs(latestTrend.angleDeg) > 15) ? "MODERATE" : "WEAK"))) : "-");
-    let trendPrimaryCol = (trendValid ? ((latestTrend.channelType === DIR_UP) ? pinescript.color.rgb(16, 185, 129) : ((latestTrend.channelType === DIR_DOWN) ? pinescript.color.rgb(239, 68, 68) : pinescript.color.rgb(100, 116, 139))) : pinescript.color.rgb(100, 116, 139));
-    let trendAccentCol = (trendValid ? ((latestTrend.channelType === DIR_UP) ? pinescript.color.rgb(52, 211, 153) : ((latestTrend.channelType === DIR_DOWN) ? pinescript.color.rgb(248, 113, 113) : pinescript.color.rgb(148, 163, 184))) : pinescript.color.rgb(148, 163, 184));
-    let qualityCol = ((quality >= 80) ? pinescript.color.rgb(34, 197, 94) : ((quality >= 60) ? pinescript.color.rgb(234, 179, 8) : pinescript.color.rgb(239, 68, 68)));
-    let hdrBg = pinescript.color.new(pinescript.color.rgb(30, 41, 59), 5);
-    let rowBg1 = pinescript.color.new(pinescript.color.rgb(51, 65, 85), 15);
-    let rowBg2 = pinescript.color.new(pinescript.color.rgb(71, 85, 105), 20);
-    let txtHdr = pinescript.color.rgb(248, 250, 252);
-    let txtLbl = pinescript.color.rgb(148, 163, 184);
-    let txtVal = pinescript.color.rgb(226, 232, 240);
-    let posCol = pinescript.color.rgb(34, 197, 94);
-    let negCol = pinescript.color.rgb(239, 68, 68);
-    let accentCol = pinescript.color.rgb(59, 130, 246);
-    let cBuy = pinescript.hist(57, state.vBuy, baseOff);
-    let cSell = pinescript.hist(58, state.vSell, baseOff);
-    let cTot = (cBuy + cSell);
-    let cDel = (cBuy - cSell);
-    let delCol = (pinescript.na(cDel) ? txtVal : ((cDel >= 0) ? posCol : negCol));
-    let _alignL = ((i_narrativeLang === "العربية") ? pinescript.text.align_right : pinescript.text.align_left);
-    let basisTitle = ((baseOff === 0) ? f_L("CURRENT", "MEVCUT", "वर्तमान", "الحالية") : f_L("CLOSED", "KAPALI", "बंद", "المغلقة"));
-    let engTxt = ((i_calcMethod === "Intrabar (Precise)") ? (((f_dashIntrabar() + " ") + ltf) + ")") : f_dashGeometric());
+    var confidenceLevel = ((quality >= 80) ? "HIGH" : ((quality >= 60) ? "MEDIUM" : "LOW"));
+    var strengthRating = (trendValid ? ((pinescript.abs(latestTrend.angleDeg) > 45) ? "VERY STRONG" : ((pinescript.abs(latestTrend.angleDeg) > 30) ? "STRONG" : ((pinescript.abs(latestTrend.angleDeg) > 15) ? "MODERATE" : "WEAK"))) : "-");
+    var trendPrimaryCol = (trendValid ? ((latestTrend.channelType === DIR_UP) ? pinescript.color.rgb(16, 185, 129) : ((latestTrend.channelType === DIR_DOWN) ? pinescript.color.rgb(239, 68, 68) : pinescript.color.rgb(100, 116, 139))) : pinescript.color.rgb(100, 116, 139));
+    var trendAccentCol = (trendValid ? ((latestTrend.channelType === DIR_UP) ? pinescript.color.rgb(52, 211, 153) : ((latestTrend.channelType === DIR_DOWN) ? pinescript.color.rgb(248, 113, 113) : pinescript.color.rgb(148, 163, 184))) : pinescript.color.rgb(148, 163, 184));
+    var qualityCol = ((quality >= 80) ? pinescript.color.rgb(34, 197, 94) : ((quality >= 60) ? pinescript.color.rgb(234, 179, 8) : pinescript.color.rgb(239, 68, 68)));
+    var hdrBg = pinescript.color.new(pinescript.color.rgb(30, 41, 59), 5);
+    var rowBg1 = pinescript.color.new(pinescript.color.rgb(51, 65, 85), 15);
+    var rowBg2 = pinescript.color.new(pinescript.color.rgb(71, 85, 105), 20);
+    var txtHdr = pinescript.color.rgb(248, 250, 252);
+    var txtLbl = pinescript.color.rgb(148, 163, 184);
+    var txtVal = pinescript.color.rgb(226, 232, 240);
+    var posCol = pinescript.color.rgb(34, 197, 94);
+    var negCol = pinescript.color.rgb(239, 68, 68);
+    var accentCol = pinescript.color.rgb(59, 130, 246);
+    var cBuy = pinescript.hist(57, state.vBuy, baseOff);
+    var cSell = pinescript.hist(58, state.vSell, baseOff);
+    var cTot = (cBuy + cSell);
+    var cDel = (cBuy - cSell);
+    var delCol = (pinescript.na(cDel) ? txtVal : ((cDel >= 0) ? posCol : negCol));
+    var _alignL = ((i_narrativeLang === "العربية") ? pinescript.text.align_right : pinescript.text.align_left);
+    var basisTitle = ((baseOff === 0) ? f_L("CURRENT", "MEVCUT", "वर्तमान", "الحالية") : f_L("CLOSED", "KAPALI", "बंद", "المغلقة"));
+    var engTxt = ((i_calcMethod === "Intrabar (Precise)") ? (((f_dashIntrabar() + " ") + ltf) + ")") : f_dashGeometric());
     pinescript.tableMergeCells(state.dashT, 0, 0, 3, 0);
     pinescript.table.cell(state.dashT, 0, 0, f_dashVolumeEngine(), ({ text_color: txtHdr, bgcolor: hdrBg, text_size: GLOBAL_TEXT_SIZE, text_halign: pinescript.text.align_center, tooltip: f_dashTooltipEngine() }));
     pinescript.table.cell(state.dashT, 0, 1, f_dashEngine(), ({ text_color: txtLbl, bgcolor: rowBg1, text_size: GLOBAL_TEXT_SIZE, text_halign: pinescript.text.align_right, tooltip: f_L("Volume calculation method", "Hacim hesaplama yöntemi", "वॉल्यूम गणना विधि", "طريقة حساب الحجم") }));
@@ -3926,8 +4103,8 @@ function main() {
     pinescript.table.cell(state.dashT, 2, 1, f_dashData(), ({ text_color: txtLbl, bgcolor: rowBg1, text_size: GLOBAL_TEXT_SIZE, text_halign: pinescript.text.align_right, tooltip: f_dashTooltipData() }));
     pinescript.table.cell(state.dashT, 3, 1, ((pinescript.strToString(scannableBars) + " ") + f_dashBar()), ({ text_color: txtVal, bgcolor: rowBg1, text_size: GLOBAL_TEXT_SIZE, text_halign: _alignL, tooltip: f_dashTooltipScannable() }));
     pinescript.tableMergeCells(state.dashT, 0, 2, 3, 2);
-    let candleHeader = ((baseOff === 0) ? f_dashCurrentCandle() : f_dashClosedCandle());
-    let candleTooltip = ((f_L("Most recent ", "En son ", "सबसे हाल का ", "أحدث ") + ((baseOff === 0) ? f_L("live", "canlı", "लाइव", "مباشرة") : f_L("closed", "kapalı", "बंद", "مغلقة"))) + f_L(" candle analysis", " mum analizi", " कैंडल विश्लेषण", " تحليل الشمعة"));
+    var candleHeader = ((baseOff === 0) ? f_dashCurrentCandle() : f_dashClosedCandle());
+    var candleTooltip = ((f_L("Most recent ", "En son ", "सबसे हाल का ", "أحدث ") + ((baseOff === 0) ? f_L("live", "canlı", "लाइव", "مباشرة") : f_L("closed", "kapalı", "बंद", "مغلقة"))) + f_L(" candle analysis", " mum analizi", " कैंडल विश्लेषण", " تحليل الشمعة"));
     pinescript.table.cell(state.dashT, 0, 2, candleHeader, ({ text_color: txtHdr, bgcolor: hdrBg, text_size: GLOBAL_TEXT_SIZE, text_halign: pinescript.text.align_center, tooltip: candleTooltip }));
     pinescript.table.cell(state.dashT, 0, 3, f_dashBuy(), ({ text_color: posCol, bgcolor: rowBg1, text_size: GLOBAL_TEXT_SIZE, text_halign: pinescript.text.align_right, tooltip: f_dashTooltipBuy() }));
     pinescript.table.cell(state.dashT, 1, 3, f_fmtVol(cBuy), ({ text_color: posCol, bgcolor: rowBg1, text_size: GLOBAL_TEXT_SIZE, text_halign: _alignL }));
@@ -3935,12 +4112,12 @@ function main() {
     pinescript.table.cell(state.dashT, 3, 3, f_fmtVol(cSell), ({ text_color: negCol, bgcolor: rowBg1, text_size: GLOBAL_TEXT_SIZE, text_halign: _alignL }));
     pinescript.table.cell(state.dashT, 0, 4, f_dashTotal(), ({ text_color: txtLbl, bgcolor: rowBg2, text_size: GLOBAL_TEXT_SIZE, text_halign: pinescript.text.align_right, tooltip: f_dashTooltipTotal() }));
     pinescript.table.cell(state.dashT, 1, 4, f_fmtVol(cTot), ({ text_color: txtVal, bgcolor: rowBg2, text_size: GLOBAL_TEXT_SIZE, text_halign: _alignL }));
-    let deltaIcon = (pinescript.na(cDel) ? "●" : ((cDel >= 0) ? "▲" : "▼"));
-    let deltaSign = (pinescript.na(cDel) ? "" : ((cDel > 0) ? "+" : ""));
+    var deltaIcon = (pinescript.na(cDel) ? "●" : ((cDel >= 0) ? "▲" : "▼"));
+    var deltaSign = (pinescript.na(cDel) ? "" : ((cDel > 0) ? "+" : ""));
     pinescript.table.cell(state.dashT, 2, 4, ((deltaIcon + " ") + f_dashDelta()), ({ text_color: delCol, bgcolor: rowBg2, text_size: GLOBAL_TEXT_SIZE, text_halign: pinescript.text.align_right, tooltip: f_dashTooltipDelta() }));
     pinescript.table.cell(state.dashT, 3, 4, (deltaSign + f_fmtVol(cDel)), ({ text_color: delCol, bgcolor: rowBg2, text_size: GLOBAL_TEXT_SIZE, text_halign: _alignL }));
     pinescript.tableMergeCells(state.dashT, 0, 5, 3, 5);
-    let trendTitle = (trendValid ? ((((((f_dashTrendVolumetrics() + " • ") + f_L("Blk", "Blk", "ब्लॉक", "كتلة")) + " ") + pinescript.strToString(latestTrend.startBlock)) + "-") + pinescript.strToString(latestTrend.endBlock)) : (f_dashTrendVolumetrics() + " • N/A"));
+    var trendTitle = (trendValid ? ((((((f_dashTrendVolumetrics() + " • ") + f_L("Blk", "Blk", "ब्लॉक", "كتلة")) + " ") + pinescript.strToString(latestTrend.startBlock)) + "-") + pinescript.strToString(latestTrend.endBlock)) : (f_dashTrendVolumetrics() + " • N/A"));
     pinescript.table.cell(state.dashT, 0, 5, trendTitle, ({ text_color: txtHdr, bgcolor: hdrBg, text_size: GLOBAL_TEXT_SIZE, text_halign: pinescript.text.align_center, tooltip: f_dashTooltipTrendVolume() }));
     pinescript.table.cell(state.dashT, 0, 6, f_dashBuy(), ({ text_color: posCol, bgcolor: rowBg1, text_size: GLOBAL_TEXT_SIZE, text_halign: pinescript.text.align_center, tooltip: f_dashTooltipTrendBuy() }));
     pinescript.table.cell(state.dashT, 1, 6, f_dashSell(), ({ text_color: negCol, bgcolor: rowBg1, text_size: GLOBAL_TEXT_SIZE, text_halign: pinescript.text.align_center, tooltip: f_dashTooltipTrendSell() }));
@@ -3948,14 +4125,14 @@ function main() {
     pinescript.table.cell(state.dashT, 3, 6, f_dashType(), ({ text_color: txtLbl, bgcolor: rowBg1, text_size: GLOBAL_TEXT_SIZE, text_halign: pinescript.text.align_center, tooltip: f_dashTooltipType() }));
     pinescript.table.cell(state.dashT, 0, 7, f_fmtVol(trendBuy), ({ text_color: posCol, bgcolor: rowBg2, text_size: GLOBAL_TEXT_SIZE, text_halign: pinescript.text.align_center }));
     pinescript.table.cell(state.dashT, 1, 7, f_fmtVol(trendSell), ({ text_color: negCol, bgcolor: rowBg2, text_size: GLOBAL_TEXT_SIZE, text_halign: pinescript.text.align_center }));
-    let trendDeltaStr = ((((((trendDelta > 0) ? "+" : "") + f_fmtVol(trendDelta)) + " (") + pinescript.strToString(trendDeltaPct, "#.##")) + "%)");
+    var trendDeltaStr = ((((((trendDelta > 0) ? "+" : "") + f_fmtVol(trendDelta)) + " (") + pinescript.strToString(trendDeltaPct, "#.##")) + "%)");
     pinescript.table.cell(state.dashT, 2, 7, trendDeltaStr, ({ text_color: ((trendDelta >= 0) ? posCol : negCol), bgcolor: rowBg2, text_size: GLOBAL_TEXT_SIZE, text_halign: pinescript.text.align_center }));
-    let trendTypeName = (trendValid ? ((latestTrend.channelType === DIR_UP) ? f_dashUptrend() : ((latestTrend.channelType === DIR_DOWN) ? f_dashDowntrend() : f_dashRange())) : "-");
+    var trendTypeName = (trendValid ? ((latestTrend.channelType === DIR_UP) ? f_dashUptrend() : ((latestTrend.channelType === DIR_DOWN) ? f_dashDowntrend() : f_dashRange())) : "-");
     pinescript.table.cell(state.dashT, 3, 7, trendTypeName, ({ text_color: trendPrimaryCol, bgcolor: rowBg2, text_size: GLOBAL_TEXT_SIZE, text_halign: pinescript.text.align_center }));
     pinescript.tableMergeCells(state.dashT, 0, 8, 3, 8);
     pinescript.table.cell(state.dashT, 0, 8, f_dashPressureMomentum(), ({ text_color: txtHdr, bgcolor: hdrBg, text_size: GLOBAL_TEXT_SIZE, text_halign: pinescript.text.align_center, tooltip: f_dashTooltipPressure() }));
-    let upperPinChgStr = (pinescript.strToString(upperPinChg, "#.##") + "%");
-    let lowerPinChgStr = (pinescript.strToString(lowerPinChg, "#.##") + "%");
+    var upperPinChgStr = (pinescript.strToString(upperPinChg, "#.##") + "%");
+    var lowerPinChgStr = (pinescript.strToString(lowerPinChg, "#.##") + "%");
     pinescript.table.cell(state.dashT, 0, 9, f_dashSellers(), ({ text_color: negCol, bgcolor: rowBg1, text_size: GLOBAL_TEXT_SIZE, text_halign: pinescript.text.align_center, tooltip: f_dashTooltipSellersPin() }));
     pinescript.table.cell(state.dashT, 1, 9, f_dashBuyers(), ({ text_color: posCol, bgcolor: rowBg1, text_size: GLOBAL_TEXT_SIZE, text_halign: pinescript.text.align_center, tooltip: f_dashTooltipBuyersPin() }));
     pinescript.table.cell(state.dashT, 2, 9, f_dashBodyAVG(), ({ text_color: txtLbl, bgcolor: rowBg1, text_size: GLOBAL_TEXT_SIZE, text_halign: pinescript.text.align_center, tooltip: f_dashTooltipBodyAVG() }));
@@ -3963,64 +4140,64 @@ function main() {
     pinescript.table.cell(state.dashT, 0, 10, (((f_fmtPrice(avgUpperPin) + " (") + upperPinChgStr) + ")"), ({ text_color: negCol, bgcolor: rowBg2, text_size: GLOBAL_TEXT_SIZE, text_halign: pinescript.text.align_center }));
     pinescript.table.cell(state.dashT, 1, 10, (((f_fmtPrice(avgLowerPin) + " (") + lowerPinChgStr) + ")"), ({ text_color: posCol, bgcolor: rowBg2, text_size: GLOBAL_TEXT_SIZE, text_halign: pinescript.text.align_center }));
     pinescript.table.cell(state.dashT, 2, 10, f_fmtPrice(avgBody), ({ text_color: txtVal, bgcolor: rowBg2, text_size: GLOBAL_TEXT_SIZE, text_halign: pinescript.text.align_center }));
-    let bodyStatusLoc = ((bodyStatus === "EXPANDING") ? f_dashExpanding() : ((bodyStatus === "CONTRACTING") ? f_dashContracting() : f_dashStable()));
-    let bodyStatusCol = ((bodyStatus === "EXPANDING") ? posCol : ((bodyStatus === "CONTRACTING") ? negCol : txtLbl));
+    var bodyStatusLoc = ((bodyStatus === "EXPANDING") ? f_dashExpanding() : ((bodyStatus === "CONTRACTING") ? f_dashContracting() : f_dashStable()));
+    var bodyStatusCol = ((bodyStatus === "EXPANDING") ? posCol : ((bodyStatus === "CONTRACTING") ? negCol : txtLbl));
     pinescript.table.cell(state.dashT, 3, 10, bodyStatusLoc, ({ text_color: bodyStatusCol, bgcolor: rowBg2, text_size: GLOBAL_TEXT_SIZE, text_halign: pinescript.text.align_center }));
     pinescript.tableMergeCells(state.dashT, 0, 11, 3, 11);
     pinescript.table.cell(state.dashT, 0, 11, f_dashTrendChannelBoundaries(), ({ text_color: txtHdr, bgcolor: hdrBg, text_size: GLOBAL_TEXT_SIZE, text_halign: pinescript.text.align_center, tooltip: f_dashTooltipChannelBounds() }));
-    let upDiffSign = ((!pinescript.na(resistDiff) && (resistDiff > 0)) ? "+" : "");
-    let upPctSign = ((!pinescript.na(resistPct) && (resistPct > 0)) ? "+" : "");
-    let upperStr = (trendValid ? (((((((((f_dashUpperChannel() + " ") + f_fmtPrice(resistPrice)) + " (Δ ") + upDiffSign) + pinescript.strToString(resistDiff, "#.##")) + " | ") + upPctSign) + pinescript.strToString(resistPct, "#.##")) + "%)") : "-");
-    let lowerStr = (trendValid ? (((((((f_dashLowerChannel() + " ") + f_fmtPrice(supportPrice)) + " (Δ -") + pinescript.strToString(supportDiff, "#.##")) + " | -") + pinescript.strToString(supportPct, "#.##")) + "%)") : "-");
+    var upDiffSign = ((!pinescript.na(resistDiff) && (resistDiff > 0)) ? "+" : "");
+    var upPctSign = ((!pinescript.na(resistPct) && (resistPct > 0)) ? "+" : "");
+    var upperStr = (trendValid ? (((((((((f_dashUpperChannel() + " ") + f_fmtPrice(resistPrice)) + " (Δ ") + upDiffSign) + pinescript.strToString(resistDiff, "#.##")) + " | ") + upPctSign) + pinescript.strToString(resistPct, "#.##")) + "%)") : "-");
+    var lowerStr = (trendValid ? (((((((f_dashLowerChannel() + " ") + f_fmtPrice(supportPrice)) + " (Δ -") + pinescript.strToString(supportDiff, "#.##")) + " | -") + pinescript.strToString(supportPct, "#.##")) + "%)") : "-");
     pinescript.tableMergeCells(state.dashT, 0, 12, 1, 12);
     pinescript.table.cell(state.dashT, 0, 12, upperStr, ({ text_color: txtVal, bgcolor: rowBg1, text_size: GLOBAL_TEXT_SIZE, text_halign: pinescript.text.align_center, tooltip: f_dashTooltipUpper() }));
     pinescript.tableMergeCells(state.dashT, 2, 12, 3, 12);
     pinescript.table.cell(state.dashT, 2, 12, lowerStr, ({ text_color: txtVal, bgcolor: rowBg1, text_size: GLOBAL_TEXT_SIZE, text_halign: pinescript.text.align_center, tooltip: f_dashTooltipLower() }));
-    let widthStr = (trendValid ? f_fmtPrice(channelWidth) : "-");
-    let posStr = (!pinescript.na(channelPos) ? (pinescript.strToString(channelPos, "#.##") + "%") : "-");
-    let rrStr = (!pinescript.na(rrRatio) ? ("1:" + pinescript.strToString(rrRatio, "#.##")) : "-");
-    let posStatusLoc = ((posStatus === "OVERBOUGHT") ? f_dashOverbought() : ((posStatus === "OVERSOLD") ? f_dashOversold() : f_dashNeutral()));
-    let statusCol = ((posStatus === "OVERBOUGHT") ? negCol : ((posStatus === "OVERSOLD") ? posCol : txtLbl));
+    var widthStr = (trendValid ? f_fmtPrice(channelWidth) : "-");
+    var posStr = (!pinescript.na(channelPos) ? (pinescript.strToString(channelPos, "#.##") + "%") : "-");
+    var rrStr = (!pinescript.na(rrRatio) ? ("1:" + pinescript.strToString(rrRatio, "#.##")) : "-");
+    var posStatusLoc = ((posStatus === "OVERBOUGHT") ? f_dashOverbought() : ((posStatus === "OVERSOLD") ? f_dashOversold() : f_dashNeutral()));
+    var statusCol = ((posStatus === "OVERBOUGHT") ? negCol : ((posStatus === "OVERSOLD") ? posCol : txtLbl));
     pinescript.table.cell(state.dashT, 0, 13, widthStr, ({ text_color: accentCol, bgcolor: rowBg2, text_size: GLOBAL_TEXT_SIZE, text_halign: pinescript.text.align_center, tooltip: f_dashTooltipWidth() }));
     pinescript.table.cell(state.dashT, 1, 13, posStr, ({ text_color: txtVal, bgcolor: rowBg2, text_size: GLOBAL_TEXT_SIZE, text_halign: pinescript.text.align_center, tooltip: f_dashTooltipPosition() }));
     pinescript.table.cell(state.dashT, 2, 13, rrStr, ({ text_color: txtVal, bgcolor: rowBg2, text_size: GLOBAL_TEXT_SIZE, text_halign: pinescript.text.align_center, tooltip: f_dashTooltipRR() }));
     pinescript.table.cell(state.dashT, 3, 13, posStatusLoc, ({ text_color: statusCol, bgcolor: rowBg2, text_size: GLOBAL_TEXT_SIZE, text_halign: pinescript.text.align_center, tooltip: f_dashTooltipStatus() }));
     pinescript.tableMergeCells(state.dashT, 0, 14, 3, 14);
     pinescript.table.cell(state.dashT, 0, 14, f_dashTrendIntelligence(), ({ text_color: txtHdr, bgcolor: hdrBg, text_size: GLOBAL_TEXT_SIZE, text_halign: pinescript.text.align_center, tooltip: f_dashTooltipQuality(quality, contradictions) }));
-    let qualityStr = (pinescript.strToString(quality, "#") + "/100");
-    let confidenceLoc = ((confidenceLevel === "HIGH") ? f_dashHigh() : ((confidenceLevel === "MEDIUM") ? f_dashMedium() : f_dashLow()));
-    let strengthLoc = ((strengthRating === "VERY STRONG") ? f_dashVeryStrong() : ((strengthRating === "STRONG") ? f_dashStrong() : ((strengthRating === "MODERATE") ? f_dashModerate() : ((strengthRating === "WEAK") ? f_dashWeak() : "-"))));
-    let volMomLoc = ((pinescript.strPos(volMom, "INCREASING") >= 0) ? f_dashIncreasing() : f_dashDecreasing());
+    var qualityStr = (pinescript.strToString(quality, "#") + "/100");
+    var confidenceLoc = ((confidenceLevel === "HIGH") ? f_dashHigh() : ((confidenceLevel === "MEDIUM") ? f_dashMedium() : f_dashLow()));
+    var strengthLoc = ((strengthRating === "VERY STRONG") ? f_dashVeryStrong() : ((strengthRating === "STRONG") ? f_dashStrong() : ((strengthRating === "MODERATE") ? f_dashModerate() : ((strengthRating === "WEAK") ? f_dashWeak() : "-"))));
+    var volMomLoc = ((pinescript.strPos(volMom, "INCREASING") >= 0) ? f_dashIncreasing() : f_dashDecreasing());
     pinescript.table.cell(state.dashT, 0, 15, qualityStr, ({ text_color: qualityCol, bgcolor: rowBg1, text_size: GLOBAL_TEXT_SIZE, text_halign: pinescript.text.align_center, tooltip: f_dashTooltipQuality(quality, contradictions) }));
     pinescript.table.cell(state.dashT, 1, 15, confidenceLoc, ({ text_color: qualityCol, bgcolor: rowBg1, text_size: GLOBAL_TEXT_SIZE, text_halign: pinescript.text.align_center, tooltip: f_dashTooltipConfidence() }));
     pinescript.table.cell(state.dashT, 2, 15, strengthLoc, ({ text_color: trendAccentCol, bgcolor: rowBg1, text_size: GLOBAL_TEXT_SIZE, text_halign: pinescript.text.align_center, tooltip: f_dashTooltipStrength() }));
     pinescript.table.cell(state.dashT, 3, 15, volMomLoc, ({ text_color: ((pinescript.strPos(volMom, "INCREASING") >= 0) ? posCol : negCol), bgcolor: rowBg1, text_size: GLOBAL_TEXT_SIZE, text_halign: pinescript.text.align_center, tooltip: f_dashTooltipVolMomentum() }));
     if ((i_narrativeEnable && trendValid)) {
       state.g_currentBar = f_analyzeCurrentBar(baseOff, globalAvgRange, cBuy, cSell);
-      let blk1 = ((pinescript.arraySize(state.analyticsData) > 0) ? pinescript.arrayGet(state.analyticsData, 0) : f_analyticsEmpty());
-      let blk2 = ((pinescript.arraySize(state.analyticsData) > 1) ? pinescript.arrayGet(state.analyticsData, 1) : f_analyticsEmpty());
+      var blk1 = ((pinescript.arraySize(state.analyticsData) > 0) ? pinescript.arrayGet(state.analyticsData, 0) : f_analyticsEmpty());
+      var blk2 = ((pinescript.arraySize(state.analyticsData) > 1) ? pinescript.arrayGet(state.analyticsData, 1) : f_analyticsEmpty());
       state.g_composite = f_analyzeComposite(blk1, blk2);
       state.g_trendContext = f_analyzeTrendContext(state.trendChannels, quality);
-      let hasDivergence = (((latestTrend.channelType === DIR_UP) && (trendDelta < 0)) || ((latestTrend.channelType === DIR_DOWN) && (trendDelta > 0)));
-      let narrativeParts = f_buildProfessionalNarrativeParts(state.g_currentBar, state.g_composite, state.g_trendContext, latestTrend, trendBuy, trendSell, trendDelta, trendDeltaPct, bodyStatus, upperPinChg, lowerPinChg, volMom, channelPos, posStatus, resistPrice, supportPrice, state.g_levels, contradictions, hasDivergence);
-      let narrHdrBg = pinescript.color.new(pinescript.color.rgb(15, 23, 42), 5);
-      let narrRowBg = pinescript.color.new(pinescript.color.rgb(30, 41, 59), 10);
-      let narrTxtHdr = pinescript.color.rgb(234, 179, 8);
-      let narrTxtMain = pinescript.color.rgb(248, 250, 252);
-      let narrTxtSub = pinescript.color.rgb(148, 163, 184);
-      let narrHeader = f_L("Market Analysis", "Piyasa Analizi", "बाजार विश्लेषण", "تحليل السوق");
-      let textAlign = _alignL;
+      var hasDivergence = (((latestTrend.channelType === DIR_UP) && (trendDelta < 0)) || ((latestTrend.channelType === DIR_DOWN) && (trendDelta > 0)));
+      var narrativeParts = f_buildProfessionalNarrativeParts(state.g_currentBar, state.g_composite, state.g_trendContext, latestTrend, trendBuy, trendSell, trendDelta, trendDeltaPct, bodyStatus, upperPinChg, lowerPinChg, volMom, channelPos, posStatus, resistPrice, supportPrice, state.g_levels, contradictions, hasDivergence);
+      var narrHdrBg = pinescript.color.new(pinescript.color.rgb(15, 23, 42), 5);
+      var narrRowBg = pinescript.color.new(pinescript.color.rgb(30, 41, 59), 10);
+      var narrTxtHdr = pinescript.color.rgb(234, 179, 8);
+      var narrTxtMain = pinescript.color.rgb(248, 250, 252);
+      var narrTxtSub = pinescript.color.rgb(148, 163, 184);
+      var narrHeader = f_L("Market Analysis", "Piyasa Analizi", "बाजार विश्लेषण", "تحليل السوق");
+      var textAlign = _alignL;
       pinescript.tableMergeCells(state.dashT, 0, 16, 3, 16);
       pinescript.table.cell(state.dashT, 0, 16, narrHeader, ({ text_color: narrTxtHdr, bgcolor: narrHdrBg, text_size: GLOBAL_TEXT_SIZE, text_halign: pinescript.text.align_center }));
-      let wordsPerLine = 18;
-      let maxCharsPerLine = 90;
-      let firstNarrRow = 17;
-      let narrLines = pinescript.arrayNew();
-      let partsCount = pinescript.min(5, pinescript.arraySize(narrativeParts));
+      var wordsPerLine = 18;
+      var maxCharsPerLine = 90;
+      var firstNarrRow = 17;
+      var narrLines = pinescript.arrayNew();
+      var partsCount = pinescript.min(5, pinescript.arraySize(narrativeParts));
       if ((partsCount > 0)) {
         for (let pi = 0; pi <= (partsCount - 1); pi++) {
-          let wrapped = f_wrapNarrative(pinescript.arrayGet(narrativeParts, pi), wordsPerLine, maxCharsPerLine);
-          let wn = pinescript.arraySize(wrapped);
+          var wrapped = f_wrapNarrative(pinescript.arrayGet(narrativeParts, pi), wordsPerLine, maxCharsPerLine);
+          var wn = pinescript.arraySize(wrapped);
           if ((wn > 0)) {
             for (let wi = 0; wi <= (wn - 1); wi++) {
               pinescript.arrayPush(narrLines, pinescript.arrayGet(wrapped, wi));
@@ -4028,13 +4205,13 @@ function main() {
           }
         }
       }
-      let totalLines = pinescript.arraySize(narrLines);
-      let narrativeRowsNeeded = pinescript.min(totalLines, ((DASH_ROWS - firstNarrRow) - (i_narrativeShowDisclaimer ? 3 : 0)));
+      var totalLines = pinescript.arraySize(narrLines);
+      var narrativeRowsNeeded = pinescript.min(totalLines, ((DASH_ROWS - firstNarrRow) - (i_narrativeShowDisclaimer ? 3 : 0)));
       if ((narrativeRowsNeeded > 0)) {
         for (let r = 0; r <= (narrativeRowsNeeded - 1); r++) {
-          let row = (firstNarrRow + r);
+          var row = (firstNarrRow + r);
           pinescript.tableMergeCells(state.dashT, 0, row, 3, row);
-          let txt = pinescript.arrayGet(narrLines, r);
+          var txt = pinescript.arrayGet(narrLines, r);
           if (((r === (narrativeRowsNeeded - 1)) && (totalLines > narrativeRowsNeeded))) {
             txt += " …";
           }
@@ -4042,14 +4219,14 @@ function main() {
         }
       }
       if (i_narrativeShowDisclaimer) {
-        let disclaimerStartRow = (firstNarrRow + narrativeRowsNeeded);
-        let disclaimerLine1 = f_L("⚠️ IMPORTANT: This analysis is for educational purposes only", "⚠️ ÖNEMLİ: Bu analiz sadece eğitim amaçlıdır", "⚠️ महत्वपूर्ण: यह विश्लेषण केवल शैक्षिक उद्देश्यों के लिए है", "⚠️ هام: هذا التحليل لأغراض تعليمية فقط");
-        let disclaimerLine2 = f_L("and does not constitute investment advice. Always conduct your own research", "ve yatırım tavsiyesi teşkil etmez. Her zaman kendi araştırmanızı yapın", "और निवेश सलाह नहीं है। हमेशा अपना शोध करें", "ولا يُشكّل نصيحة استثمارية. قم دائماً بإجراء بحثك الخاص");
-        let disclaimerLine3 = f_L("and consult with a qualified financial advisor before making investment decisions.", "ve yatırım kararları vermeden önce kalifiye bir finansal danışmana danışın.", "और निवेश निर्णय लेने से पहले योग्य वित्तीय सलाहकार से परामर्श करें।", "واستشر مستشاراً مالياً مؤهلاً قبل اتخاذ قرارات الاستثمار.");
+        var disclaimerStartRow = (firstNarrRow + narrativeRowsNeeded);
+        var disclaimerLine1 = f_L("⚠️ IMPORTANT: This analysis is for educational purposes only", "⚠️ ÖNEMLİ: Bu analiz sadece eğitim amaçlıdır", "⚠️ महत्वपूर्ण: यह विश्लेषण केवल शैक्षिक उद्देश्यों के लिए है", "⚠️ هام: هذا التحليل لأغراض تعليمية فقط");
+        var disclaimerLine2 = f_L("and does not constitute investment advice. Always conduct your own research", "ve yatırım tavsiyesi teşkil etmez. Her zaman kendi araştırmanızı yapın", "और निवेश सलाह नहीं है। हमेशा अपना शोध करें", "ولا يُشكّل نصيحة استثمارية. قم دائماً بإجراء بحثك الخاص");
+        var disclaimerLine3 = f_L("and consult with a qualified financial advisor before making investment decisions.", "ve yatırım kararları vermeden önce kalifiye bir finansal danışmana danışın.", "और निवेश निर्णय लेने से पहले योग्य वित्तीय सलाहकार से परामर्श करें।", "واستشر مستشاراً مالياً مؤهلاً قبل اتخاذ قرارات الاستثمار.");
         for (let disclaimerLineNum = 0; disclaimerLineNum <= 2; disclaimerLineNum++) {
-          let row = (disclaimerStartRow + disclaimerLineNum);
+          row = (disclaimerStartRow + disclaimerLineNum);
           pinescript.tableMergeCells(state.dashT, 0, row, 3, row);
-          let lineText = ((disclaimerLineNum === 0) ? disclaimerLine1 : ((disclaimerLineNum === 1) ? disclaimerLine2 : disclaimerLine3));
+          var lineText = ((disclaimerLineNum === 0) ? disclaimerLine1 : ((disclaimerLineNum === 1) ? disclaimerLine2 : disclaimerLine3));
           pinescript.table.cell(state.dashT, 0, row, lineText, ({ text_color: narrTxtSub, bgcolor: pinescript.color.new(pinescript.color.rgb(30, 30, 30), 10), text_size: GLOBAL_TEXT_SIZE, text_halign: pinescript.text.align_center }));
         }
       }
@@ -4099,6 +4276,10 @@ function run(data, options = {}) {
     rt.__shapeIdx = 0;
     globalThis.bar_index = i;
     globalThis.last_bar_index = n - 1;
+    globalThis.time_tradingday = inTime[i];
+    globalThis.time_close = inTime[i];
+    globalThis.last_bar_time = inTime[n - 1];
+    globalThis.timenow = inTime[n - 1];
     globalThis.barstate = {
       isfirst: i === 0, islast: i === n - 1, isrealtime: false, ishistory: true,
       isconfirmed: true, isnew: true, islastconfirmedhistory: i === n - 1,

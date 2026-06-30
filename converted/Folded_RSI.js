@@ -42,6 +42,80 @@ const pinescript = {
     if (value != null && typeof value[Symbol.iterator] === 'function') return Array.from(value);
     return new Array(count || 0).fill(null);
   },
+  __decArr: function(arr) {
+    if (!Array.isArray(arr) || arr.__pineDecorated) return arr;
+    const self = this;
+    const def = (name, fn) => Object.defineProperty(arr, name, { value: fn, writable: true, configurable: true });
+    Object.defineProperty(arr, '__pineDecorated', { value: true, configurable: true });
+    def('get', (i) => (arr[i] === undefined ? null : arr[i]));
+    def('set', (i, v) => { arr[i] = v; return v; });
+    def('size', () => arr.length);
+    def('clear', () => { arr.length = 0; });
+    def('insert', (i, v) => { arr.splice(i, 0, v); });
+    def('remove', (i) => arr.splice(i, 1)[0]);
+    def('contains', (v) => arr.includes(v));
+    def('indexof', (v) => arr.indexOf(v));
+    def('lastindexof', (v) => arr.lastIndexOf(v));
+    def('first', () => (arr.length ? arr[0] : null));
+    def('last', () => (arr.length ? arr[arr.length - 1] : null));
+    def('sum', () => arr.reduce((a, b) => a + b, 0));
+    def('avg', () => (arr.length ? arr.reduce((a, b) => a + b, 0) / arr.length : 0));
+    def('min', () => (arr.length ? Math.min(...arr) : null));
+    def('max', () => (arr.length ? Math.max(...arr) : null));
+    def('range', () => (arr.length ? Math.max(...arr) - Math.min(...arr) : null));
+    // Statistical methods that route to the array.* built-ins (these names are not
+    // native to JS arrays, so attaching them here is safe from recursion).
+    def('median', () => self.arrayMedian(arr));
+    def('mode', () => self.arrayMode(arr));
+    def('stdev', () => self.arrayStdev(arr));
+    def('variance', () => self.arrayVariance(arr));
+    def('covariance', (other) => self.arrayCovariance(arr, other));
+    def('percentile_linear_interpolation', (p) => self.arrayPercentileLinearInterpolation(arr, p));
+    def('percentile_nearest_rank', (p) => self.arrayPercentileNearestRank(arr, p));
+    def('abs', () => self.__decArr(self.arrayAbs(arr)));
+    def('binary_search', (v) => self.arrayBinarySearch(arr, v));
+    // Pine's array.sort takes an order string, not a comparator. Use the native
+    // sort via .call so we don't recurse through this overridden method.
+    def('sort', (order) => { Array.prototype.sort.call(arr, (a, b) => (order === 'descending' ? b - a : a - b)); return arr; });
+    def('sort_indices', (order) => self.__decArr(arr.map((_, i) => i).sort((a, b) => (order === 'descending' ? arr[b] - arr[a] : arr[a] - arr[b]))));
+    // join/slice/reverse/concat/includes/fill already exist natively on Array with
+    // compatible semantics, so we deliberately leave them to the native methods.
+    return arr;
+  },
+  __decMap: function(m) {
+    if (!(m instanceof Map) || m.__pineDecorated) return m;
+    const def = (name, fn) => Object.defineProperty(m, name, { value: fn, writable: true, configurable: true });
+    Object.defineProperty(m, '__pineDecorated', { value: true, configurable: true });
+    def('put', (k, v) => { m.set(k, v); return v; });
+    def('contains', (k) => m.has(k));
+    def('remove', (k) => m.delete(k));
+    def('keys', () => Array.from(Map.prototype.keys.call(m)));
+    def('values', () => Array.from(Map.prototype.values.call(m)));
+    def('size_', () => m.size);
+    return m;
+  },
+  __decMatrix: function(m) {
+    if (!m || typeof m !== 'object' || m.__pineDecorated) return m;
+    const self = this;
+    const def = (name, fn) => Object.defineProperty(m, name, { value: fn, writable: true, configurable: true });
+    Object.defineProperty(m, '__pineDecorated', { value: true, configurable: true });
+    def('get', (r, c) => self.matrixGet(m, r, c));
+    def('set', (r, c, v) => self.matrixSet(m, r, c, v));
+    def('rows_', () => m.rows);
+    def('columns', () => m.cols);
+    def('fill', (v) => self.matrixFill(m, v));
+    return m;
+  },
+  __decDraw: function(obj) {
+    if (!obj || typeof obj !== 'object') return obj;
+    const p = new Proxy(obj, {
+      get(t, k) {
+        if (k in t || typeof k === 'symbol') return t[k];
+        return function() { return p; };
+      },
+    });
+    return p;
+  },
   alertcondition: function(condition, ...rest) {
     if (globalThis.__pineRuntime) {
       globalThis.__pineRuntime.alerts.push({ condition, args: rest });
@@ -49,6 +123,32 @@ const pinescript = {
     return null;
   },
   barcolor: function(color) { return null; },
+  plotchar: function(series, ...rest) {
+    const rt = globalThis.__pineRuntime;
+    if (!rt) return series;
+    const bar = rt.__barIndex | 0;
+    const ord = (rt.__shapeIdx = (rt.__shapeIdx | 0) + 1) - 1;
+    let key = 'char_' + ord;
+    for (const r of rest) {
+      if (typeof r === 'string') { key = r; break; }
+      if (r && typeof r === 'object' && r.title) { key = String(r.title); break; }
+    }
+    let s = rt.plotshapes[key];
+    if (!s) s = rt.plotshapes[key] = { title: key, data: [] };
+    s.data[bar] = this.__scalar(series);
+    return series;
+  },
+  plotarrow: function(series, ...rest) {
+    const rt = globalThis.__pineRuntime;
+    if (!rt) return series;
+    const bar = rt.__barIndex | 0;
+    const ord = (rt.__plotIdx = (rt.__plotIdx | 0) + 1) - 1;
+    const key = 'arrow_' + ord;
+    let p = rt.plots[key];
+    if (!p) p = rt.plots[key] = { title: key, data: [] };
+    p.data[bar] = this.__scalar(series);
+    return series;
+  },
   bgcolor: function(color, title, editable, showLast) {
     return null;
   },
@@ -470,6 +570,12 @@ const pinescript = {
   atan: function(value) {
     return Math.atan(value);
   },
+  todegrees: function(radians) {
+    return radians * (180 / Math.PI);
+  },
+  toradians: function(degrees) {
+    return degrees * (Math.PI / 180);
+  },
   floor: function(value) {
     return Math.floor(value);
   },
@@ -641,7 +747,7 @@ const pinescript = {
     return series;
   },
   lineNew: function(x1, y1, x2, y2, opts = {}) {
-    return { x1, y1, x2, y2, opts, _type: 'line' };
+    return this.__decDraw({ x1, y1, x2, y2, opts, _type: 'line' });
   },
   lineDelete: function(l) {
     return null;
@@ -661,7 +767,7 @@ const pinescript = {
     return point === 0 || point === 'y1' ? line.y1 : line.y2;
   },
   labelNew: function(x, y, text = '', opts = {}) {
-    return { x, y, text, opts, _type: 'label' };
+    return this.__decDraw({ x, y, text, opts, _type: 'label' });
   },
   labelDelete: function(l) {
     return null;
@@ -676,7 +782,7 @@ const pinescript = {
     return label.text || '';
   },
   boxNew: function(left, top, right, bottom, opts = {}) {
-    return { left, top, right, bottom, opts, _type: 'box' };
+    return this.__decDraw({ left, top, right, bottom, opts, _type: 'box' });
   },
   boxDelete: function(box) {
     return null;
@@ -694,7 +800,7 @@ const pinescript = {
     return box;
   },
   polylineNew: function(points, opts = {}) {
-    return { points: points || [], opts, _type: 'polyline' };
+    return this.__decDraw({ points: points || [], opts, _type: 'polyline' });
   },
   polylineDelete: function(poly) {
     return null;
@@ -765,7 +871,7 @@ const pinescript = {
     return { time: _time ?? null, price: _price ?? null };
   },
   mapNew: function() {
-    return new Map();
+    return this.__decMap(new Map());
   },
   mapSize: function(m) {
     return m instanceof Map ? m.size : 0;
@@ -800,7 +906,7 @@ const pinescript = {
     const r = Math.max(0, rows ?? 0);
     const c = Math.max(0, cols ?? 0);
     const data = Array.from({ length: r }, () => Array.from({ length: c }, () => initialValue));
-    return { rows: r, cols: c, data };
+    return this.__decMatrix({ rows: r, cols: c, data });
   },
   matrixRows: function(m) {
     return m?.rows ?? 0;
@@ -923,11 +1029,62 @@ const pinescript = {
     }
     return null;
   },
+  __jacobiEigen: function(m) {
+    if (!m || !Array.isArray(m.data)) return null;
+    const n = m.rows ?? 0;
+    if (n === 0 || n !== (m.cols ?? 0)) return null;
+    // Work on a copy so the input matrix is untouched.
+    const a = m.data.map(row => row.slice());
+    const v = Array.from({ length: n }, (_, i) => Array.from({ length: n }, (_, j) => (i === j ? 1 : 0)));
+    for (let sweep = 0; sweep < 100; sweep++) {
+      let off = 0;
+      for (let p = 0; p < n; p++) for (let q = p + 1; q < n; q++) off += a[p][q] * a[p][q];
+      if (off < 1e-20) break;
+      for (let p = 0; p < n; p++) {
+        for (let q = p + 1; q < n; q++) {
+          if (Math.abs(a[p][q]) < 1e-18) continue;
+          const theta = (a[q][q] - a[p][p]) / (2 * a[p][q]);
+          const t = Math.sign(theta || 1) / (Math.abs(theta) + Math.sqrt(theta * theta + 1));
+          const cos = 1 / Math.sqrt(t * t + 1);
+          const sin = t * cos;
+          for (let k = 0; k < n; k++) {
+            const akp = a[k][p], akq = a[k][q];
+            a[k][p] = cos * akp - sin * akq;
+            a[k][q] = sin * akp + cos * akq;
+          }
+          for (let k = 0; k < n; k++) {
+            const apk = a[p][k], aqk = a[q][k];
+            a[p][k] = cos * apk - sin * aqk;
+            a[q][k] = sin * apk + cos * aqk;
+          }
+          for (let k = 0; k < n; k++) {
+            const vkp = v[k][p], vkq = v[k][q];
+            v[k][p] = cos * vkp - sin * vkq;
+            v[k][q] = sin * vkp + cos * vkq;
+          }
+        }
+      }
+    }
+    // Sort eigenpairs by eigenvalue, descending.
+    const order = Array.from({ length: n }, (_, i) => i).sort((i, j) => a[j][j] - a[i][i]);
+    const values = order.map(i => a[i][i]);
+    const vectors = Array.from({ length: n }, (_, r) => order.map(c => v[r][c]));
+    return { values, vectors };
+  },
+  matrixEigenvalues: function(m) {
+    const e = this.__jacobiEigen(m);
+    return this.__decArr(e ? e.values : []);
+  },
+  matrixEigenvectors: function(m) {
+    const e = this.__jacobiEigen(m);
+    if (!e) return this.__decMatrix({ rows: 0, cols: 0, data: [] });
+    return this.__decMatrix({ rows: e.vectors.length, cols: e.vectors.length, data: e.vectors });
+  },
   requestSecurity: function(symbol, timeframe, expression) {
     return expression;
   },
   arrayNew: function(initialSize = 0, initialValue = 0) {
-    return Array(initialSize).fill(initialValue);
+    return this.__decArr(Array(initialSize).fill(initialValue));
   },
   arraySize: function(arr) {
     return arr ? arr.length : 0;
@@ -978,10 +1135,10 @@ const pinescript = {
     return arr;
   },
   arraySlice: function(arr, startIndex = 0, endIndex = null) {
-    if (!arr) return [];
+    if (!arr) return this.__decArr([]);
     const start = Number(startIndex) || 0;
     const end = endIndex === null || endIndex === undefined ? arr.length : Number(endIndex) || 0;
-    return arr.slice(start, end);
+    return this.__decArr(arr.slice(start, end));
   },
   arraySort: function(arr, order = 'ascending') {
     if (arr) arr.sort((a, b) => order === 'ascending' ? a - b : b - a);
@@ -1191,7 +1348,7 @@ const pinescript = {
     const info = { ticker: 'AAPL', tickerid: 'NASDAQ:AAPL', prefix: 'NASDAQ', root: 'AAPL', suffix: '' };
     return info[type] || '';
   },
-  timenow: 1781574526959,
+  timenow: 1782784151872,
   barstate: "LAST",
   dividends: {},
   splits: {},
@@ -1245,11 +1402,11 @@ const pinescript = {
   arrayConcat: function(arr1, arr2) {
     if (!arr1) return arr2 || [];
     if (!arr2) return arr1;
-    return arr1.concat(arr2);
+    return this.__decArr(arr1.concat(arr2));
   },
   arrayCopy: function(arr) {
-    if (!arr) return [];
-    return [...arr];
+    if (!arr) return this.__decArr([]);
+    return this.__decArr([...arr]);
   },
   arrayBinarySearch: function(arr, value) {
     if (!arr || arr.length === 0) return -1;
@@ -1339,7 +1496,7 @@ globalThis.input.timeframe = globalThis.input.timeframe || ((defval) => defval);
 
 globalThis.array = globalThis.array || {
 
-  from: (...items) => items,
+  from: (...items) => pinescript.__decArr(items),
 
   size: (arr) => pinescript.arraySize(arr),
 
@@ -1508,6 +1665,8 @@ globalThis.line = globalThis.line || __pineNS({ style_solid: "solid", style_dash
 
 globalThis.box = globalThis.box || __pineNS({});
 
+globalThis.color = globalThis.color || __pineNS(Object.assign(function(c) { return c; }, { new: function(c, t) { return c; }, rgb: function(r, g, b, t) { return "#rgb(" + [r, g, b].join(",") + ")"; }, from_gradient: function(v, lo, hi, c1, c2) { return c1; }, r: function() { return 0; }, g: function() { return 0; }, b: function() { return 0; }, t: function() { return 0; }, aqua: "#00BCD4", black: "#363A45", blue: "#2962FF", fuchsia: "#E040FB", gray: "#787B86", green: "#4CAF50", lime: "#00E676", maroon: "#880E4F", navy: "#311B92", olive: "#808000", orange: "#FF9800", purple: "#9C27B0", red: "#FF5252", silver: "#B2B5BE", teal: "#00897B", white: "#FFFFFF", yellow: "#FFEB3B" }));
+
 globalThis.label = globalThis.label || __pineNS({ style_label_down: "label_down", style_label_up: "label_up", style_none: "none" });
 
 globalThis.polyline = globalThis.polyline || __pineNS({});
@@ -1520,7 +1679,9 @@ globalThis.map = globalThis.map || __pineNS({});
 
 globalThis.session = globalThis.session || __pineNS({ regular: "regular", extended: "extended" });
 
-globalThis.dayofweek = globalThis.dayofweek || __pineNS({ sunday: 1, monday: 2, tuesday: 3, wednesday: 4, thursday: 5, friday: 6, saturday: 7 });
+globalThis.ticker = globalThis.ticker || __pineNS({});
+
+globalThis.dayofweek = globalThis.dayofweek || __pineNS(Object.assign(function(t) { return new Date(t != null ? t : (globalThis.time || 0)).getUTCDay() + 1; }, { sunday: 1, monday: 2, tuesday: 3, wednesday: 4, thursday: 5, friday: 6, saturday: 7 }));
 
 globalThis.timeframe = __pineNS(Object.assign(globalThis.timeframe || {}, { period: (globalThis.timeframe && globalThis.timeframe.period) || "D", isintraday: false, isdaily: true, multiplier: 1 }));
 
@@ -1567,8 +1728,6 @@ globalThis.float = globalThis.float || function(x) { return x == null ? null : N
 globalThis.bool = globalThis.bool || function(x) { return Boolean(x); };
 
 globalThis.string = globalThis.string || function(x) { return x == null ? null : String(x); };
-
-globalThis.dayofweek = globalThis.dayofweek || __pineNS({ sunday: 1, monday: 2, tuesday: 3, wednesday: 4, thursday: 5, friday: 6, saturday: 7 });
 
 globalThis.str = globalThis.str || __pineNS({});
 
@@ -1655,7 +1814,7 @@ pinescript.text = { align_center: "center" };
 
 pinescript.table = {
 
-  new: function(position, columns, rows, opts) { return { position, columns, rows, opts: opts || {}, cells: [] }; },
+  new: function(position, columns, rows, opts) { return pinescript.__decDraw({ position, columns, rows, opts: opts || {}, cells: [] }); },
 
   cell: function(table, column, row, text, opts) {
 
@@ -1688,18 +1847,18 @@ function main() {
   null;
   // Study: Folded RSI (custom RSI, phase-invariant)
   // Options: {"shorttitle":"Folded RSI","overlay":false,"max_lines_count":500,"max_labels_count":500}
-  let grp_cycle = "Cycle / Correlation";
-  let cycle_len = pinescript.inputInt(40, "Cycle Window (corr length)", ({ group: grp_cycle, minval: 10, maxval: 600, tooltip: "Bars used to estimate correlation with a pure sine/cos basis." }));
-  let target_period = pinescript.inputInt(20, "Target Sine Period (bars)", ({ group: grp_cycle, minval: 6, maxval: 300, tooltip: "Assumed dominant cycle length to correlate against." }));
-  let use_harmonic2 = pinescript.inputBool(true, "Also test 2× harmonic and keep the stronger", ({ group: grp_cycle }));
-  let grp_map = "Correlation → RSI Length Mapping";
-  let len_min = pinescript.inputInt(5, "RSI Length Min", ({ group: grp_map, minval: 2, maxval: 300 }));
-  let len_max = pinescript.inputInt(33, "RSI Length Max", ({ group: grp_map, minval: 5, maxval: 600 }));
-  let map_power = pinescript.inputFloat(1, "Nonlinearity (power)", ({ group: grp_map, minval: 0.25, maxval: 4, tooltip: ">1 emphasizes strong correlations; <1 flattens the response." }));
-  let invert_map = pinescript.inputBool(false, "Invert mapping (strong cycle → longer length)", ({ group: grp_map }));
-  let grp_src = "Source / Smoothing";
-  let src = pinescript.inputSource(close, "Price Source", ({ group: grp_src }));
-  let smooth_rsi = pinescript.inputInt(3, "Post Smoothing (EMA on RSI)", ({ group: grp_src, minval: 1, maxval: 50 }));
+  var grp_cycle = "Cycle / Correlation";
+  var cycle_len = pinescript.inputInt(40, "Cycle Window (corr length)", ({ group: grp_cycle, minval: 10, maxval: 600, tooltip: "Bars used to estimate correlation with a pure sine/cos basis." }));
+  var target_period = pinescript.inputInt(20, "Target Sine Period (bars)", ({ group: grp_cycle, minval: 6, maxval: 300, tooltip: "Assumed dominant cycle length to correlate against." }));
+  var use_harmonic2 = pinescript.inputBool(true, "Also test 2× harmonic and keep the stronger", ({ group: grp_cycle }));
+  var grp_map = "Correlation → RSI Length Mapping";
+  var len_min = pinescript.inputInt(5, "RSI Length Min", ({ group: grp_map, minval: 2, maxval: 300 }));
+  var len_max = pinescript.inputInt(33, "RSI Length Max", ({ group: grp_map, minval: 5, maxval: 600 }));
+  var map_power = pinescript.inputFloat(1, "Nonlinearity (power)", ({ group: grp_map, minval: 0.25, maxval: 4, tooltip: ">1 emphasizes strong correlations; <1 flattens the response." }));
+  var invert_map = pinescript.inputBool(false, "Invert mapping (strong cycle → longer length)", ({ group: grp_map }));
+  var grp_src = "Source / Smoothing";
+  var src = pinescript.inputSource(close, "Price Source", ({ group: grp_src }));
+  var smooth_rsi = pinescript.inputInt(3, "Post Smoothing (EMA on RSI)", ({ group: grp_src, minval: 1, maxval: 50 }));
   function f_clamp_float(x, lo, hi) {
     return ((x < lo) ? lo : ((x > hi) ? hi : x));
   }
@@ -1714,68 +1873,68 @@ function main() {
     state.sumx2 = 0;
     state.sumy2 = 0;
     state.sumxy = 0;
-    let _win = pinescript.max(win, 2);
-    let _per = pinescript.max(period, 2);
+    var _win = pinescript.max(win, 2);
+    var _per = pinescript.max(period, 2);
     for (let i = 0; i <= (_win - 1); i++) {
-      let x = pinescript.hist(0, _src, i);
-      let t = (bar_index - i);
-      let ang = (((2 * pinescript.math.pi) * (t % _per)) / _per);
-      let y = (cosBasis ? pinescript.cos(ang) : pinescript.sin(ang));
+      var x = pinescript.hist(0, _src, i);
+      var t = (bar_index - i);
+      var ang = (((2 * pinescript.math.pi) * (t % _per)) / _per);
+      var y = (cosBasis ? pinescript.cos(ang) : pinescript.sin(ang));
       state.sumx = x;
       state.sumy = y;
       state.sumx2 = (x * x);
       state.sumy2 = (y * y);
       state.sumxy = (x * y);
     }
-    let n = _win;
-    let num = ((n * state.sumxy) - (state.sumx * state.sumy));
-    let denL = ((n * state.sumx2) - (state.sumx * state.sumx));
-    let denR = ((n * state.sumy2) - (state.sumy * state.sumy));
-    let den = pinescript.sqrt((pinescript.max(denL, 0) * pinescript.max(denR, 0)));
-    let corr = ((den === 0) ? 0 : f_clamp_float((num / den), -1, 1));
+    var n = _win;
+    var num = ((n * state.sumxy) - (state.sumx * state.sumy));
+    var denL = ((n * state.sumx2) - (state.sumx * state.sumx));
+    var denR = ((n * state.sumy2) - (state.sumy * state.sumy));
+    var den = pinescript.sqrt((pinescript.max(denL, 0) * pinescript.max(denR, 0)));
+    var corr = ((den === 0) ? 0 : f_clamp_float((num / den), -1, 1));
     return corr;
   }
   function f_corr_mag_phase_free(_src, win, period) {
-    let c_sin = f_corr_with_basis(_src, win, period, false);
-    let c_cos = f_corr_with_basis(_src, win, period, true);
-    let mag = pinescript.sqrt(((c_sin * c_sin) + (c_cos * c_cos)));
+    var c_sin = f_corr_with_basis(_src, win, period, false);
+    var c_cos = f_corr_with_basis(_src, win, period, true);
+    var mag = pinescript.sqrt(((c_sin * c_sin) + (c_cos * c_cos)));
     return f_clamp_float(mag, 0, 1);
   }
   function f_corr_to_len(mag, lenLo, lenHi, pow, invert) {
-    let m = pinescript.pow(mag, pow);
-    let w = (invert ? m : (1 - m));
-    let L = (lenLo + ((lenHi - lenLo) * f_clamp_float(w, 0, 1)));
+    var m = pinescript.pow(mag, pow);
+    var w = (invert ? m : (1 - m));
+    var L = (lenLo + ((lenHi - lenLo) * f_clamp_float(w, 0, 1)));
     return f_clamp_float(L, lenLo, lenHi);
   }
   function f_rsi_custom(_src, len_t) {
-    let chg = (_src - pinescript.hist(1, _src, 1));
-    let up = pinescript.max(chg, 0);
-    let dn = pinescript.max(-chg, 0);
-    L = pinescript.max(len_t, 1);
-    let a = (1 / L);
+    var chg = (_src - pinescript.hist(1, _src, 1));
+    var up = pinescript.max(chg, 0);
+    var dn = pinescript.max(-chg, 0);
+    var L = pinescript.max(len_t, 1);
+    var a = (1 / L);
     if (state.avgU === undefined) state.avgU = null;
     if (state.avgD === undefined) state.avgD = null;
     state.avgU = (pinescript.na(pinescript.hist(2, state.avgU, 1)) ? up : (((1 - a) * pinescript.hist(3, state.avgU, 1)) + (a * up)));
     state.avgD = (pinescript.na(pinescript.hist(4, state.avgD, 1)) ? dn : (((1 - a) * pinescript.hist(5, state.avgD, 1)) + (a * dn)));
-    let rs = ((state.avgD <= 1e-10) ? 1000000 : (state.avgU / state.avgD));
-    let rsi = (100 - (100 / (1 + rs)));
+    var rs = ((state.avgD <= 1e-10) ? 1000000 : (state.avgU / state.avgD));
+    var rsi = (100 - (100 / (1 + rs)));
     return f_clamp_float(rsi, 0, 100);
   }
   function f_ema_custom(x, len) {
-    L = pinescript.max(len, 1);
-    a = (2 / (L + 1));
+    var L = pinescript.max(len, 1);
+    var a = (2 / (L + 1));
     if (state.s === undefined) state.s = null;
     state.s = (pinescript.na(pinescript.hist(6, state.s, 1)) ? x : (((1 - a) * pinescript.hist(7, state.s, 1)) + (a * x)));
     return state.s;
   }
-  let ret = (pinescript.log(src) - pinescript.log(pinescript.hist(8, src, 1)));
+  var ret = (pinescript.log(src) - pinescript.log(pinescript.hist(8, src, 1)));
   ret = (pinescript.na(ret) ? 0 : ret);
-  let mag1 = f_corr_mag_phase_free(ret, cycle_len, target_period);
-  let mag2 = (use_harmonic2 ? f_corr_mag_phase_free(ret, cycle_len, (target_period * 2)) : 0);
-  mag = (use_harmonic2 ? pinescript.max(mag1, mag2) : mag1);
-  let len_now_f = f_corr_to_len(mag, len_min, len_max, map_power, invert_map);
-  let rsi_raw = f_rsi_custom(src, len_now_f);
-  let rsi_sm = ((smooth_rsi > 1) ? f_ema_custom(rsi_raw, smooth_rsi) : rsi_raw);
+  var mag1 = f_corr_mag_phase_free(ret, cycle_len, target_period);
+  var mag2 = (use_harmonic2 ? f_corr_mag_phase_free(ret, cycle_len, (target_period * 2)) : 0);
+  var mag = (use_harmonic2 ? pinescript.max(mag1, mag2) : mag1);
+  var len_now_f = f_corr_to_len(mag, len_min, len_max, map_power, invert_map);
+  var rsi_raw = f_rsi_custom(src, len_now_f);
+  var rsi_sm = ((smooth_rsi > 1) ? f_ema_custom(rsi_raw, smooth_rsi) : rsi_raw);
   pinescript.plot(rsi_sm, "Folded RSI", ({ linewidth: 2 }));
   pinescript.plot(rsi_raw, "Raw (no smooth)", ({ color: pinescript.color.new(pinescript.color.gray, 70) }));
   if (state.t === undefined) state.t = pinescript.table.new(({ position: pinescript.position.top_right, columns: 1, rows: 4, border_width: 1 }));
@@ -1785,37 +1944,37 @@ function main() {
     pinescript.table.cell(state.t, 0, 2, ("Len Now:    " + pinescript.strToString(len_now_f, "#.00")));
     pinescript.table.cell(state.t, 0, 3, ("Best Period: " + pinescript.strToString(((use_harmonic2 && (mag2 > mag1)) ? (target_period * 2) : target_period))));
   }
-  let ob_level = 70;
-  let os_level = 30;
-  let mid_level = 50;
-  let c_rsi_main = pinescript.color.new(pinescript.color.hex("#2196F3"), 0);
-  let c_rsi_ob = pinescript.color.new(pinescript.color.hex("#F44336"), 0);
-  let c_rsi_os = pinescript.color.new(pinescript.color.hex("#4CAF50"), 0);
-  let c_ob_line = pinescript.color.new(c_rsi_ob, 75);
-  let c_os_line = pinescript.color.new(c_rsi_os, 75);
-  let c_mid_line = pinescript.color.new(pinescript.color.gray, 85);
-  let c_ob_fill_s = pinescript.color.new(c_rsi_ob, 92);
-  let c_ob_fill_e = pinescript.color.new(c_rsi_ob, 70);
-  let c_os_fill_s = pinescript.color.new(c_rsi_os, 92);
-  let c_os_fill_e = pinescript.color.new(c_rsi_os, 70);
-  let hOb = pinescript.hline(ob_level, "Overbought", ({ color: c_ob_line, linestyle: hline.style_dashed, linewidth: 1 }));
-  let hOs = pinescript.hline(os_level, "Oversold", ({ color: c_os_line, linestyle: hline.style_dashed, linewidth: 1 }));
-  let h50 = pinescript.hline(mid_level, "Midline", ({ color: c_mid_line, linestyle: hline.style_dotted, linewidth: 1 }));
-  let rsi_val = f_clamp_float(rsi_sm, 0, 100);
-  let rsi_line_color = ((rsi_val > ob_level) ? pinescript.color.from_gradient(rsi_val, ob_level, 90, c_rsi_main, c_rsi_ob) : ((rsi_val < os_level) ? pinescript.color.from_gradient(rsi_val, 10, os_level, c_rsi_os, c_rsi_main) : c_rsi_main));
-  let plot_rsi = pinescript.plot(rsi_sm, "Folded RSI", ({ color: rsi_line_color, linewidth: 2 }));
-  let ob_fill_color = pinescript.color.from_gradient(rsi_val, ob_level, 100, c_ob_fill_s, c_ob_fill_e);
-  let os_fill_color = pinescript.color.from_gradient(rsi_val, 0, os_level, c_os_fill_e, c_os_fill_s);
-  let rsiPlot = pinescript.plot(rsi_raw, "RSI", ({ color: pinescript.color.hex("#7E57C2") }));
-  let rsismooth = pinescript.plot(rsi_sm, " RSI Smooth", ({ color: pinescript.color.fuchsia }));
-  let rsiUpperBand = pinescript.hline(70, "RSI Upper Band", ({ color: pinescript.color.hex("#787B86") }));
-  let midline = pinescript.hline(50, "RSI Middle Band", ({ color: pinescript.color.new(pinescript.color.hex("#787B86"), 50) }));
-  let rsiLowerBand = pinescript.hline(30, "RSI Lower Band", ({ color: pinescript.color.hex("#787B86") }));
+  var ob_level = 70;
+  var os_level = 30;
+  var mid_level = 50;
+  var c_rsi_main = pinescript.color.new(pinescript.color.hex("#2196F3"), 0);
+  var c_rsi_ob = pinescript.color.new(pinescript.color.hex("#F44336"), 0);
+  var c_rsi_os = pinescript.color.new(pinescript.color.hex("#4CAF50"), 0);
+  var c_ob_line = pinescript.color.new(c_rsi_ob, 75);
+  var c_os_line = pinescript.color.new(c_rsi_os, 75);
+  var c_mid_line = pinescript.color.new(pinescript.color.gray, 85);
+  var c_ob_fill_s = pinescript.color.new(c_rsi_ob, 92);
+  var c_ob_fill_e = pinescript.color.new(c_rsi_ob, 70);
+  var c_os_fill_s = pinescript.color.new(c_rsi_os, 92);
+  var c_os_fill_e = pinescript.color.new(c_rsi_os, 70);
+  var hOb = pinescript.hline(ob_level, "Overbought", ({ color: c_ob_line, linestyle: hline.style_dashed, linewidth: 1 }));
+  var hOs = pinescript.hline(os_level, "Oversold", ({ color: c_os_line, linestyle: hline.style_dashed, linewidth: 1 }));
+  var h50 = pinescript.hline(mid_level, "Midline", ({ color: c_mid_line, linestyle: hline.style_dotted, linewidth: 1 }));
+  var rsi_val = f_clamp_float(rsi_sm, 0, 100);
+  var rsi_line_color = ((rsi_val > ob_level) ? pinescript.color.from_gradient(rsi_val, ob_level, 90, c_rsi_main, c_rsi_ob) : ((rsi_val < os_level) ? pinescript.color.from_gradient(rsi_val, 10, os_level, c_rsi_os, c_rsi_main) : c_rsi_main));
+  var plot_rsi = pinescript.plot(rsi_sm, "Folded RSI", ({ color: rsi_line_color, linewidth: 2 }));
+  var ob_fill_color = pinescript.color.from_gradient(rsi_val, ob_level, 100, c_ob_fill_s, c_ob_fill_e);
+  var os_fill_color = pinescript.color.from_gradient(rsi_val, 0, os_level, c_os_fill_e, c_os_fill_s);
+  var rsiPlot = pinescript.plot(rsi_raw, "RSI", ({ color: pinescript.color.hex("#7E57C2") }));
+  var rsismooth = pinescript.plot(rsi_sm, " RSI Smooth", ({ color: pinescript.color.fuchsia }));
+  var rsiUpperBand = pinescript.hline(70, "RSI Upper Band", ({ color: pinescript.color.hex("#787B86") }));
+  var midline = pinescript.hline(50, "RSI Middle Band", ({ color: pinescript.color.new(pinescript.color.hex("#787B86"), 50) }));
+  var rsiLowerBand = pinescript.hline(30, "RSI Lower Band", ({ color: pinescript.color.hex("#787B86") }));
   pinescript.fill(rsiUpperBand, rsiLowerBand, ({ color: pinescript.color.rgb(126, 87, 194, 90), title: "RSI Background Fill" }));
-  let midLinePlot = pinescript.plot(50, ({ color: null, editable: false, display: display.none }));
+  var midLinePlot = pinescript.plot(50, ({ color: null, editable: false, display: display.none }));
   pinescript.fill(rsiPlot, midLinePlot, 100, 70, ({ top_color: pinescript.color.new(pinescript.color.green, 0), bottom_color: pinescript.color.new(pinescript.color.green, 100), title: "Overbought Gradient Fill" }));
   pinescript.fill(rsiPlot, midLinePlot, 30, 0, ({ top_color: pinescript.color.new(pinescript.color.red, 100), bottom_color: pinescript.color.new(pinescript.color.red, 0), title: "Oversold Gradient Fill" }));
-  rsi = rsi_sm;
+  var rsi = rsi_sm;
   pinescript.plot(rsi, ({ title: "RSI", linewidth: 2 }));
   pinescript.hline(50, "Mid", ({ color: pinescript.color.new(pinescript.color.gray, 70) }));
   pinescript.plotshape((rsi > 70), "OB", pinescript.shape.labeldown, pinescript.location.top, pinescript.color.red, ({ size: pinescript.size.small }));
@@ -1864,6 +2023,10 @@ function run(data, options = {}) {
     rt.__shapeIdx = 0;
     globalThis.bar_index = i;
     globalThis.last_bar_index = n - 1;
+    globalThis.time_tradingday = inTime[i];
+    globalThis.time_close = inTime[i];
+    globalThis.last_bar_time = inTime[n - 1];
+    globalThis.timenow = inTime[n - 1];
     globalThis.barstate = {
       isfirst: i === 0, islast: i === n - 1, isrealtime: false, ishistory: true,
       isconfirmed: true, isnew: true, islastconfirmedhistory: i === n - 1,

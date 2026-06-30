@@ -42,6 +42,80 @@ const pinescript = {
     if (value != null && typeof value[Symbol.iterator] === 'function') return Array.from(value);
     return new Array(count || 0).fill(null);
   },
+  __decArr: function(arr) {
+    if (!Array.isArray(arr) || arr.__pineDecorated) return arr;
+    const self = this;
+    const def = (name, fn) => Object.defineProperty(arr, name, { value: fn, writable: true, configurable: true });
+    Object.defineProperty(arr, '__pineDecorated', { value: true, configurable: true });
+    def('get', (i) => (arr[i] === undefined ? null : arr[i]));
+    def('set', (i, v) => { arr[i] = v; return v; });
+    def('size', () => arr.length);
+    def('clear', () => { arr.length = 0; });
+    def('insert', (i, v) => { arr.splice(i, 0, v); });
+    def('remove', (i) => arr.splice(i, 1)[0]);
+    def('contains', (v) => arr.includes(v));
+    def('indexof', (v) => arr.indexOf(v));
+    def('lastindexof', (v) => arr.lastIndexOf(v));
+    def('first', () => (arr.length ? arr[0] : null));
+    def('last', () => (arr.length ? arr[arr.length - 1] : null));
+    def('sum', () => arr.reduce((a, b) => a + b, 0));
+    def('avg', () => (arr.length ? arr.reduce((a, b) => a + b, 0) / arr.length : 0));
+    def('min', () => (arr.length ? Math.min(...arr) : null));
+    def('max', () => (arr.length ? Math.max(...arr) : null));
+    def('range', () => (arr.length ? Math.max(...arr) - Math.min(...arr) : null));
+    // Statistical methods that route to the array.* built-ins (these names are not
+    // native to JS arrays, so attaching them here is safe from recursion).
+    def('median', () => self.arrayMedian(arr));
+    def('mode', () => self.arrayMode(arr));
+    def('stdev', () => self.arrayStdev(arr));
+    def('variance', () => self.arrayVariance(arr));
+    def('covariance', (other) => self.arrayCovariance(arr, other));
+    def('percentile_linear_interpolation', (p) => self.arrayPercentileLinearInterpolation(arr, p));
+    def('percentile_nearest_rank', (p) => self.arrayPercentileNearestRank(arr, p));
+    def('abs', () => self.__decArr(self.arrayAbs(arr)));
+    def('binary_search', (v) => self.arrayBinarySearch(arr, v));
+    // Pine's array.sort takes an order string, not a comparator. Use the native
+    // sort via .call so we don't recurse through this overridden method.
+    def('sort', (order) => { Array.prototype.sort.call(arr, (a, b) => (order === 'descending' ? b - a : a - b)); return arr; });
+    def('sort_indices', (order) => self.__decArr(arr.map((_, i) => i).sort((a, b) => (order === 'descending' ? arr[b] - arr[a] : arr[a] - arr[b]))));
+    // join/slice/reverse/concat/includes/fill already exist natively on Array with
+    // compatible semantics, so we deliberately leave them to the native methods.
+    return arr;
+  },
+  __decMap: function(m) {
+    if (!(m instanceof Map) || m.__pineDecorated) return m;
+    const def = (name, fn) => Object.defineProperty(m, name, { value: fn, writable: true, configurable: true });
+    Object.defineProperty(m, '__pineDecorated', { value: true, configurable: true });
+    def('put', (k, v) => { m.set(k, v); return v; });
+    def('contains', (k) => m.has(k));
+    def('remove', (k) => m.delete(k));
+    def('keys', () => Array.from(Map.prototype.keys.call(m)));
+    def('values', () => Array.from(Map.prototype.values.call(m)));
+    def('size_', () => m.size);
+    return m;
+  },
+  __decMatrix: function(m) {
+    if (!m || typeof m !== 'object' || m.__pineDecorated) return m;
+    const self = this;
+    const def = (name, fn) => Object.defineProperty(m, name, { value: fn, writable: true, configurable: true });
+    Object.defineProperty(m, '__pineDecorated', { value: true, configurable: true });
+    def('get', (r, c) => self.matrixGet(m, r, c));
+    def('set', (r, c, v) => self.matrixSet(m, r, c, v));
+    def('rows_', () => m.rows);
+    def('columns', () => m.cols);
+    def('fill', (v) => self.matrixFill(m, v));
+    return m;
+  },
+  __decDraw: function(obj) {
+    if (!obj || typeof obj !== 'object') return obj;
+    const p = new Proxy(obj, {
+      get(t, k) {
+        if (k in t || typeof k === 'symbol') return t[k];
+        return function() { return p; };
+      },
+    });
+    return p;
+  },
   alertcondition: function(condition, ...rest) {
     if (globalThis.__pineRuntime) {
       globalThis.__pineRuntime.alerts.push({ condition, args: rest });
@@ -49,6 +123,32 @@ const pinescript = {
     return null;
   },
   barcolor: function(color) { return null; },
+  plotchar: function(series, ...rest) {
+    const rt = globalThis.__pineRuntime;
+    if (!rt) return series;
+    const bar = rt.__barIndex | 0;
+    const ord = (rt.__shapeIdx = (rt.__shapeIdx | 0) + 1) - 1;
+    let key = 'char_' + ord;
+    for (const r of rest) {
+      if (typeof r === 'string') { key = r; break; }
+      if (r && typeof r === 'object' && r.title) { key = String(r.title); break; }
+    }
+    let s = rt.plotshapes[key];
+    if (!s) s = rt.plotshapes[key] = { title: key, data: [] };
+    s.data[bar] = this.__scalar(series);
+    return series;
+  },
+  plotarrow: function(series, ...rest) {
+    const rt = globalThis.__pineRuntime;
+    if (!rt) return series;
+    const bar = rt.__barIndex | 0;
+    const ord = (rt.__plotIdx = (rt.__plotIdx | 0) + 1) - 1;
+    const key = 'arrow_' + ord;
+    let p = rt.plots[key];
+    if (!p) p = rt.plots[key] = { title: key, data: [] };
+    p.data[bar] = this.__scalar(series);
+    return series;
+  },
   bgcolor: function(color, title, editable, showLast) {
     return null;
   },
@@ -470,6 +570,12 @@ const pinescript = {
   atan: function(value) {
     return Math.atan(value);
   },
+  todegrees: function(radians) {
+    return radians * (180 / Math.PI);
+  },
+  toradians: function(degrees) {
+    return degrees * (Math.PI / 180);
+  },
   floor: function(value) {
     return Math.floor(value);
   },
@@ -641,7 +747,7 @@ const pinescript = {
     return series;
   },
   lineNew: function(x1, y1, x2, y2, opts = {}) {
-    return { x1, y1, x2, y2, opts, _type: 'line' };
+    return this.__decDraw({ x1, y1, x2, y2, opts, _type: 'line' });
   },
   lineDelete: function(l) {
     return null;
@@ -661,7 +767,7 @@ const pinescript = {
     return point === 0 || point === 'y1' ? line.y1 : line.y2;
   },
   labelNew: function(x, y, text = '', opts = {}) {
-    return { x, y, text, opts, _type: 'label' };
+    return this.__decDraw({ x, y, text, opts, _type: 'label' });
   },
   labelDelete: function(l) {
     return null;
@@ -676,7 +782,7 @@ const pinescript = {
     return label.text || '';
   },
   boxNew: function(left, top, right, bottom, opts = {}) {
-    return { left, top, right, bottom, opts, _type: 'box' };
+    return this.__decDraw({ left, top, right, bottom, opts, _type: 'box' });
   },
   boxDelete: function(box) {
     return null;
@@ -694,7 +800,7 @@ const pinescript = {
     return box;
   },
   polylineNew: function(points, opts = {}) {
-    return { points: points || [], opts, _type: 'polyline' };
+    return this.__decDraw({ points: points || [], opts, _type: 'polyline' });
   },
   polylineDelete: function(poly) {
     return null;
@@ -765,7 +871,7 @@ const pinescript = {
     return { time: _time ?? null, price: _price ?? null };
   },
   mapNew: function() {
-    return new Map();
+    return this.__decMap(new Map());
   },
   mapSize: function(m) {
     return m instanceof Map ? m.size : 0;
@@ -800,7 +906,7 @@ const pinescript = {
     const r = Math.max(0, rows ?? 0);
     const c = Math.max(0, cols ?? 0);
     const data = Array.from({ length: r }, () => Array.from({ length: c }, () => initialValue));
-    return { rows: r, cols: c, data };
+    return this.__decMatrix({ rows: r, cols: c, data });
   },
   matrixRows: function(m) {
     return m?.rows ?? 0;
@@ -923,11 +1029,62 @@ const pinescript = {
     }
     return null;
   },
+  __jacobiEigen: function(m) {
+    if (!m || !Array.isArray(m.data)) return null;
+    const n = m.rows ?? 0;
+    if (n === 0 || n !== (m.cols ?? 0)) return null;
+    // Work on a copy so the input matrix is untouched.
+    const a = m.data.map(row => row.slice());
+    const v = Array.from({ length: n }, (_, i) => Array.from({ length: n }, (_, j) => (i === j ? 1 : 0)));
+    for (let sweep = 0; sweep < 100; sweep++) {
+      let off = 0;
+      for (let p = 0; p < n; p++) for (let q = p + 1; q < n; q++) off += a[p][q] * a[p][q];
+      if (off < 1e-20) break;
+      for (let p = 0; p < n; p++) {
+        for (let q = p + 1; q < n; q++) {
+          if (Math.abs(a[p][q]) < 1e-18) continue;
+          const theta = (a[q][q] - a[p][p]) / (2 * a[p][q]);
+          const t = Math.sign(theta || 1) / (Math.abs(theta) + Math.sqrt(theta * theta + 1));
+          const cos = 1 / Math.sqrt(t * t + 1);
+          const sin = t * cos;
+          for (let k = 0; k < n; k++) {
+            const akp = a[k][p], akq = a[k][q];
+            a[k][p] = cos * akp - sin * akq;
+            a[k][q] = sin * akp + cos * akq;
+          }
+          for (let k = 0; k < n; k++) {
+            const apk = a[p][k], aqk = a[q][k];
+            a[p][k] = cos * apk - sin * aqk;
+            a[q][k] = sin * apk + cos * aqk;
+          }
+          for (let k = 0; k < n; k++) {
+            const vkp = v[k][p], vkq = v[k][q];
+            v[k][p] = cos * vkp - sin * vkq;
+            v[k][q] = sin * vkp + cos * vkq;
+          }
+        }
+      }
+    }
+    // Sort eigenpairs by eigenvalue, descending.
+    const order = Array.from({ length: n }, (_, i) => i).sort((i, j) => a[j][j] - a[i][i]);
+    const values = order.map(i => a[i][i]);
+    const vectors = Array.from({ length: n }, (_, r) => order.map(c => v[r][c]));
+    return { values, vectors };
+  },
+  matrixEigenvalues: function(m) {
+    const e = this.__jacobiEigen(m);
+    return this.__decArr(e ? e.values : []);
+  },
+  matrixEigenvectors: function(m) {
+    const e = this.__jacobiEigen(m);
+    if (!e) return this.__decMatrix({ rows: 0, cols: 0, data: [] });
+    return this.__decMatrix({ rows: e.vectors.length, cols: e.vectors.length, data: e.vectors });
+  },
   requestSecurity: function(symbol, timeframe, expression) {
     return expression;
   },
   arrayNew: function(initialSize = 0, initialValue = 0) {
-    return Array(initialSize).fill(initialValue);
+    return this.__decArr(Array(initialSize).fill(initialValue));
   },
   arraySize: function(arr) {
     return arr ? arr.length : 0;
@@ -978,10 +1135,10 @@ const pinescript = {
     return arr;
   },
   arraySlice: function(arr, startIndex = 0, endIndex = null) {
-    if (!arr) return [];
+    if (!arr) return this.__decArr([]);
     const start = Number(startIndex) || 0;
     const end = endIndex === null || endIndex === undefined ? arr.length : Number(endIndex) || 0;
-    return arr.slice(start, end);
+    return this.__decArr(arr.slice(start, end));
   },
   arraySort: function(arr, order = 'ascending') {
     if (arr) arr.sort((a, b) => order === 'ascending' ? a - b : b - a);
@@ -1191,7 +1348,7 @@ const pinescript = {
     const info = { ticker: 'AAPL', tickerid: 'NASDAQ:AAPL', prefix: 'NASDAQ', root: 'AAPL', suffix: '' };
     return info[type] || '';
   },
-  timenow: 1781574529162,
+  timenow: 1782784153892,
   barstate: "LAST",
   dividends: {},
   splits: {},
@@ -1245,11 +1402,11 @@ const pinescript = {
   arrayConcat: function(arr1, arr2) {
     if (!arr1) return arr2 || [];
     if (!arr2) return arr1;
-    return arr1.concat(arr2);
+    return this.__decArr(arr1.concat(arr2));
   },
   arrayCopy: function(arr) {
-    if (!arr) return [];
-    return [...arr];
+    if (!arr) return this.__decArr([]);
+    return this.__decArr([...arr]);
   },
   arrayBinarySearch: function(arr, value) {
     if (!arr || arr.length === 0) return -1;
@@ -1339,7 +1496,7 @@ globalThis.input.timeframe = globalThis.input.timeframe || ((defval) => defval);
 
 globalThis.array = globalThis.array || {
 
-  from: (...items) => items,
+  from: (...items) => pinescript.__decArr(items),
 
   size: (arr) => pinescript.arraySize(arr),
 
@@ -1508,6 +1665,8 @@ globalThis.line = globalThis.line || __pineNS({ style_solid: "solid", style_dash
 
 globalThis.box = globalThis.box || __pineNS({});
 
+globalThis.color = globalThis.color || __pineNS(Object.assign(function(c) { return c; }, { new: function(c, t) { return c; }, rgb: function(r, g, b, t) { return "#rgb(" + [r, g, b].join(",") + ")"; }, from_gradient: function(v, lo, hi, c1, c2) { return c1; }, r: function() { return 0; }, g: function() { return 0; }, b: function() { return 0; }, t: function() { return 0; }, aqua: "#00BCD4", black: "#363A45", blue: "#2962FF", fuchsia: "#E040FB", gray: "#787B86", green: "#4CAF50", lime: "#00E676", maroon: "#880E4F", navy: "#311B92", olive: "#808000", orange: "#FF9800", purple: "#9C27B0", red: "#FF5252", silver: "#B2B5BE", teal: "#00897B", white: "#FFFFFF", yellow: "#FFEB3B" }));
+
 globalThis.label = globalThis.label || __pineNS({ style_label_down: "label_down", style_label_up: "label_up", style_none: "none" });
 
 globalThis.polyline = globalThis.polyline || __pineNS({});
@@ -1520,7 +1679,9 @@ globalThis.map = globalThis.map || __pineNS({});
 
 globalThis.session = globalThis.session || __pineNS({ regular: "regular", extended: "extended" });
 
-globalThis.dayofweek = globalThis.dayofweek || __pineNS({ sunday: 1, monday: 2, tuesday: 3, wednesday: 4, thursday: 5, friday: 6, saturday: 7 });
+globalThis.ticker = globalThis.ticker || __pineNS({});
+
+globalThis.dayofweek = globalThis.dayofweek || __pineNS(Object.assign(function(t) { return new Date(t != null ? t : (globalThis.time || 0)).getUTCDay() + 1; }, { sunday: 1, monday: 2, tuesday: 3, wednesday: 4, thursday: 5, friday: 6, saturday: 7 }));
 
 globalThis.timeframe = __pineNS(Object.assign(globalThis.timeframe || {}, { period: (globalThis.timeframe && globalThis.timeframe.period) || "D", isintraday: false, isdaily: true, multiplier: 1 }));
 
@@ -1567,8 +1728,6 @@ globalThis.float = globalThis.float || function(x) { return x == null ? null : N
 globalThis.bool = globalThis.bool || function(x) { return Boolean(x); };
 
 globalThis.string = globalThis.string || function(x) { return x == null ? null : String(x); };
-
-globalThis.dayofweek = globalThis.dayofweek || __pineNS({ sunday: 1, monday: 2, tuesday: 3, wednesday: 4, thursday: 5, friday: 6, saturday: 7 });
 
 globalThis.str = globalThis.str || __pineNS({});
 
@@ -1655,7 +1814,7 @@ pinescript.text = { align_center: "center" };
 
 pinescript.table = {
 
-  new: function(position, columns, rows, opts) { return { position, columns, rows, opts: opts || {}, cells: [] }; },
+  new: function(position, columns, rows, opts) { return pinescript.__decDraw({ position, columns, rows, opts: opts || {}, cells: [] }); },
 
   cell: function(table, column, row, text, opts) {
 
@@ -1690,27 +1849,27 @@ function main() {
   // Options: {"overlay":true,"max_labels_count":500}
   if (state.calculation_settings === undefined) state.calculation_settings = "════════ Calculation Parameters ════════";
   if (state.visual_settings === undefined) state.visual_settings = "════════ Visualization Settings ════════";
-  let tooltip_vwma = "Period for the Volume Weighted Moving Average, which forms the central trend baseline weighted by trading volume. Shorter periods (14-21) make the indicator highly responsive to recent price action and volume surges, generating more frequent trend changes - ideal for intraday trading and scalping where you need to capture quick momentum shifts. Medium periods (34-55) provide balanced sensitivity that captures meaningful trend changes while filtering out minor fluctuations - suitable for swing trading on 4H and daily charts. Longer periods (89-144) create a stable trend baseline focused on major market direction, generating fewer but higher-conviction trend signals - best for position trading and identifying primary trends. Standard value is 34 for balanced performance across most trading styles.";
-  let tooltip_atr = "Multiplier for the Average True Range to define volatility buffers around the VWMA. Lower values (0.8-1.2) create tighter bands closer to the trend line, triggering more frequent trend changes as price makes smaller moves - useful in low-volatility environments and range-bound markets where you want early trend confirmation. Medium values (1.5-2.0) provide balanced filtering that requires meaningful price movement beyond normal volatility - suitable for most market conditions and reduces whipsaws. Higher values (2.5-3.5) create wider bands that only trigger on significant breakouts, generating fewer but more reliable trend changes - best for volatile markets and traders seeking high-conviction signals. Standard value is 1.5 for optimal noise filtering.";
-  let tooltip_preset = "Select a predefined configuration optimized for different trading styles, timeframes, and market conditions.";
-  let tooltip_preset_details = "Default (34, 1.5): Standard configuration suitable for swing trading on 4H and daily charts. Balanced VWMA period captures meaningful trend changes, moderate ATR multiplier filters noise effectively. Generates quality trend signals without excessive whipsaws, ideal for most traders and market conditions.nnFast Response (21, 1.2): Aggressive configuration for intraday trading and scalping on 5min-1H charts. Shorter VWMA reacts quickly to volume-weighted price shifts, tighter bands trigger earlier on breakouts. Best for active traders who can monitor positions closely and capitalize on short-term momentum.nnSmooth Trend (55, 2.0): Conservative configuration for position trading on daily and weekly charts. Extended VWMA establishes stable trend baseline, wider bands only signal on major breakouts. Best for patient traders seeking primary trend direction with minimal false signals and reduced trading frequency.";
-  let tooltip_color_preset = "Pre-configured color schemes optimized for different chart themes and visual preferences. Classic uses traditional green/red. Aqua provides ocean-inspired blues and oranges. Cosmic offers futuristic cyan and purple. Cyber features warm orange and cool cyan contrast. Neon delivers high-contrast yellow and magenta for maximum visibility. Custom allows full color customization.";
-  let tooltip_bullish = "Color for bullish trend conditions when price breaks above the upper volatility band. This represents statistically significant upward momentum confirmed by volume-weighted price action exceeding normal volatility bounds. Use vibrant colors to highlight uptrend zones and potential long opportunities.";
-  let tooltip_bearish = "Color for bearish trend conditions when price breaks below the lower volatility band. This represents statistically significant downward momentum with volume-weighted price falling below normal volatility range. Use warning colors to signal downtrend zones and potential short opportunities or exit signals.";
-  let tooltip_enable_glow = "Enable/disable the neon glow effect around the VWMA line. When enabled, creates a layered visual effect with three overlapping plots at different transparencies, making the trend line more prominent and easier to track across the chart. The glow effect provides depth and emphasis to the central trend line. Disable for a cleaner, minimalist appearance or if running many indicators where visual clarity is paramount.";
-  let tooltip_enable_ribbons = "Enable/disable gradient ribbon fills between the VWMA and volatility bands. When enabled, creates semi-transparent colored zones showing the buffer range around the trend line, providing visual context for price position relative to trend boundaries. The ribbons help identify when price is approaching breakout thresholds. Disable to reduce chart clutter or focus solely on the central VWMA line and band boundaries.";
-  let tooltip_band_transparency = "Transparency level for the upper and lower volatility band lines. Higher values (80-95) create subtle band outlines that provide boundary context without visual clutter - useful when running multiple indicators or preferring minimalist charts. Lower values (50-70) create more prominent band lines for stronger emphasis on breakout thresholds - useful for traders who want clear visual boundaries for trend trigger zones. Standard value is 90 for subtle guidance lines that don't dominate the chart.";
-  let tooltip_enable_barcolor = "Enable/disable bar coloring based on current trend direction. When enabled, price bars are tinted with bullish color during uptrends and bearish color during downtrends, providing instant visual confirmation of trend state without checking the indicator. This helps quickly identify trend alignment across multiple timeframes. Disable if you prefer default bar colors or use other bar coloring indicators.";
-  let vwma_length = pinescript.inputInt(34, "VWMA Length", ({ minval: 5, group: state.calculation_settings, tooltip: tooltip_vwma }));
-  let atr_multiplier = pinescript.inputFloat(1.5, "ATR Multiplier", ({ minval: 0.5, step: 0.1, group: state.calculation_settings, tooltip: tooltip_atr }));
-  let preset_config = pinescript.inputString("Default", "Preset Configuration", ({ options: ["Default", "Fast Response", "Smooth Trend"], group: state.calculation_settings, tooltip: ((tooltip_preset + "nn") + tooltip_preset_details) }));
-  let color_preset = pinescript.inputString("Custom", "Color Preset", ({ options: ["Classic", "Aqua", "Cosmic", "Cyber", "Neon", "Custom"], group: state.visual_settings, tooltip: tooltip_color_preset }));
-  let bullish_input = pinescript.inputColor(pinescript.color.hex("#00ffaa"), "Bullish Trend Color", ({ group: state.visual_settings, tooltip: tooltip_bullish }));
-  let bearish_input = pinescript.inputColor(pinescript.color.hex("#ff0000"), "Bearish Trend Color", ({ group: state.visual_settings, tooltip: tooltip_bearish }));
-  let enable_glow = pinescript.inputBool(true, "Enable Neon Glow Effect", ({ group: state.visual_settings, tooltip: tooltip_enable_glow }));
-  let enable_ribbons = pinescript.inputBool(true, "Enable Volatility Ribbons", ({ group: state.visual_settings, tooltip: tooltip_enable_ribbons }));
-  let band_transparency = pinescript.inputInt(90, "Band Transparency", ({ minval: 0, maxval: 100, group: state.visual_settings, tooltip: tooltip_band_transparency }));
-  let enable_barcolor = pinescript.inputBool(true, "Enable Bar Coloring", ({ group: state.visual_settings, tooltip: tooltip_enable_barcolor }));
+  var tooltip_vwma = "Period for the Volume Weighted Moving Average, which forms the central trend baseline weighted by trading volume. Shorter periods (14-21) make the indicator highly responsive to recent price action and volume surges, generating more frequent trend changes - ideal for intraday trading and scalping where you need to capture quick momentum shifts. Medium periods (34-55) provide balanced sensitivity that captures meaningful trend changes while filtering out minor fluctuations - suitable for swing trading on 4H and daily charts. Longer periods (89-144) create a stable trend baseline focused on major market direction, generating fewer but higher-conviction trend signals - best for position trading and identifying primary trends. Standard value is 34 for balanced performance across most trading styles.";
+  var tooltip_atr = "Multiplier for the Average True Range to define volatility buffers around the VWMA. Lower values (0.8-1.2) create tighter bands closer to the trend line, triggering more frequent trend changes as price makes smaller moves - useful in low-volatility environments and range-bound markets where you want early trend confirmation. Medium values (1.5-2.0) provide balanced filtering that requires meaningful price movement beyond normal volatility - suitable for most market conditions and reduces whipsaws. Higher values (2.5-3.5) create wider bands that only trigger on significant breakouts, generating fewer but more reliable trend changes - best for volatile markets and traders seeking high-conviction signals. Standard value is 1.5 for optimal noise filtering.";
+  var tooltip_preset = "Select a predefined configuration optimized for different trading styles, timeframes, and market conditions.";
+  var tooltip_preset_details = "Default (34, 1.5): Standard configuration suitable for swing trading on 4H and daily charts. Balanced VWMA period captures meaningful trend changes, moderate ATR multiplier filters noise effectively. Generates quality trend signals without excessive whipsaws, ideal for most traders and market conditions.nnFast Response (21, 1.2): Aggressive configuration for intraday trading and scalping on 5min-1H charts. Shorter VWMA reacts quickly to volume-weighted price shifts, tighter bands trigger earlier on breakouts. Best for active traders who can monitor positions closely and capitalize on short-term momentum.nnSmooth Trend (55, 2.0): Conservative configuration for position trading on daily and weekly charts. Extended VWMA establishes stable trend baseline, wider bands only signal on major breakouts. Best for patient traders seeking primary trend direction with minimal false signals and reduced trading frequency.";
+  var tooltip_color_preset = "Pre-configured color schemes optimized for different chart themes and visual preferences. Classic uses traditional green/red. Aqua provides ocean-inspired blues and oranges. Cosmic offers futuristic cyan and purple. Cyber features warm orange and cool cyan contrast. Neon delivers high-contrast yellow and magenta for maximum visibility. Custom allows full color customization.";
+  var tooltip_bullish = "Color for bullish trend conditions when price breaks above the upper volatility band. This represents statistically significant upward momentum confirmed by volume-weighted price action exceeding normal volatility bounds. Use vibrant colors to highlight uptrend zones and potential long opportunities.";
+  var tooltip_bearish = "Color for bearish trend conditions when price breaks below the lower volatility band. This represents statistically significant downward momentum with volume-weighted price falling below normal volatility range. Use warning colors to signal downtrend zones and potential short opportunities or exit signals.";
+  var tooltip_enable_glow = "Enable/disable the neon glow effect around the VWMA line. When enabled, creates a layered visual effect with three overlapping plots at different transparencies, making the trend line more prominent and easier to track across the chart. The glow effect provides depth and emphasis to the central trend line. Disable for a cleaner, minimalist appearance or if running many indicators where visual clarity is paramount.";
+  var tooltip_enable_ribbons = "Enable/disable gradient ribbon fills between the VWMA and volatility bands. When enabled, creates semi-transparent colored zones showing the buffer range around the trend line, providing visual context for price position relative to trend boundaries. The ribbons help identify when price is approaching breakout thresholds. Disable to reduce chart clutter or focus solely on the central VWMA line and band boundaries.";
+  var tooltip_band_transparency = "Transparency level for the upper and lower volatility band lines. Higher values (80-95) create subtle band outlines that provide boundary context without visual clutter - useful when running multiple indicators or preferring minimalist charts. Lower values (50-70) create more prominent band lines for stronger emphasis on breakout thresholds - useful for traders who want clear visual boundaries for trend trigger zones. Standard value is 90 for subtle guidance lines that don't dominate the chart.";
+  var tooltip_enable_barcolor = "Enable/disable bar coloring based on current trend direction. When enabled, price bars are tinted with bullish color during uptrends and bearish color during downtrends, providing instant visual confirmation of trend state without checking the indicator. This helps quickly identify trend alignment across multiple timeframes. Disable if you prefer default bar colors or use other bar coloring indicators.";
+  var vwma_length = pinescript.inputInt(34, "VWMA Length", ({ minval: 5, group: state.calculation_settings, tooltip: tooltip_vwma }));
+  var atr_multiplier = pinescript.inputFloat(1.5, "ATR Multiplier", ({ minval: 0.5, step: 0.1, group: state.calculation_settings, tooltip: tooltip_atr }));
+  var preset_config = pinescript.inputString("Default", "Preset Configuration", ({ options: ["Default", "Fast Response", "Smooth Trend"], group: state.calculation_settings, tooltip: ((tooltip_preset + "nn") + tooltip_preset_details) }));
+  var color_preset = pinescript.inputString("Custom", "Color Preset", ({ options: ["Classic", "Aqua", "Cosmic", "Cyber", "Neon", "Custom"], group: state.visual_settings, tooltip: tooltip_color_preset }));
+  var bullish_input = pinescript.inputColor(pinescript.color.hex("#00ffaa"), "Bullish Trend Color", ({ group: state.visual_settings, tooltip: tooltip_bullish }));
+  var bearish_input = pinescript.inputColor(pinescript.color.hex("#ff0000"), "Bearish Trend Color", ({ group: state.visual_settings, tooltip: tooltip_bearish }));
+  var enable_glow = pinescript.inputBool(true, "Enable Neon Glow Effect", ({ group: state.visual_settings, tooltip: tooltip_enable_glow }));
+  var enable_ribbons = pinescript.inputBool(true, "Enable Volatility Ribbons", ({ group: state.visual_settings, tooltip: tooltip_enable_ribbons }));
+  var band_transparency = pinescript.inputInt(90, "Band Transparency", ({ minval: 0, maxval: 100, group: state.visual_settings, tooltip: tooltip_band_transparency }));
+  var enable_barcolor = pinescript.inputBool(true, "Enable Bar Coloring", ({ group: state.visual_settings, tooltip: tooltip_enable_barcolor }));
   if ((preset_config === "Fast Response")) {
     vwma_length = 21;
     atr_multiplier = 1.2;
@@ -1726,11 +1885,11 @@ function main() {
   [pinescript.color.hex("#49ffce"), pinescript.color.hex("#9932cc")];
   [pinescript.color.hex("#00d4ff"), pinescript.color.hex("#ff8c00")];
   [pinescript.color.hex("#00ff00"), pinescript.color.hex("#ff0000")];
-  let [bullish_color, bearish_color] = pinescript.unpack(((color_preset === "Classic") ? undefined : ((color_preset === "Aqua") ? undefined : ((color_preset === "Cosmic") ? undefined : ((color_preset === "Cyber") ? undefined : ((color_preset === "Neon") ? undefined : ((color_preset === "Custom") ? undefined : null)))))), 2);
-  let vwma_basis = pinescript.vwma(close, vwma_length);
-  let atr_value = pinescript.atr(vwma_length);
-  let upper_band = (vwma_basis + (atr_value * atr_multiplier));
-  let lower_band = (vwma_basis - (atr_value * atr_multiplier));
+  var [bullish_color, bearish_color] = pinescript.unpack(((color_preset === "Classic") ? undefined : ((color_preset === "Aqua") ? undefined : ((color_preset === "Cosmic") ? undefined : ((color_preset === "Cyber") ? undefined : ((color_preset === "Neon") ? undefined : ((color_preset === "Custom") ? undefined : null)))))), 2);
+  var vwma_basis = pinescript.vwma(close, vwma_length);
+  var atr_value = pinescript.atr(vwma_length);
+  var upper_band = (vwma_basis + (atr_value * atr_multiplier));
+  var lower_band = (vwma_basis - (atr_value * atr_multiplier));
   if (state.trend_direction === undefined) state.trend_direction = 0;
   if ((close > upper_band)) {
     state.trend_direction = 1;
@@ -1739,17 +1898,17 @@ function main() {
       state.trend_direction = -1;
     }
   }
-  let trend_turned_bullish = ((state.trend_direction === 1) && (pinescript.hist(0, state.trend_direction, 1) !== 1));
-  let trend_turned_bearish = ((state.trend_direction === -1) && (pinescript.hist(1, state.trend_direction, 1) !== -1));
-  let trend_changed = (trend_turned_bullish || trend_turned_bearish);
-  let trend_color = ((state.trend_direction === 1) ? bullish_color : bearish_color);
+  var trend_turned_bullish = ((state.trend_direction === 1) && (pinescript.hist(0, state.trend_direction, 1) !== 1));
+  var trend_turned_bearish = ((state.trend_direction === -1) && (pinescript.hist(1, state.trend_direction, 1) !== -1));
+  var trend_changed = (trend_turned_bullish || trend_turned_bearish);
+  var trend_color = ((state.trend_direction === 1) ? bullish_color : bearish_color);
   pinescript.plot((enable_glow ? vwma_basis : null), "VWMA Glow Outer", pinescript.color.new(trend_color, 80), 8);
   pinescript.plot((enable_glow ? vwma_basis : null), "VWMA Glow Inner", pinescript.color.new(trend_color, 50), 4);
-  let vwma_plot = pinescript.plot(vwma_basis, "VWMA Line", pinescript.color.new(trend_color, 0), 2);
-  let upper_band_plot = pinescript.plot(upper_band, "Upper Band", ({ color: pinescript.color.new(trend_color, band_transparency) }));
-  let upper_mid_plot = pinescript.plot(pinescript.avg(upper_band, vwma_basis), "Upper Mid", ({ color: pinescript.color.new(trend_color, 95) }));
-  let lower_band_plot = pinescript.plot(lower_band, "Lower Band", ({ color: pinescript.color.new(trend_color, band_transparency) }));
-  let lower_mid_plot = pinescript.plot(pinescript.avg(lower_band, vwma_basis), "Lower Mid", ({ color: pinescript.color.new(trend_color, 95) }));
+  var vwma_plot = pinescript.plot(vwma_basis, "VWMA Line", pinescript.color.new(trend_color, 0), 2);
+  var upper_band_plot = pinescript.plot(upper_band, "Upper Band", ({ color: pinescript.color.new(trend_color, band_transparency) }));
+  var upper_mid_plot = pinescript.plot(pinescript.avg(upper_band, vwma_basis), "Upper Mid", ({ color: pinescript.color.new(trend_color, 95) }));
+  var lower_band_plot = pinescript.plot(lower_band, "Lower Band", ({ color: pinescript.color.new(trend_color, band_transparency) }));
+  var lower_mid_plot = pinescript.plot(pinescript.avg(lower_band, vwma_basis), "Lower Mid", ({ color: pinescript.color.new(trend_color, 95) }));
   pinescript.fill(upper_band_plot, upper_mid_plot, (enable_ribbons ? pinescript.color.new(trend_color, 85) : null), "Upper Outer Ribbon");
   pinescript.fill(upper_mid_plot, vwma_plot, (enable_ribbons ? pinescript.color.new(trend_color, 70) : null), "Upper Inner Ribbon");
   pinescript.fill(lower_band_plot, lower_mid_plot, (enable_ribbons ? pinescript.color.new(trend_color, 85) : null), "Lower Outer Ribbon");
@@ -1802,6 +1961,10 @@ function run(data, options = {}) {
     rt.__shapeIdx = 0;
     globalThis.bar_index = i;
     globalThis.last_bar_index = n - 1;
+    globalThis.time_tradingday = inTime[i];
+    globalThis.time_close = inTime[i];
+    globalThis.last_bar_time = inTime[n - 1];
+    globalThis.timenow = inTime[n - 1];
     globalThis.barstate = {
       isfirst: i === 0, islast: i === n - 1, isrealtime: false, ishistory: true,
       isconfirmed: true, isnew: true, islastconfirmedhistory: i === n - 1,

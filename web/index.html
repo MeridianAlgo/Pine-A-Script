@@ -1,0 +1,274 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>PineScript → JavaScript Converter</title>
+<style>
+  :root {
+    --bg: #0d1117;
+    --panel: #161b22;
+    --border: #30363d;
+    --text: #e6edf3;
+    --muted: #8b949e;
+    --accent: #2f81f7;
+    --accent-hover: #4a93f8;
+    --green: #3fb950;
+    --red: #f85149;
+    --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    line-height: 1.5;
+  }
+  header {
+    padding: 28px 24px 16px;
+    border-bottom: 1px solid var(--border);
+    text-align: center;
+  }
+  header h1 { margin: 0 0 6px; font-size: 1.6rem; }
+  header p { margin: 0; color: var(--muted); font-size: 0.95rem; }
+  header a { color: var(--accent); text-decoration: none; }
+  main { max-width: 1300px; margin: 0 auto; padding: 20px 24px 60px; }
+  .toolbar {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    align-items: center;
+    margin-bottom: 14px;
+  }
+  button {
+    font: inherit;
+    cursor: pointer;
+    border-radius: 6px;
+    border: 1px solid var(--border);
+    background: var(--panel);
+    color: var(--text);
+    padding: 8px 14px;
+    transition: background 0.12s, border-color 0.12s;
+  }
+  button:hover { border-color: var(--accent); }
+  button.primary { background: var(--accent); border-color: var(--accent); font-weight: 600; }
+  button.primary:hover { background: var(--accent-hover); }
+  select {
+    font: inherit;
+    background: var(--panel);
+    color: var(--text);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 8px 10px;
+  }
+  .spacer { flex: 1; }
+  .grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 16px;
+  }
+  @media (max-width: 860px) { .grid { grid-template-columns: 1fr; } }
+  .pane {
+    display: flex;
+    flex-direction: column;
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    overflow: hidden;
+    min-height: 460px;
+  }
+  .pane-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 8px 12px;
+    border-bottom: 1px solid var(--border);
+    font-size: 0.82rem;
+    color: var(--muted);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+  }
+  textarea, pre {
+    flex: 1;
+    margin: 0;
+    padding: 14px;
+    border: 0;
+    background: transparent;
+    color: var(--text);
+    font-family: var(--mono);
+    font-size: 13px;
+    line-height: 1.55;
+    tab-size: 2;
+    resize: none;
+    overflow: auto;
+    white-space: pre;
+  }
+  textarea:focus { outline: none; }
+  pre { white-space: pre; }
+  .status {
+    margin-top: 14px;
+    padding: 12px 14px;
+    border-radius: 8px;
+    border: 1px solid var(--border);
+    background: var(--panel);
+    font-size: 0.9rem;
+    display: none;
+  }
+  .status.show { display: block; }
+  .status.ok { border-color: var(--green); }
+  .status.err { border-color: var(--red); }
+  .status .label { font-weight: 600; }
+  .status.ok .label { color: var(--green); }
+  .status.err .label { color: var(--red); }
+  .status ul { margin: 8px 0 0; padding-left: 20px; color: var(--muted); }
+  .copied { color: var(--green); font-size: 0.8rem; }
+</style>
+</head>
+<body>
+<header>
+  <h1>PineScript → JavaScript</h1>
+  <p>Paste your TradingView PineScript (v5/v6) and convert it to runnable JavaScript — entirely in your browser, nothing is uploaded.
+     <a href="https://github.com/MeridianAlgo/Pine-A-Script" target="_blank" rel="noopener">Source on GitHub</a></p>
+</header>
+
+<main>
+  <div class="toolbar">
+    <button id="convert" class="primary">Convert →</button>
+    <select id="examples" title="Load an example"><option value="">Load example…</option></select>
+    <div class="spacer"></div>
+    <button id="copy">Copy output</button>
+    <button id="download">Download .js</button>
+    <span id="copied" class="copied"></span>
+  </div>
+
+  <div class="grid">
+    <div class="pane">
+      <div class="pane-head"><span>PineScript</span><span id="inMeta"></span></div>
+      <textarea id="input" spellcheck="false" placeholder="// paste your PineScript here"></textarea>
+    </div>
+    <div class="pane">
+      <div class="pane-head"><span>JavaScript</span><span id="outMeta"></span></div>
+      <pre id="output"></pre>
+    </div>
+  </div>
+
+  <div id="status" class="status"></div>
+</main>
+
+<script type="module">
+import { transpile } from './src/transpiler.js';
+
+const $ = (id) => document.getElementById(id);
+const input = $('input'), output = $('output'), status = $('status');
+
+const DEFAULT = `//@version=5
+indicator("SMA Crossover", overlay=true)
+
+fastLen = input.int(9, "Fast MA Length")
+slowLen = input.int(21, "Slow MA Length")
+
+fast = ta.sma(close, fastLen)
+slow = ta.sma(close, slowLen)
+
+bullish = ta.crossover(fast, slow)
+bearish = ta.crossunder(fast, slow)
+
+plot(fast, "Fast", color=color.aqua)
+plot(slow, "Slow", color=color.orange)
+plotshape(bullish, "Buy", shape.triangleup, location.belowbar, color.green)
+plotshape(bearish, "Sell", shape.triangledown, location.abovebar, color.red)`;
+
+input.value = DEFAULT;
+
+function escapeHtml(s) {
+  return String(s).replace(/[&<>]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]));
+}
+
+// ponytail: lightweight in-browser sanity check. The full multi-stage reviewer
+// is Node-only (uses node:vm); CI runs it. Here we just confirm the output parses.
+function syntaxOk(code) {
+  try {
+    const stripped = code
+      .replace(/^\s*export\s+default\s+/gm, '')
+      .replace(/^\s*export\s+(async\s+)?function\s+/gm, '$1function ')
+      .replace(/^\s*export\s+(const|let|var)\s+/gm, '$1 ')
+      .replace(/^\s*export\s*\{[^}]*\}\s*;?\s*$/gm, '')
+      .replace(/^\s*import\s.+$/gm, '');
+    new Function(stripped);
+    return null;
+  } catch (e) {
+    return e?.message || String(e);
+  }
+}
+
+function convert() {
+  const src = input.value;
+  $('inMeta').textContent = `${src.split('\n').length} lines`;
+  const result = transpile(src);
+  if (!result.success) {
+    output.textContent = '';
+    $('outMeta').textContent = '';
+    status.className = 'status show err';
+    status.innerHTML = `<span class="label">Conversion failed</span> — ${escapeHtml(result.error)}`;
+    return;
+  }
+  output.textContent = result.code;
+  $('outMeta').textContent = `${result.code.split('\n').length} lines`;
+  const syntaxErr = syntaxOk(result.code);
+  if (syntaxErr) {
+    status.className = 'status show err';
+    status.innerHTML = `<span class="label">Converted with a syntax issue</span><ul><li>${escapeHtml(syntaxErr)}</li></ul>`;
+  } else {
+    status.className = 'status show ok';
+    status.innerHTML = `<span class="label">Converted</span> — output parses cleanly. Use the buttons above to copy or download.`;
+  }
+}
+
+$('convert').addEventListener('click', convert);
+input.addEventListener('keydown', (e) => {
+  if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') { e.preventDefault(); convert(); }
+});
+
+$('copy').addEventListener('click', async () => {
+  if (!output.textContent) return;
+  await navigator.clipboard.writeText(output.textContent);
+  $('copied').textContent = 'Copied!';
+  setTimeout(() => ($('copied').textContent = ''), 1500);
+});
+
+$('download').addEventListener('click', () => {
+  if (!output.textContent) return;
+  const blob = new Blob([output.textContent], { type: 'text/javascript' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'converted.js';
+  a.click();
+  URL.revokeObjectURL(a.href);
+});
+
+// Populate examples from the manifest the workflow writes (examples/manifest.json).
+fetch('./examples/manifest.json')
+  .then(r => r.ok ? r.json() : [])
+  .then(list => {
+    const sel = $('examples');
+    for (const name of list) {
+      const opt = document.createElement('option');
+      opt.value = name;
+      opt.textContent = name.replace(/\.pine$/, '').replace(/_/g, ' ');
+      sel.appendChild(opt);
+    }
+  })
+  .catch(() => {});
+
+$('examples').addEventListener('change', async (e) => {
+  const file = e.target.value;
+  if (!file) return;
+  const res = await fetch('./examples/' + file);
+  if (res.ok) { input.value = await res.text(); convert(); }
+});
+
+convert();
+</script>
+</body>
+</html>

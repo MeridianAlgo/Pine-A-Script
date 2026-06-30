@@ -42,6 +42,80 @@ const pinescript = {
     if (value != null && typeof value[Symbol.iterator] === 'function') return Array.from(value);
     return new Array(count || 0).fill(null);
   },
+  __decArr: function(arr) {
+    if (!Array.isArray(arr) || arr.__pineDecorated) return arr;
+    const self = this;
+    const def = (name, fn) => Object.defineProperty(arr, name, { value: fn, writable: true, configurable: true });
+    Object.defineProperty(arr, '__pineDecorated', { value: true, configurable: true });
+    def('get', (i) => (arr[i] === undefined ? null : arr[i]));
+    def('set', (i, v) => { arr[i] = v; return v; });
+    def('size', () => arr.length);
+    def('clear', () => { arr.length = 0; });
+    def('insert', (i, v) => { arr.splice(i, 0, v); });
+    def('remove', (i) => arr.splice(i, 1)[0]);
+    def('contains', (v) => arr.includes(v));
+    def('indexof', (v) => arr.indexOf(v));
+    def('lastindexof', (v) => arr.lastIndexOf(v));
+    def('first', () => (arr.length ? arr[0] : null));
+    def('last', () => (arr.length ? arr[arr.length - 1] : null));
+    def('sum', () => arr.reduce((a, b) => a + b, 0));
+    def('avg', () => (arr.length ? arr.reduce((a, b) => a + b, 0) / arr.length : 0));
+    def('min', () => (arr.length ? Math.min(...arr) : null));
+    def('max', () => (arr.length ? Math.max(...arr) : null));
+    def('range', () => (arr.length ? Math.max(...arr) - Math.min(...arr) : null));
+    // Statistical methods that route to the array.* built-ins (these names are not
+    // native to JS arrays, so attaching them here is safe from recursion).
+    def('median', () => self.arrayMedian(arr));
+    def('mode', () => self.arrayMode(arr));
+    def('stdev', () => self.arrayStdev(arr));
+    def('variance', () => self.arrayVariance(arr));
+    def('covariance', (other) => self.arrayCovariance(arr, other));
+    def('percentile_linear_interpolation', (p) => self.arrayPercentileLinearInterpolation(arr, p));
+    def('percentile_nearest_rank', (p) => self.arrayPercentileNearestRank(arr, p));
+    def('abs', () => self.__decArr(self.arrayAbs(arr)));
+    def('binary_search', (v) => self.arrayBinarySearch(arr, v));
+    // Pine's array.sort takes an order string, not a comparator. Use the native
+    // sort via .call so we don't recurse through this overridden method.
+    def('sort', (order) => { Array.prototype.sort.call(arr, (a, b) => (order === 'descending' ? b - a : a - b)); return arr; });
+    def('sort_indices', (order) => self.__decArr(arr.map((_, i) => i).sort((a, b) => (order === 'descending' ? arr[b] - arr[a] : arr[a] - arr[b]))));
+    // join/slice/reverse/concat/includes/fill already exist natively on Array with
+    // compatible semantics, so we deliberately leave them to the native methods.
+    return arr;
+  },
+  __decMap: function(m) {
+    if (!(m instanceof Map) || m.__pineDecorated) return m;
+    const def = (name, fn) => Object.defineProperty(m, name, { value: fn, writable: true, configurable: true });
+    Object.defineProperty(m, '__pineDecorated', { value: true, configurable: true });
+    def('put', (k, v) => { m.set(k, v); return v; });
+    def('contains', (k) => m.has(k));
+    def('remove', (k) => m.delete(k));
+    def('keys', () => Array.from(Map.prototype.keys.call(m)));
+    def('values', () => Array.from(Map.prototype.values.call(m)));
+    def('size_', () => m.size);
+    return m;
+  },
+  __decMatrix: function(m) {
+    if (!m || typeof m !== 'object' || m.__pineDecorated) return m;
+    const self = this;
+    const def = (name, fn) => Object.defineProperty(m, name, { value: fn, writable: true, configurable: true });
+    Object.defineProperty(m, '__pineDecorated', { value: true, configurable: true });
+    def('get', (r, c) => self.matrixGet(m, r, c));
+    def('set', (r, c, v) => self.matrixSet(m, r, c, v));
+    def('rows_', () => m.rows);
+    def('columns', () => m.cols);
+    def('fill', (v) => self.matrixFill(m, v));
+    return m;
+  },
+  __decDraw: function(obj) {
+    if (!obj || typeof obj !== 'object') return obj;
+    const p = new Proxy(obj, {
+      get(t, k) {
+        if (k in t || typeof k === 'symbol') return t[k];
+        return function() { return p; };
+      },
+    });
+    return p;
+  },
   alertcondition: function(condition, ...rest) {
     if (globalThis.__pineRuntime) {
       globalThis.__pineRuntime.alerts.push({ condition, args: rest });
@@ -49,6 +123,32 @@ const pinescript = {
     return null;
   },
   barcolor: function(color) { return null; },
+  plotchar: function(series, ...rest) {
+    const rt = globalThis.__pineRuntime;
+    if (!rt) return series;
+    const bar = rt.__barIndex | 0;
+    const ord = (rt.__shapeIdx = (rt.__shapeIdx | 0) + 1) - 1;
+    let key = 'char_' + ord;
+    for (const r of rest) {
+      if (typeof r === 'string') { key = r; break; }
+      if (r && typeof r === 'object' && r.title) { key = String(r.title); break; }
+    }
+    let s = rt.plotshapes[key];
+    if (!s) s = rt.plotshapes[key] = { title: key, data: [] };
+    s.data[bar] = this.__scalar(series);
+    return series;
+  },
+  plotarrow: function(series, ...rest) {
+    const rt = globalThis.__pineRuntime;
+    if (!rt) return series;
+    const bar = rt.__barIndex | 0;
+    const ord = (rt.__plotIdx = (rt.__plotIdx | 0) + 1) - 1;
+    const key = 'arrow_' + ord;
+    let p = rt.plots[key];
+    if (!p) p = rt.plots[key] = { title: key, data: [] };
+    p.data[bar] = this.__scalar(series);
+    return series;
+  },
   bgcolor: function(color, title, editable, showLast) {
     return null;
   },
@@ -470,6 +570,12 @@ const pinescript = {
   atan: function(value) {
     return Math.atan(value);
   },
+  todegrees: function(radians) {
+    return radians * (180 / Math.PI);
+  },
+  toradians: function(degrees) {
+    return degrees * (Math.PI / 180);
+  },
   floor: function(value) {
     return Math.floor(value);
   },
@@ -641,7 +747,7 @@ const pinescript = {
     return series;
   },
   lineNew: function(x1, y1, x2, y2, opts = {}) {
-    return { x1, y1, x2, y2, opts, _type: 'line' };
+    return this.__decDraw({ x1, y1, x2, y2, opts, _type: 'line' });
   },
   lineDelete: function(l) {
     return null;
@@ -661,7 +767,7 @@ const pinescript = {
     return point === 0 || point === 'y1' ? line.y1 : line.y2;
   },
   labelNew: function(x, y, text = '', opts = {}) {
-    return { x, y, text, opts, _type: 'label' };
+    return this.__decDraw({ x, y, text, opts, _type: 'label' });
   },
   labelDelete: function(l) {
     return null;
@@ -676,7 +782,7 @@ const pinescript = {
     return label.text || '';
   },
   boxNew: function(left, top, right, bottom, opts = {}) {
-    return { left, top, right, bottom, opts, _type: 'box' };
+    return this.__decDraw({ left, top, right, bottom, opts, _type: 'box' });
   },
   boxDelete: function(box) {
     return null;
@@ -694,7 +800,7 @@ const pinescript = {
     return box;
   },
   polylineNew: function(points, opts = {}) {
-    return { points: points || [], opts, _type: 'polyline' };
+    return this.__decDraw({ points: points || [], opts, _type: 'polyline' });
   },
   polylineDelete: function(poly) {
     return null;
@@ -765,7 +871,7 @@ const pinescript = {
     return { time: _time ?? null, price: _price ?? null };
   },
   mapNew: function() {
-    return new Map();
+    return this.__decMap(new Map());
   },
   mapSize: function(m) {
     return m instanceof Map ? m.size : 0;
@@ -800,7 +906,7 @@ const pinescript = {
     const r = Math.max(0, rows ?? 0);
     const c = Math.max(0, cols ?? 0);
     const data = Array.from({ length: r }, () => Array.from({ length: c }, () => initialValue));
-    return { rows: r, cols: c, data };
+    return this.__decMatrix({ rows: r, cols: c, data });
   },
   matrixRows: function(m) {
     return m?.rows ?? 0;
@@ -923,11 +1029,62 @@ const pinescript = {
     }
     return null;
   },
+  __jacobiEigen: function(m) {
+    if (!m || !Array.isArray(m.data)) return null;
+    const n = m.rows ?? 0;
+    if (n === 0 || n !== (m.cols ?? 0)) return null;
+    // Work on a copy so the input matrix is untouched.
+    const a = m.data.map(row => row.slice());
+    const v = Array.from({ length: n }, (_, i) => Array.from({ length: n }, (_, j) => (i === j ? 1 : 0)));
+    for (let sweep = 0; sweep < 100; sweep++) {
+      let off = 0;
+      for (let p = 0; p < n; p++) for (let q = p + 1; q < n; q++) off += a[p][q] * a[p][q];
+      if (off < 1e-20) break;
+      for (let p = 0; p < n; p++) {
+        for (let q = p + 1; q < n; q++) {
+          if (Math.abs(a[p][q]) < 1e-18) continue;
+          const theta = (a[q][q] - a[p][p]) / (2 * a[p][q]);
+          const t = Math.sign(theta || 1) / (Math.abs(theta) + Math.sqrt(theta * theta + 1));
+          const cos = 1 / Math.sqrt(t * t + 1);
+          const sin = t * cos;
+          for (let k = 0; k < n; k++) {
+            const akp = a[k][p], akq = a[k][q];
+            a[k][p] = cos * akp - sin * akq;
+            a[k][q] = sin * akp + cos * akq;
+          }
+          for (let k = 0; k < n; k++) {
+            const apk = a[p][k], aqk = a[q][k];
+            a[p][k] = cos * apk - sin * aqk;
+            a[q][k] = sin * apk + cos * aqk;
+          }
+          for (let k = 0; k < n; k++) {
+            const vkp = v[k][p], vkq = v[k][q];
+            v[k][p] = cos * vkp - sin * vkq;
+            v[k][q] = sin * vkp + cos * vkq;
+          }
+        }
+      }
+    }
+    // Sort eigenpairs by eigenvalue, descending.
+    const order = Array.from({ length: n }, (_, i) => i).sort((i, j) => a[j][j] - a[i][i]);
+    const values = order.map(i => a[i][i]);
+    const vectors = Array.from({ length: n }, (_, r) => order.map(c => v[r][c]));
+    return { values, vectors };
+  },
+  matrixEigenvalues: function(m) {
+    const e = this.__jacobiEigen(m);
+    return this.__decArr(e ? e.values : []);
+  },
+  matrixEigenvectors: function(m) {
+    const e = this.__jacobiEigen(m);
+    if (!e) return this.__decMatrix({ rows: 0, cols: 0, data: [] });
+    return this.__decMatrix({ rows: e.vectors.length, cols: e.vectors.length, data: e.vectors });
+  },
   requestSecurity: function(symbol, timeframe, expression) {
     return expression;
   },
   arrayNew: function(initialSize = 0, initialValue = 0) {
-    return Array(initialSize).fill(initialValue);
+    return this.__decArr(Array(initialSize).fill(initialValue));
   },
   arraySize: function(arr) {
     return arr ? arr.length : 0;
@@ -978,10 +1135,10 @@ const pinescript = {
     return arr;
   },
   arraySlice: function(arr, startIndex = 0, endIndex = null) {
-    if (!arr) return [];
+    if (!arr) return this.__decArr([]);
     const start = Number(startIndex) || 0;
     const end = endIndex === null || endIndex === undefined ? arr.length : Number(endIndex) || 0;
-    return arr.slice(start, end);
+    return this.__decArr(arr.slice(start, end));
   },
   arraySort: function(arr, order = 'ascending') {
     if (arr) arr.sort((a, b) => order === 'ascending' ? a - b : b - a);
@@ -1191,7 +1348,7 @@ const pinescript = {
     const info = { ticker: 'AAPL', tickerid: 'NASDAQ:AAPL', prefix: 'NASDAQ', root: 'AAPL', suffix: '' };
     return info[type] || '';
   },
-  timenow: 1781574528093,
+  timenow: 1782784152887,
   barstate: "LAST",
   dividends: {},
   splits: {},
@@ -1245,11 +1402,11 @@ const pinescript = {
   arrayConcat: function(arr1, arr2) {
     if (!arr1) return arr2 || [];
     if (!arr2) return arr1;
-    return arr1.concat(arr2);
+    return this.__decArr(arr1.concat(arr2));
   },
   arrayCopy: function(arr) {
-    if (!arr) return [];
-    return [...arr];
+    if (!arr) return this.__decArr([]);
+    return this.__decArr([...arr]);
   },
   arrayBinarySearch: function(arr, value) {
     if (!arr || arr.length === 0) return -1;
@@ -1339,7 +1496,7 @@ globalThis.input.timeframe = globalThis.input.timeframe || ((defval) => defval);
 
 globalThis.array = globalThis.array || {
 
-  from: (...items) => items,
+  from: (...items) => pinescript.__decArr(items),
 
   size: (arr) => pinescript.arraySize(arr),
 
@@ -1508,6 +1665,8 @@ globalThis.line = globalThis.line || __pineNS({ style_solid: "solid", style_dash
 
 globalThis.box = globalThis.box || __pineNS({});
 
+globalThis.color = globalThis.color || __pineNS(Object.assign(function(c) { return c; }, { new: function(c, t) { return c; }, rgb: function(r, g, b, t) { return "#rgb(" + [r, g, b].join(",") + ")"; }, from_gradient: function(v, lo, hi, c1, c2) { return c1; }, r: function() { return 0; }, g: function() { return 0; }, b: function() { return 0; }, t: function() { return 0; }, aqua: "#00BCD4", black: "#363A45", blue: "#2962FF", fuchsia: "#E040FB", gray: "#787B86", green: "#4CAF50", lime: "#00E676", maroon: "#880E4F", navy: "#311B92", olive: "#808000", orange: "#FF9800", purple: "#9C27B0", red: "#FF5252", silver: "#B2B5BE", teal: "#00897B", white: "#FFFFFF", yellow: "#FFEB3B" }));
+
 globalThis.label = globalThis.label || __pineNS({ style_label_down: "label_down", style_label_up: "label_up", style_none: "none" });
 
 globalThis.polyline = globalThis.polyline || __pineNS({});
@@ -1520,7 +1679,9 @@ globalThis.map = globalThis.map || __pineNS({});
 
 globalThis.session = globalThis.session || __pineNS({ regular: "regular", extended: "extended" });
 
-globalThis.dayofweek = globalThis.dayofweek || __pineNS({ sunday: 1, monday: 2, tuesday: 3, wednesday: 4, thursday: 5, friday: 6, saturday: 7 });
+globalThis.ticker = globalThis.ticker || __pineNS({});
+
+globalThis.dayofweek = globalThis.dayofweek || __pineNS(Object.assign(function(t) { return new Date(t != null ? t : (globalThis.time || 0)).getUTCDay() + 1; }, { sunday: 1, monday: 2, tuesday: 3, wednesday: 4, thursday: 5, friday: 6, saturday: 7 }));
 
 globalThis.timeframe = __pineNS(Object.assign(globalThis.timeframe || {}, { period: (globalThis.timeframe && globalThis.timeframe.period) || "D", isintraday: false, isdaily: true, multiplier: 1 }));
 
@@ -1567,8 +1728,6 @@ globalThis.float = globalThis.float || function(x) { return x == null ? null : N
 globalThis.bool = globalThis.bool || function(x) { return Boolean(x); };
 
 globalThis.string = globalThis.string || function(x) { return x == null ? null : String(x); };
-
-globalThis.dayofweek = globalThis.dayofweek || __pineNS({ sunday: 1, monday: 2, tuesday: 3, wednesday: 4, thursday: 5, friday: 6, saturday: 7 });
 
 globalThis.str = globalThis.str || __pineNS({});
 
@@ -1655,7 +1814,7 @@ pinescript.text = { align_center: "center" };
 
 pinescript.table = {
 
-  new: function(position, columns, rows, opts) { return { position, columns, rows, opts: opts || {}, cells: [] }; },
+  new: function(position, columns, rows, opts) { return pinescript.__decDraw({ position, columns, rows, opts: opts || {}, cells: [] }); },
 
   cell: function(table, column, row, text, opts) {
 
@@ -1688,96 +1847,96 @@ function main() {
   null;
   // Study: Pro Pattern Al-Sat (High Winrate)
   // Options: {"overlay":true,"max_labels_count":500,"max_lines_count":500,"max_boxes_count":500}
-  let showBullishPatterns = pinescript.inputBool(true, "Yükseliş Formasyonlarını Göster", ({ group: "Pattern Ayarları" }));
-  let showBearishPatterns = pinescript.inputBool(true, "Düşüş Formasyonlarını Göster", ({ group: "Pattern Ayarları" }));
-  let riskRewardRatio = pinescript.inputFloat(2, "Risk/Ödül Oranı", ({ minval: 0.5, maxval: 5, step: 0.1, group: "Risk Yönetimi" }));
-  let stopLossATR = pinescript.inputFloat(1.5, "Stop Loss (ATR Çarpanı)", ({ minval: 0.5, maxval: 5, step: 0.1, group: "Risk Yönetimi" }));
-  let showTable = pinescript.inputBool(true, "Sinyal Tablosunu Göster", ({ group: "Görünüm" }));
-  let tablePosition = pinescript.inputString("top_right", "Tablo Pozisyonu", ({ options: ["top_right", "top_left", "bottom_right", "bottom_left"], group: "Görünüm" }));
-  let showTradeResults = pinescript.inputBool(true, "İşlem Sonuçlarını Göster", ({ group: "Görünüm" }));
-  let showExtendedLines = pinescript.inputBool(true, "Uzatılmış Çizgileri Göster", ({ group: "Görünüm" }));
-  let useTrendFilter = pinescript.inputBool(true, "Trend Filtresi Kullan", ({ group: "🎯 Filtreler" }));
-  let useVolumeFilter = pinescript.inputBool(true, "Volume Filtresi Kullan", ({ group: "🎯 Filtreler" }));
-  let useRSIFilter = pinescript.inputBool(true, "RSI Filtresi Kullan", ({ group: "🎯 Filtreler" }));
-  let useSupportResistance = pinescript.inputBool(true, "Destek/Direnç Filtresi", ({ group: "🎯 Filtreler" }));
-  let useTimeFilter = pinescript.inputBool(true, "Zaman Filtresi Kullan", ({ group: "🎯 Filtreler" }));
-  let emaFastLength = pinescript.inputInt(50, "Hızlı EMA", ({ minval: 10, group: "📈 Trend Filtresi" }));
-  let emaSlowLength = pinescript.inputInt(200, "Yavaş EMA", ({ minval: 50, group: "📈 Trend Filtresi" }));
-  let supertrendMultiplier = pinescript.inputFloat(3, "Supertrend Çarpanı", ({ minval: 1, maxval: 10, step: 0.5, group: "📈 Trend Filtresi" }));
-  let supertrendPeriod = pinescript.inputInt(10, "Supertrend Periyodu", ({ minval: 5, group: "📈 Trend Filtresi" }));
-  let adxThreshold = pinescript.inputInt(25, "ADX Minimum", ({ minval: 10, maxval: 50, group: "📈 Trend Filtresi" }));
-  let volumeMultiplier = pinescript.inputFloat(1.5, "Volume Çarpanı", ({ minval: 1, maxval: 3, step: 0.1, group: "📊 Volume Filtresi" }));
-  let volumePeriod = pinescript.inputInt(20, "Volume SMA Periyodu", ({ minval: 10, group: "📊 Volume Filtresi" }));
-  let rsiPeriod = pinescript.inputInt(14, "RSI Periyodu", ({ minval: 5, group: "📉 RSI Filtresi" }));
-  let rsiOverbought = pinescript.inputInt(70, "Aşırı Alım Seviyesi", ({ minval: 60, maxval: 90, group: "📉 RSI Filtresi" }));
-  let rsiOversold = pinescript.inputInt(30, "Aşırı Satım Seviyesi", ({ minval: 10, maxval: 40, group: "📉 RSI Filtresi" }));
-  let pivotLookback = pinescript.inputInt(10, "Pivot Lookback", ({ minval: 5, maxval: 50, group: "🎚️ Destek/Direnç" }));
-  let srProximity = pinescript.inputFloat(0.5, "Seviye Yakınlığı (%)", ({ minval: 0.1, maxval: 2, step: 0.1, group: "🎚️ Destek/Direnç" }));
-  let avoidFirstHour = pinescript.inputBool(true, "İlk 1 Saati Atla", ({ group: "⏰ Zaman Filtresi" }));
-  let avoidLastHour = pinescript.inputBool(true, "Son 1 Saati Atla", ({ group: "⏰ Zaman Filtresi" }));
-  let tradingStartHour = pinescript.inputInt(9, "İşlem Başlangıç Saati", ({ minval: 0, maxval: 23, group: "⏰ Zaman Filtresi" }));
-  let tradingEndHour = pinescript.inputInt(17, "İşlem Bitiş Saati", ({ minval: 0, maxval: 23, group: "⏰ Zaman Filtresi" }));
-  let atrValue = pinescript.atr(14);
-  let emaFast = pinescript.ema(close, emaFastLength);
-  let emaSlow = pinescript.ema(close, emaSlowLength);
-  let uptrend = (emaFast > emaSlow);
-  let downtrend = (emaFast < emaSlow);
-  let [supertrendValue, supertrendDirection] = pinescript.unpack(pinescript.supertrend(supertrendMultiplier, supertrendPeriod), 2);
-  let supertrendBullish = (supertrendDirection < 0);
-  let supertrendBearish = (supertrendDirection > 0);
-  let [diPlus, diMinus, adx] = pinescript.unpack(pinescript.dmi(14, 14), 3);
-  let strongTrend = (adx > adxThreshold);
-  let trendFilterBullish = ((uptrend && supertrendBullish) && strongTrend);
-  let trendFilterBearish = ((downtrend && supertrendBearish) && strongTrend);
-  let volumeSMA = pinescript.sma(volume, volumePeriod);
-  let volumeFilter = (volume > (volumeSMA * volumeMultiplier));
-  let rsi = pinescript.rsi(close, rsiPeriod);
-  let rsiFilterBullish = (rsi < rsiOverbought);
-  let rsiFilterBearish = (rsi > rsiOversold);
-  let pivotHigh = ta.pivothigh(high, pivotLookback, pivotLookback);
-  let pivotLow = ta.pivotlow(low, pivotLookback, pivotLookback);
+  var showBullishPatterns = pinescript.inputBool(true, "Yükseliş Formasyonlarını Göster", ({ group: "Pattern Ayarları" }));
+  var showBearishPatterns = pinescript.inputBool(true, "Düşüş Formasyonlarını Göster", ({ group: "Pattern Ayarları" }));
+  var riskRewardRatio = pinescript.inputFloat(2, "Risk/Ödül Oranı", ({ minval: 0.5, maxval: 5, step: 0.1, group: "Risk Yönetimi" }));
+  var stopLossATR = pinescript.inputFloat(1.5, "Stop Loss (ATR Çarpanı)", ({ minval: 0.5, maxval: 5, step: 0.1, group: "Risk Yönetimi" }));
+  var showTable = pinescript.inputBool(true, "Sinyal Tablosunu Göster", ({ group: "Görünüm" }));
+  var tablePosition = pinescript.inputString("top_right", "Tablo Pozisyonu", ({ options: ["top_right", "top_left", "bottom_right", "bottom_left"], group: "Görünüm" }));
+  var showTradeResults = pinescript.inputBool(true, "İşlem Sonuçlarını Göster", ({ group: "Görünüm" }));
+  var showExtendedLines = pinescript.inputBool(true, "Uzatılmış Çizgileri Göster", ({ group: "Görünüm" }));
+  var useTrendFilter = pinescript.inputBool(true, "Trend Filtresi Kullan", ({ group: "🎯 Filtreler" }));
+  var useVolumeFilter = pinescript.inputBool(true, "Volume Filtresi Kullan", ({ group: "🎯 Filtreler" }));
+  var useRSIFilter = pinescript.inputBool(true, "RSI Filtresi Kullan", ({ group: "🎯 Filtreler" }));
+  var useSupportResistance = pinescript.inputBool(true, "Destek/Direnç Filtresi", ({ group: "🎯 Filtreler" }));
+  var useTimeFilter = pinescript.inputBool(true, "Zaman Filtresi Kullan", ({ group: "🎯 Filtreler" }));
+  var emaFastLength = pinescript.inputInt(50, "Hızlı EMA", ({ minval: 10, group: "📈 Trend Filtresi" }));
+  var emaSlowLength = pinescript.inputInt(200, "Yavaş EMA", ({ minval: 50, group: "📈 Trend Filtresi" }));
+  var supertrendMultiplier = pinescript.inputFloat(3, "Supertrend Çarpanı", ({ minval: 1, maxval: 10, step: 0.5, group: "📈 Trend Filtresi" }));
+  var supertrendPeriod = pinescript.inputInt(10, "Supertrend Periyodu", ({ minval: 5, group: "📈 Trend Filtresi" }));
+  var adxThreshold = pinescript.inputInt(25, "ADX Minimum", ({ minval: 10, maxval: 50, group: "📈 Trend Filtresi" }));
+  var volumeMultiplier = pinescript.inputFloat(1.5, "Volume Çarpanı", ({ minval: 1, maxval: 3, step: 0.1, group: "📊 Volume Filtresi" }));
+  var volumePeriod = pinescript.inputInt(20, "Volume SMA Periyodu", ({ minval: 10, group: "📊 Volume Filtresi" }));
+  var rsiPeriod = pinescript.inputInt(14, "RSI Periyodu", ({ minval: 5, group: "📉 RSI Filtresi" }));
+  var rsiOverbought = pinescript.inputInt(70, "Aşırı Alım Seviyesi", ({ minval: 60, maxval: 90, group: "📉 RSI Filtresi" }));
+  var rsiOversold = pinescript.inputInt(30, "Aşırı Satım Seviyesi", ({ minval: 10, maxval: 40, group: "📉 RSI Filtresi" }));
+  var pivotLookback = pinescript.inputInt(10, "Pivot Lookback", ({ minval: 5, maxval: 50, group: "🎚️ Destek/Direnç" }));
+  var srProximity = pinescript.inputFloat(0.5, "Seviye Yakınlığı (%)", ({ minval: 0.1, maxval: 2, step: 0.1, group: "🎚️ Destek/Direnç" }));
+  var avoidFirstHour = pinescript.inputBool(true, "İlk 1 Saati Atla", ({ group: "⏰ Zaman Filtresi" }));
+  var avoidLastHour = pinescript.inputBool(true, "Son 1 Saati Atla", ({ group: "⏰ Zaman Filtresi" }));
+  var tradingStartHour = pinescript.inputInt(9, "İşlem Başlangıç Saati", ({ minval: 0, maxval: 23, group: "⏰ Zaman Filtresi" }));
+  var tradingEndHour = pinescript.inputInt(17, "İşlem Bitiş Saati", ({ minval: 0, maxval: 23, group: "⏰ Zaman Filtresi" }));
+  var atrValue = pinescript.atr(14);
+  var emaFast = pinescript.ema(pinescript.series(0, close), emaFastLength);
+  var emaSlow = pinescript.ema(pinescript.series(1, close), emaSlowLength);
+  var uptrend = (emaFast > emaSlow);
+  var downtrend = (emaFast < emaSlow);
+  var [supertrendValue, supertrendDirection] = pinescript.unpack(pinescript.supertrend(supertrendMultiplier, supertrendPeriod), 2);
+  var supertrendBullish = (supertrendDirection < 0);
+  var supertrendBearish = (supertrendDirection > 0);
+  var [diPlus, diMinus, adx] = pinescript.unpack(pinescript.dmi(14, 14), 3);
+  var strongTrend = (adx > adxThreshold);
+  var trendFilterBullish = ((uptrend && supertrendBullish) && strongTrend);
+  var trendFilterBearish = ((downtrend && supertrendBearish) && strongTrend);
+  var volumeSMA = pinescript.sma(pinescript.series(2, volume), volumePeriod);
+  var volumeFilter = (volume > (volumeSMA * volumeMultiplier));
+  var rsi = pinescript.rsi(pinescript.series(3, close), rsiPeriod);
+  var rsiFilterBullish = (rsi < rsiOverbought);
+  var rsiFilterBearish = (rsi > rsiOversold);
+  var pivotHigh = pinescript.ta.pivothigh(high, pivotLookback, pivotLookback);
+  var pivotLow = pinescript.ta.pivotlow(low, pivotLookback, pivotLookback);
   if (state.lastResistance === undefined) state.lastResistance = null;
   if (state.lastSupport === undefined) state.lastSupport = null;
   if (!pinescript.na(pivotHigh)) {
-    state.lastResistance = pinescript.hist(0, high, pivotLookback);
+    state.lastResistance = pinescript.hist(4, high, pivotLookback);
   }
   if (!pinescript.na(pivotLow)) {
-    state.lastSupport = pinescript.hist(1, low, pivotLookback);
+    state.lastSupport = pinescript.hist(5, low, pivotLookback);
   }
-  let proximityPercent = (srProximity / 100);
-  let nearSupport = (!pinescript.na(state.lastSupport) && ((pinescript.abs((close - state.lastSupport)) / state.lastSupport) < proximityPercent));
-  let nearResistance = (!pinescript.na(state.lastResistance) && ((pinescript.abs((close - state.lastResistance)) / state.lastResistance) < proximityPercent));
-  let srFilterBullish = nearSupport;
-  let srFilterBearish = nearResistance;
-  let currentHour = pinescript.hour(time);
-  let currentMinute = pinescript.minute(time);
-  let firstHourAvoid = (avoidFirstHour && (currentHour === tradingStartHour));
-  let lastHourAvoid = (avoidLastHour && (currentHour === tradingEndHour));
-  let inTradingHours = ((currentHour >= tradingStartHour) && (currentHour <= tradingEndHour));
-  let timeFilter = ((inTradingHours && !firstHourAvoid) && !lastHourAvoid);
-  let bullishEngulfing = ((((pinescript.hist(2, close, 1) < pinescript.hist(3, open, 1)) && (close > open)) && (open <= pinescript.hist(4, close, 1))) && (close >= pinescript.hist(5, open, 1)));
-  let bearishEngulfing = ((((pinescript.hist(6, close, 1) > pinescript.hist(7, open, 1)) && (close < open)) && (open >= pinescript.hist(8, close, 1))) && (close <= pinescript.hist(9, open, 1)));
-  let bodySize = pinescript.abs((close - open));
-  let upperWick = (high - pinescript.max(close, open));
-  let lowerWick = (pinescript.min(close, open) - low);
-  let lowestLow = pinescript.lowest(pinescript.series(10, low), 10);
-  let highestHigh = pinescript.highest(pinescript.series(11, high), 10);
-  let isHammer = ((((lowerWick > (bodySize * 2)) && (upperWick < bodySize)) && (close > open)) && (low === lowestLow));
-  let isShootingStar = ((((upperWick > (bodySize * 2)) && (lowerWick < bodySize)) && (close < open)) && (high === highestHigh));
-  let avgBody2 = pinescript.abs((pinescript.hist(12, close, 2) - pinescript.hist(13, open, 2)));
-  let isMorningStar = (pinescript.hist(14, close, 2)((pinescript.hist(15, open, 2) + pinescript.hist(16, close, 2))) / 2);
-  let isEveningStar = ((((pinescript.hist(17, close, 2) > pinescript.hist(18, open, 2)) && (pinescript.abs((pinescript.hist(19, close, 1) - pinescript.hist(20, open, 1))) < (avgBody2 * 0.3))) && (close < open)) && (close < ((pinescript.hist(21, open, 2) + pinescript.hist(22, close, 2)) / 2)));
-  let candleRange = (high - low);
-  let avgRange = pinescript.sma((high - low), 14);
-  let isDoji = ((pinescript.abs((close - open)) < (candleRange * 0.1)) && (candleRange > avgRange));
-  let threeWhiteSoldiers = (((((((((pinescript.hist(23, close, 2) > pinescript.hist(24, open, 2)) && (pinescript.hist(25, close, 1) > pinescript.hist(26, open, 1))) && (close > open)) && (pinescript.hist(27, close, 1) > pinescript.hist(28, close, 2))) && (close > pinescript.hist(29, close, 1))) && (pinescript.hist(30, open, 1) > pinescript.hist(31, open, 2))) && (open > pinescript.hist(32, open, 1))) && (pinescript.hist(33, open, 1) < pinescript.hist(34, close, 2))) && (open < pinescript.hist(35, close, 1)));
-  let threeBlackCrows = (((((((((pinescript.hist(36, close, 2) < pinescript.hist(37, open, 2)) && (pinescript.hist(38, close, 1) < pinescript.hist(39, open, 1))) && (close < open)) && (pinescript.hist(40, close, 1) < pinescript.hist(41, close, 2))) && (close < pinescript.hist(42, close, 1))) && (pinescript.hist(43, open, 1) < pinescript.hist(44, open, 2))) && (open < pinescript.hist(45, open, 1))) && (pinescript.hist(46, open, 1) > pinescript.hist(47, close, 2))) && (open > pinescript.hist(48, close, 1)));
-  let piercingLine = ((((pinescript.hist(49, close, 1) < pinescript.hist(50, open, 1)) && (close > open)) && (pinescript.open((pinescript.hist(51, open, 1) + pinescript.hist(52, close, 1))) / 2)) && (close < pinescript.hist(53, open, 1)));
-  let darkCloudCover = (((((pinescript.hist(54, close, 1) > pinescript.hist(55, open, 1)) && (close < open)) && (open > pinescript.hist(56, close, 1))) && (close < ((pinescript.hist(57, open, 1) + pinescript.hist(58, close, 1)) / 2))) && (close > pinescript.hist(59, open, 1)));
-  let bullishPattern = (((((bullishEngulfing || isHammer) || isMorningStar) || threeWhiteSoldiers) || piercingLine) && showBullishPatterns);
-  let bearishPattern = (((((bearishEngulfing || isShootingStar) || isEveningStar) || threeBlackCrows) || darkCloudCover) && showBearishPatterns);
-  let bullishSignal = (((((bullishPattern && (!useTrendFilter || trendFilterBullish)) && (!useVolumeFilter || volumeFilter)) && (!useRSIFilter || rsiFilterBullish)) && (!useSupportResistance || srFilterBullish)) && (!useTimeFilter || timeFilter));
-  let bearishSignal = (((((bearishPattern && (!useTrendFilter || trendFilterBearish)) && (!useVolumeFilter || volumeFilter)) && (!useRSIFilter || rsiFilterBearish)) && (!useSupportResistance || srFilterBearish)) && (!useTimeFilter || timeFilter));
+  var proximityPercent = (srProximity / 100);
+  var nearSupport = (!pinescript.na(state.lastSupport) && ((pinescript.abs((close - state.lastSupport)) / state.lastSupport) < proximityPercent));
+  var nearResistance = (!pinescript.na(state.lastResistance) && ((pinescript.abs((close - state.lastResistance)) / state.lastResistance) < proximityPercent));
+  var srFilterBullish = nearSupport;
+  var srFilterBearish = nearResistance;
+  var currentHour = pinescript.hour(time);
+  var currentMinute = pinescript.minute(time);
+  var firstHourAvoid = (avoidFirstHour && (currentHour === tradingStartHour));
+  var lastHourAvoid = (avoidLastHour && (currentHour === tradingEndHour));
+  var inTradingHours = ((currentHour >= tradingStartHour) && (currentHour <= tradingEndHour));
+  var timeFilter = ((inTradingHours && !firstHourAvoid) && !lastHourAvoid);
+  var bullishEngulfing = ((((pinescript.hist(6, close, 1) < pinescript.hist(7, open, 1)) && (close > open)) && (open <= pinescript.hist(8, close, 1))) && (close >= pinescript.hist(9, open, 1)));
+  var bearishEngulfing = ((((pinescript.hist(10, close, 1) > pinescript.hist(11, open, 1)) && (close < open)) && (open >= pinescript.hist(12, close, 1))) && (close <= pinescript.hist(13, open, 1)));
+  var bodySize = pinescript.abs((close - open));
+  var upperWick = (high - pinescript.max(close, open));
+  var lowerWick = (pinescript.min(close, open) - low);
+  var lowestLow = pinescript.lowest(pinescript.series(14, low), 10);
+  var highestHigh = pinescript.highest(pinescript.series(15, high), 10);
+  var isHammer = ((((lowerWick > (bodySize * 2)) && (upperWick < bodySize)) && (close > open)) && (low === lowestLow));
+  var isShootingStar = ((((upperWick > (bodySize * 2)) && (lowerWick < bodySize)) && (close < open)) && (high === highestHigh));
+  var avgBody2 = pinescript.abs((pinescript.hist(16, close, 2) - pinescript.hist(17, open, 2)));
+  var isMorningStar = ((((pinescript.hist(18, close, 2) < pinescript.hist(19, open, 2)) && (pinescript.abs((pinescript.hist(20, close, 1) - pinescript.hist(21, open, 1))) < (avgBody2 * 0.3))) && (close > open)) && (close > ((pinescript.hist(22, open, 2) + pinescript.hist(23, close, 2)) / 2)));
+  var isEveningStar = ((((pinescript.hist(24, close, 2) > pinescript.hist(25, open, 2)) && (pinescript.abs((pinescript.hist(26, close, 1) - pinescript.hist(27, open, 1))) < (avgBody2 * 0.3))) && (close < open)) && (close < ((pinescript.hist(28, open, 2) + pinescript.hist(29, close, 2)) / 2)));
+  var candleRange = (high - low);
+  var avgRange = pinescript.sma(pinescript.series(30, (high - low)), 14);
+  var isDoji = ((pinescript.abs((close - open)) < (candleRange * 0.1)) && (candleRange > avgRange));
+  var threeWhiteSoldiers = (((((((((pinescript.hist(31, close, 2) > pinescript.hist(32, open, 2)) && (pinescript.hist(33, close, 1) > pinescript.hist(34, open, 1))) && (close > open)) && (pinescript.hist(35, close, 1) > pinescript.hist(36, close, 2))) && (close > pinescript.hist(37, close, 1))) && (pinescript.hist(38, open, 1) > pinescript.hist(39, open, 2))) && (open > pinescript.hist(40, open, 1))) && (pinescript.hist(41, open, 1) < pinescript.hist(42, close, 2))) && (open < pinescript.hist(43, close, 1)));
+  var threeBlackCrows = (((((((((pinescript.hist(44, close, 2) < pinescript.hist(45, open, 2)) && (pinescript.hist(46, close, 1) < pinescript.hist(47, open, 1))) && (close < open)) && (pinescript.hist(48, close, 1) < pinescript.hist(49, close, 2))) && (close < pinescript.hist(50, close, 1))) && (pinescript.hist(51, open, 1) < pinescript.hist(52, open, 2))) && (open < pinescript.hist(53, open, 1))) && (pinescript.hist(54, open, 1) > pinescript.hist(55, close, 2))) && (open > pinescript.hist(56, close, 1)));
+  var piercingLine = (((((pinescript.hist(57, close, 1) < pinescript.hist(58, open, 1)) && (close > open)) && (open < pinescript.hist(59, close, 1))) && (close > ((pinescript.hist(60, open, 1) + pinescript.hist(61, close, 1)) / 2))) && (close < pinescript.hist(62, open, 1)));
+  var darkCloudCover = (((((pinescript.hist(63, close, 1) > pinescript.hist(64, open, 1)) && (close < open)) && (open > pinescript.hist(65, close, 1))) && (close < ((pinescript.hist(66, open, 1) + pinescript.hist(67, close, 1)) / 2))) && (close > pinescript.hist(68, open, 1)));
+  var bullishPattern = (((((bullishEngulfing || isHammer) || isMorningStar) || threeWhiteSoldiers) || piercingLine) && showBullishPatterns);
+  var bearishPattern = (((((bearishEngulfing || isShootingStar) || isEveningStar) || threeBlackCrows) || darkCloudCover) && showBearishPatterns);
+  var bullishSignal = (((((bullishPattern && (!useTrendFilter || trendFilterBullish)) && (!useVolumeFilter || volumeFilter)) && (!useRSIFilter || rsiFilterBullish)) && (!useSupportResistance || srFilterBullish)) && (!useTimeFilter || timeFilter));
+  var bearishSignal = (((((bearishPattern && (!useTrendFilter || trendFilterBearish)) && (!useVolumeFilter || volumeFilter)) && (!useRSIFilter || rsiFilterBearish)) && (!useSupportResistance || srFilterBearish)) && (!useTimeFilter || timeFilter));
   if (state.lastPattern === undefined) state.lastPattern = "Yok";
   if (state.lastEntry === undefined) state.lastEntry = null;
   if (state.lastStop === undefined) state.lastStop = null;
@@ -1800,7 +1959,7 @@ function main() {
   if (state.activeEntryLabel === undefined) state.activeEntryLabel = null;
   if (state.activeStopLabel === undefined) state.activeStopLabel = null;
   if (state.activeTpLabel === undefined) state.activeTpLabel = null;
-  let patternName = "";
+  var patternName = "";
   if ((bullishPattern || bearishPattern)) {
     state.totalSignalsBeforeFilter = 1;
   }
@@ -1836,7 +1995,7 @@ function main() {
       if ((high >= state.lastTarget)) {
         state.totalTrades = 1;
         state.winningTrades = 1;
-        let profit = (state.lastTarget - state.lastEntry);
+        var profit = (state.lastTarget - state.lastEntry);
         state.totalProfit = profit;
         state.tradeActive = false;
         if (showTradeResults) {
@@ -1846,7 +2005,7 @@ function main() {
         if ((low <= state.lastStop)) {
           state.totalTrades = 1;
           state.losingTrades = 1;
-          let loss = (state.lastEntry - state.lastStop);
+          var loss = (state.lastEntry - state.lastStop);
           state.totalLoss = loss;
           state.tradeActive = false;
           if (showTradeResults) {
@@ -1880,9 +2039,9 @@ function main() {
       }
     }
   }
-  let winRate = ((state.totalTrades > 0) ? ((state.winningTrades / state.totalTrades) * 100) : 0);
-  let profitLossRatio = ((state.totalLoss > 0) ? (state.totalProfit / state.totalLoss) : 0);
-  let filterEfficiency = ((state.totalSignalsBeforeFilter > 0) ? (((state.totalSignalsBeforeFilter - state.totalSignalsAfterFilter) / state.totalSignalsBeforeFilter) * 100) : 0);
+  var winRate = ((state.totalTrades > 0) ? ((state.winningTrades / state.totalTrades) * 100) : 0);
+  var profitLossRatio = ((state.totalLoss > 0) ? (state.totalProfit / state.totalLoss) : 0);
+  var filterEfficiency = ((state.totalSignalsBeforeFilter > 0) ? (((state.totalSignalsBeforeFilter - state.totalSignalsAfterFilter) / state.totalSignalsBeforeFilter) * 100) : 0);
   pinescript.plotshape(bullishSignal, "Alış", pinescript.shape.triangleup, pinescript.location.belowbar, pinescript.color.green, ({ size: pinescript.size.small }));
   pinescript.plotshape(bearishSignal, "Satış", pinescript.shape.triangledown, pinescript.location.abovebar, pinescript.color.red, ({ size: pinescript.size.small }));
   pinescript.plot((useTrendFilter ? emaFast : null), "EMA Fast", pinescript.color.new(pinescript.color.blue, 0), ({ linewidth: 1 }));
@@ -1915,10 +2074,10 @@ function main() {
   if (state.lastLabel === undefined) state.lastLabel = null;
   if ((bullishSignal || bearishSignal)) {
     pinescript.labelDelete(state.lastLabel);
-    let y_pos = (bullishSignal ? low : high);
-    let label_style = (bullishSignal ? label.style_label_up : label.style_label_down);
-    let label_color = (bullishSignal ? pinescript.color.new(pinescript.color.green, 70) : pinescript.color.new(pinescript.color.red, 70));
-    let signal_text = (bullishSignal ? "ALIŞ" : "SATIŞ");
+    var y_pos = (bullishSignal ? low : high);
+    var label_style = (bullishSignal ? label.style_label_up : label.style_label_down);
+    var label_color = (bullishSignal ? pinescript.color.new(pinescript.color.green, 70) : pinescript.color.new(pinescript.color.red, 70));
+    var signal_text = (bullishSignal ? "ALIŞ" : "SATIŞ");
     state.lastLabel = pinescript.labelNew(state.lastSignalIndex, y_pos, ((((((((signal_text + "n") + state.lastPattern) + "nGiriş: ") + pinescript.strToString(state.lastEntry, "#.####")) + "nSL: ") + pinescript.strToString(state.lastStop, "#.####")) + "nTP: ") + pinescript.strToString(state.lastTarget, "#.####")), ({ yloc: (bullishSignal ? yloc.belowbar : yloc.abovebar), color: label_color, textcolor: pinescript.color.white, style: label_style, size: pinescript.size.small }));
   }
   if (showTable) {
@@ -1953,11 +2112,11 @@ function main() {
     pinescript.table.cell(state.t, 1, 9, pinescript.strToString(state.totalTrades), ({ text_color: pinescript.color.aqua }));
     pinescript.table.cell(state.t, 2, 9, "📊", ({ text_color: pinescript.color.white }));
     pinescript.table.cell(state.t, 0, 10, "🎯 WINRATE", ({ text_color: pinescript.color.white, text_size: pinescript.size.normal }));
-    let winRateColor = ((winRate >= 70) ? pinescript.color.new(pinescript.color.green, 0) : ((winRate >= 50) ? pinescript.color.orange : pinescript.color.red));
+    var winRateColor = ((winRate >= 70) ? pinescript.color.new(pinescript.color.green, 0) : ((winRate >= 50) ? pinescript.color.orange : pinescript.color.red));
     pinescript.table.cell(state.t, 1, 10, (pinescript.strToString(winRate, "#.##") + "%"), ({ text_color: winRateColor, text_size: pinescript.size.normal }));
     pinescript.table.cell(state.t, 2, 10, (((pinescript.strToString(state.winningTrades) + "W/") + pinescript.strToString(state.losingTrades)) + "L"), ({ text_color: pinescript.color.orange, text_size: pinescript.size.tiny }));
     pinescript.table.cell(state.t, 0, 11, "Kar/Zarar Oranı", ({ text_color: pinescript.color.white }));
-    let plRatioColor = ((profitLossRatio >= 2) ? pinescript.color.new(pinescript.color.green, 0) : ((profitLossRatio >= 1) ? pinescript.color.orange : pinescript.color.red));
+    var plRatioColor = ((profitLossRatio >= 2) ? pinescript.color.new(pinescript.color.green, 0) : ((profitLossRatio >= 1) ? pinescript.color.orange : pinescript.color.red));
     pinescript.table.cell(state.t, 1, 11, pinescript.strToString(profitLossRatio, "#.##"), ({ text_color: plRatioColor }));
     pinescript.table.cell(state.t, 2, 11, ((profitLossRatio >= 1) ? "✓" : "✗"), ({ text_color: plRatioColor }));
     pinescript.table.cell(state.t, 0, 12, "━━━━━ FİLTRELER ━━━━━", ({ text_color: pinescript.color.purple }));
@@ -1969,7 +2128,7 @@ function main() {
     pinescript.table.cell(state.t, 1, 14, pinescript.strToString(state.totalSignalsAfterFilter), ({ text_color: pinescript.color.green }));
     pinescript.table.cell(state.t, 2, 14, "✓", ({ text_color: pinescript.color.green }));
     pinescript.table.cell(state.t, 0, 15, "Filtre Etkinliği", ({ text_color: pinescript.color.white }));
-    let filterColor = ((filterEfficiency >= 60) ? pinescript.color.green : ((filterEfficiency >= 40) ? pinescript.color.orange : pinescript.color.red));
+    var filterColor = ((filterEfficiency >= 60) ? pinescript.color.green : ((filterEfficiency >= 40) ? pinescript.color.orange : pinescript.color.red));
     pinescript.table.cell(state.t, 1, 15, (pinescript.strToString(filterEfficiency, "#.#") + "%"), ({ text_color: filterColor }));
     pinescript.table.cell(state.t, 2, 15, ((filterEfficiency >= 50) ? "🔥" : "⚡"), ({ text_color: filterColor }));
   }
@@ -2019,6 +2178,10 @@ function run(data, options = {}) {
     rt.__shapeIdx = 0;
     globalThis.bar_index = i;
     globalThis.last_bar_index = n - 1;
+    globalThis.time_tradingday = inTime[i];
+    globalThis.time_close = inTime[i];
+    globalThis.last_bar_time = inTime[n - 1];
+    globalThis.timenow = inTime[n - 1];
     globalThis.barstate = {
       isfirst: i === 0, islast: i === n - 1, isrealtime: false, ishistory: true,
       isconfirmed: true, isnew: true, islastconfirmedhistory: i === n - 1,

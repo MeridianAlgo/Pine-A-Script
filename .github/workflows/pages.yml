@@ -1,0 +1,42 @@
+name: Deploy converter demo to GitHub Pages
+
+on:
+  push:
+    branches: [master, main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Assemble site
+        run: |
+          mkdir -p _site/src _site/examples
+          cp web/index.html _site/index.html
+          cp src/*.js _site/src/
+          cp examples/*.pine _site/examples/
+          # manifest the page fetches to populate the examples dropdown
+          ( cd examples && ls *.pine | sort | sed 's/.*/"&"/' | paste -sd, - | sed 's/^/[/;s/$/]/' ) > _site/examples/manifest.json
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

@@ -42,6 +42,80 @@ const pinescript = {
     if (value != null && typeof value[Symbol.iterator] === 'function') return Array.from(value);
     return new Array(count || 0).fill(null);
   },
+  __decArr: function(arr) {
+    if (!Array.isArray(arr) || arr.__pineDecorated) return arr;
+    const self = this;
+    const def = (name, fn) => Object.defineProperty(arr, name, { value: fn, writable: true, configurable: true });
+    Object.defineProperty(arr, '__pineDecorated', { value: true, configurable: true });
+    def('get', (i) => (arr[i] === undefined ? null : arr[i]));
+    def('set', (i, v) => { arr[i] = v; return v; });
+    def('size', () => arr.length);
+    def('clear', () => { arr.length = 0; });
+    def('insert', (i, v) => { arr.splice(i, 0, v); });
+    def('remove', (i) => arr.splice(i, 1)[0]);
+    def('contains', (v) => arr.includes(v));
+    def('indexof', (v) => arr.indexOf(v));
+    def('lastindexof', (v) => arr.lastIndexOf(v));
+    def('first', () => (arr.length ? arr[0] : null));
+    def('last', () => (arr.length ? arr[arr.length - 1] : null));
+    def('sum', () => arr.reduce((a, b) => a + b, 0));
+    def('avg', () => (arr.length ? arr.reduce((a, b) => a + b, 0) / arr.length : 0));
+    def('min', () => (arr.length ? Math.min(...arr) : null));
+    def('max', () => (arr.length ? Math.max(...arr) : null));
+    def('range', () => (arr.length ? Math.max(...arr) - Math.min(...arr) : null));
+    // Statistical methods that route to the array.* built-ins (these names are not
+    // native to JS arrays, so attaching them here is safe from recursion).
+    def('median', () => self.arrayMedian(arr));
+    def('mode', () => self.arrayMode(arr));
+    def('stdev', () => self.arrayStdev(arr));
+    def('variance', () => self.arrayVariance(arr));
+    def('covariance', (other) => self.arrayCovariance(arr, other));
+    def('percentile_linear_interpolation', (p) => self.arrayPercentileLinearInterpolation(arr, p));
+    def('percentile_nearest_rank', (p) => self.arrayPercentileNearestRank(arr, p));
+    def('abs', () => self.__decArr(self.arrayAbs(arr)));
+    def('binary_search', (v) => self.arrayBinarySearch(arr, v));
+    // Pine's array.sort takes an order string, not a comparator. Use the native
+    // sort via .call so we don't recurse through this overridden method.
+    def('sort', (order) => { Array.prototype.sort.call(arr, (a, b) => (order === 'descending' ? b - a : a - b)); return arr; });
+    def('sort_indices', (order) => self.__decArr(arr.map((_, i) => i).sort((a, b) => (order === 'descending' ? arr[b] - arr[a] : arr[a] - arr[b]))));
+    // join/slice/reverse/concat/includes/fill already exist natively on Array with
+    // compatible semantics, so we deliberately leave them to the native methods.
+    return arr;
+  },
+  __decMap: function(m) {
+    if (!(m instanceof Map) || m.__pineDecorated) return m;
+    const def = (name, fn) => Object.defineProperty(m, name, { value: fn, writable: true, configurable: true });
+    Object.defineProperty(m, '__pineDecorated', { value: true, configurable: true });
+    def('put', (k, v) => { m.set(k, v); return v; });
+    def('contains', (k) => m.has(k));
+    def('remove', (k) => m.delete(k));
+    def('keys', () => Array.from(Map.prototype.keys.call(m)));
+    def('values', () => Array.from(Map.prototype.values.call(m)));
+    def('size_', () => m.size);
+    return m;
+  },
+  __decMatrix: function(m) {
+    if (!m || typeof m !== 'object' || m.__pineDecorated) return m;
+    const self = this;
+    const def = (name, fn) => Object.defineProperty(m, name, { value: fn, writable: true, configurable: true });
+    Object.defineProperty(m, '__pineDecorated', { value: true, configurable: true });
+    def('get', (r, c) => self.matrixGet(m, r, c));
+    def('set', (r, c, v) => self.matrixSet(m, r, c, v));
+    def('rows_', () => m.rows);
+    def('columns', () => m.cols);
+    def('fill', (v) => self.matrixFill(m, v));
+    return m;
+  },
+  __decDraw: function(obj) {
+    if (!obj || typeof obj !== 'object') return obj;
+    const p = new Proxy(obj, {
+      get(t, k) {
+        if (k in t || typeof k === 'symbol') return t[k];
+        return function() { return p; };
+      },
+    });
+    return p;
+  },
   alertcondition: function(condition, ...rest) {
     if (globalThis.__pineRuntime) {
       globalThis.__pineRuntime.alerts.push({ condition, args: rest });
@@ -49,6 +123,32 @@ const pinescript = {
     return null;
   },
   barcolor: function(color) { return null; },
+  plotchar: function(series, ...rest) {
+    const rt = globalThis.__pineRuntime;
+    if (!rt) return series;
+    const bar = rt.__barIndex | 0;
+    const ord = (rt.__shapeIdx = (rt.__shapeIdx | 0) + 1) - 1;
+    let key = 'char_' + ord;
+    for (const r of rest) {
+      if (typeof r === 'string') { key = r; break; }
+      if (r && typeof r === 'object' && r.title) { key = String(r.title); break; }
+    }
+    let s = rt.plotshapes[key];
+    if (!s) s = rt.plotshapes[key] = { title: key, data: [] };
+    s.data[bar] = this.__scalar(series);
+    return series;
+  },
+  plotarrow: function(series, ...rest) {
+    const rt = globalThis.__pineRuntime;
+    if (!rt) return series;
+    const bar = rt.__barIndex | 0;
+    const ord = (rt.__plotIdx = (rt.__plotIdx | 0) + 1) - 1;
+    const key = 'arrow_' + ord;
+    let p = rt.plots[key];
+    if (!p) p = rt.plots[key] = { title: key, data: [] };
+    p.data[bar] = this.__scalar(series);
+    return series;
+  },
   bgcolor: function(color, title, editable, showLast) {
     return null;
   },
@@ -470,6 +570,12 @@ const pinescript = {
   atan: function(value) {
     return Math.atan(value);
   },
+  todegrees: function(radians) {
+    return radians * (180 / Math.PI);
+  },
+  toradians: function(degrees) {
+    return degrees * (Math.PI / 180);
+  },
   floor: function(value) {
     return Math.floor(value);
   },
@@ -641,7 +747,7 @@ const pinescript = {
     return series;
   },
   lineNew: function(x1, y1, x2, y2, opts = {}) {
-    return { x1, y1, x2, y2, opts, _type: 'line' };
+    return this.__decDraw({ x1, y1, x2, y2, opts, _type: 'line' });
   },
   lineDelete: function(l) {
     return null;
@@ -661,7 +767,7 @@ const pinescript = {
     return point === 0 || point === 'y1' ? line.y1 : line.y2;
   },
   labelNew: function(x, y, text = '', opts = {}) {
-    return { x, y, text, opts, _type: 'label' };
+    return this.__decDraw({ x, y, text, opts, _type: 'label' });
   },
   labelDelete: function(l) {
     return null;
@@ -676,7 +782,7 @@ const pinescript = {
     return label.text || '';
   },
   boxNew: function(left, top, right, bottom, opts = {}) {
-    return { left, top, right, bottom, opts, _type: 'box' };
+    return this.__decDraw({ left, top, right, bottom, opts, _type: 'box' });
   },
   boxDelete: function(box) {
     return null;
@@ -694,7 +800,7 @@ const pinescript = {
     return box;
   },
   polylineNew: function(points, opts = {}) {
-    return { points: points || [], opts, _type: 'polyline' };
+    return this.__decDraw({ points: points || [], opts, _type: 'polyline' });
   },
   polylineDelete: function(poly) {
     return null;
@@ -765,7 +871,7 @@ const pinescript = {
     return { time: _time ?? null, price: _price ?? null };
   },
   mapNew: function() {
-    return new Map();
+    return this.__decMap(new Map());
   },
   mapSize: function(m) {
     return m instanceof Map ? m.size : 0;
@@ -800,7 +906,7 @@ const pinescript = {
     const r = Math.max(0, rows ?? 0);
     const c = Math.max(0, cols ?? 0);
     const data = Array.from({ length: r }, () => Array.from({ length: c }, () => initialValue));
-    return { rows: r, cols: c, data };
+    return this.__decMatrix({ rows: r, cols: c, data });
   },
   matrixRows: function(m) {
     return m?.rows ?? 0;
@@ -923,11 +1029,62 @@ const pinescript = {
     }
     return null;
   },
+  __jacobiEigen: function(m) {
+    if (!m || !Array.isArray(m.data)) return null;
+    const n = m.rows ?? 0;
+    if (n === 0 || n !== (m.cols ?? 0)) return null;
+    // Work on a copy so the input matrix is untouched.
+    const a = m.data.map(row => row.slice());
+    const v = Array.from({ length: n }, (_, i) => Array.from({ length: n }, (_, j) => (i === j ? 1 : 0)));
+    for (let sweep = 0; sweep < 100; sweep++) {
+      let off = 0;
+      for (let p = 0; p < n; p++) for (let q = p + 1; q < n; q++) off += a[p][q] * a[p][q];
+      if (off < 1e-20) break;
+      for (let p = 0; p < n; p++) {
+        for (let q = p + 1; q < n; q++) {
+          if (Math.abs(a[p][q]) < 1e-18) continue;
+          const theta = (a[q][q] - a[p][p]) / (2 * a[p][q]);
+          const t = Math.sign(theta || 1) / (Math.abs(theta) + Math.sqrt(theta * theta + 1));
+          const cos = 1 / Math.sqrt(t * t + 1);
+          const sin = t * cos;
+          for (let k = 0; k < n; k++) {
+            const akp = a[k][p], akq = a[k][q];
+            a[k][p] = cos * akp - sin * akq;
+            a[k][q] = sin * akp + cos * akq;
+          }
+          for (let k = 0; k < n; k++) {
+            const apk = a[p][k], aqk = a[q][k];
+            a[p][k] = cos * apk - sin * aqk;
+            a[q][k] = sin * apk + cos * aqk;
+          }
+          for (let k = 0; k < n; k++) {
+            const vkp = v[k][p], vkq = v[k][q];
+            v[k][p] = cos * vkp - sin * vkq;
+            v[k][q] = sin * vkp + cos * vkq;
+          }
+        }
+      }
+    }
+    // Sort eigenpairs by eigenvalue, descending.
+    const order = Array.from({ length: n }, (_, i) => i).sort((i, j) => a[j][j] - a[i][i]);
+    const values = order.map(i => a[i][i]);
+    const vectors = Array.from({ length: n }, (_, r) => order.map(c => v[r][c]));
+    return { values, vectors };
+  },
+  matrixEigenvalues: function(m) {
+    const e = this.__jacobiEigen(m);
+    return this.__decArr(e ? e.values : []);
+  },
+  matrixEigenvectors: function(m) {
+    const e = this.__jacobiEigen(m);
+    if (!e) return this.__decMatrix({ rows: 0, cols: 0, data: [] });
+    return this.__decMatrix({ rows: e.vectors.length, cols: e.vectors.length, data: e.vectors });
+  },
   requestSecurity: function(symbol, timeframe, expression) {
     return expression;
   },
   arrayNew: function(initialSize = 0, initialValue = 0) {
-    return Array(initialSize).fill(initialValue);
+    return this.__decArr(Array(initialSize).fill(initialValue));
   },
   arraySize: function(arr) {
     return arr ? arr.length : 0;
@@ -978,10 +1135,10 @@ const pinescript = {
     return arr;
   },
   arraySlice: function(arr, startIndex = 0, endIndex = null) {
-    if (!arr) return [];
+    if (!arr) return this.__decArr([]);
     const start = Number(startIndex) || 0;
     const end = endIndex === null || endIndex === undefined ? arr.length : Number(endIndex) || 0;
-    return arr.slice(start, end);
+    return this.__decArr(arr.slice(start, end));
   },
   arraySort: function(arr, order = 'ascending') {
     if (arr) arr.sort((a, b) => order === 'ascending' ? a - b : b - a);
@@ -1191,7 +1348,7 @@ const pinescript = {
     const info = { ticker: 'AAPL', tickerid: 'NASDAQ:AAPL', prefix: 'NASDAQ', root: 'AAPL', suffix: '' };
     return info[type] || '';
   },
-  timenow: 1781574528878,
+  timenow: 1782784153635,
   barstate: "LAST",
   dividends: {},
   splits: {},
@@ -1245,11 +1402,11 @@ const pinescript = {
   arrayConcat: function(arr1, arr2) {
     if (!arr1) return arr2 || [];
     if (!arr2) return arr1;
-    return arr1.concat(arr2);
+    return this.__decArr(arr1.concat(arr2));
   },
   arrayCopy: function(arr) {
-    if (!arr) return [];
-    return [...arr];
+    if (!arr) return this.__decArr([]);
+    return this.__decArr([...arr]);
   },
   arrayBinarySearch: function(arr, value) {
     if (!arr || arr.length === 0) return -1;
@@ -1339,7 +1496,7 @@ globalThis.input.timeframe = globalThis.input.timeframe || ((defval) => defval);
 
 globalThis.array = globalThis.array || {
 
-  from: (...items) => items,
+  from: (...items) => pinescript.__decArr(items),
 
   size: (arr) => pinescript.arraySize(arr),
 
@@ -1508,6 +1665,8 @@ globalThis.line = globalThis.line || __pineNS({ style_solid: "solid", style_dash
 
 globalThis.box = globalThis.box || __pineNS({});
 
+globalThis.color = globalThis.color || __pineNS(Object.assign(function(c) { return c; }, { new: function(c, t) { return c; }, rgb: function(r, g, b, t) { return "#rgb(" + [r, g, b].join(",") + ")"; }, from_gradient: function(v, lo, hi, c1, c2) { return c1; }, r: function() { return 0; }, g: function() { return 0; }, b: function() { return 0; }, t: function() { return 0; }, aqua: "#00BCD4", black: "#363A45", blue: "#2962FF", fuchsia: "#E040FB", gray: "#787B86", green: "#4CAF50", lime: "#00E676", maroon: "#880E4F", navy: "#311B92", olive: "#808000", orange: "#FF9800", purple: "#9C27B0", red: "#FF5252", silver: "#B2B5BE", teal: "#00897B", white: "#FFFFFF", yellow: "#FFEB3B" }));
+
 globalThis.label = globalThis.label || __pineNS({ style_label_down: "label_down", style_label_up: "label_up", style_none: "none" });
 
 globalThis.polyline = globalThis.polyline || __pineNS({});
@@ -1520,7 +1679,9 @@ globalThis.map = globalThis.map || __pineNS({});
 
 globalThis.session = globalThis.session || __pineNS({ regular: "regular", extended: "extended" });
 
-globalThis.dayofweek = globalThis.dayofweek || __pineNS({ sunday: 1, monday: 2, tuesday: 3, wednesday: 4, thursday: 5, friday: 6, saturday: 7 });
+globalThis.ticker = globalThis.ticker || __pineNS({});
+
+globalThis.dayofweek = globalThis.dayofweek || __pineNS(Object.assign(function(t) { return new Date(t != null ? t : (globalThis.time || 0)).getUTCDay() + 1; }, { sunday: 1, monday: 2, tuesday: 3, wednesday: 4, thursday: 5, friday: 6, saturday: 7 }));
 
 globalThis.timeframe = __pineNS(Object.assign(globalThis.timeframe || {}, { period: (globalThis.timeframe && globalThis.timeframe.period) || "D", isintraday: false, isdaily: true, multiplier: 1 }));
 
@@ -1567,8 +1728,6 @@ globalThis.float = globalThis.float || function(x) { return x == null ? null : N
 globalThis.bool = globalThis.bool || function(x) { return Boolean(x); };
 
 globalThis.string = globalThis.string || function(x) { return x == null ? null : String(x); };
-
-globalThis.dayofweek = globalThis.dayofweek || __pineNS({ sunday: 1, monday: 2, tuesday: 3, wednesday: 4, thursday: 5, friday: 6, saturday: 7 });
 
 globalThis.str = globalThis.str || __pineNS({});
 
@@ -1655,7 +1814,7 @@ pinescript.text = { align_center: "center" };
 
 pinescript.table = {
 
-  new: function(position, columns, rows, opts) { return { position, columns, rows, opts: opts || {}, cells: [] }; },
+  new: function(position, columns, rows, opts) { return pinescript.__decDraw({ position, columns, rows, opts: opts || {}, cells: [] }); },
 
   cell: function(table, column, row, text, opts) {
 
@@ -1690,7 +1849,7 @@ function main() {
   // Study: [TehThomas] - Aligned Timeframe Fair Value Gaps
   // Options: {"overlay":true,"max_boxes_count":500,"max_lines_count":500,"max_bars_back":2000}
   function getAlignedTimeframe() {
-    let result = "";
+    var result = "";
     if ((timeframe.in_seconds() <= 60)) {
       result = "15";
     } else {
@@ -1719,7 +1878,7 @@ function main() {
     return result;
   }
   function getTimeframeDisplay(tf) {
-    let result = "";
+    var result = "";
     if ((tf === "15")) {
       result = "15M";
     } else {
@@ -1751,27 +1910,27 @@ function main() {
     }
     return result;
   }
-  let alignedTF = getAlignedTimeframe();
-  let tfDisplay = getTimeframeDisplay(alignedTF);
-  let extendBars = pinescript.inputInt(20, "Extend boxes", ({ minval: 0, group: "Boxes" }));
-  let Gapsize = pinescript.inputFloat(0, "Min Gap Size (%)", ({ minval: 0, step: 0.1, group: "Boxes", tooltip: "Set the percentage size of how big the fvg should be" }));
-  let dynamicGaps = pinescript.inputBool(false, "Dynamic (shrinking) gaps", ({ group: "Boxes" }));
-  let maxGaps = pinescript.inputInt(10, "Max Unfilled Gaps to Display", ({ minval: 1, group: "Boxes" }));
-  let maxHistory = pinescript.inputInt(50, "Max FVGs in History", ({ minval: 50, maxval: 200, group: "Boxes", tooltip: "Higher = more unfilled gaps available, but slower performance" }));
-  let bullColor = pinescript.inputColor(pinescript.color.new(pinescript.color.hex("#47f7414d"), 85), "Bullish Gap Color", ({ group: "Colors" }));
-  let bearColor = pinescript.inputColor(pinescript.color.hex("#fa7b7b26"), "Bearish Gap Color", ({ group: "Colors" }));
-  let gapBorderColor = pinescript.inputColor(pinescript.color.black, "Gap Border Color", ({ group: "Colors" }));
-  let showMidline = pinescript.inputBool(true, "Show Midline", ({ group: "Midline" }));
-  let midlineColor = pinescript.inputColor(pinescript.color.new(pinescript.color.black, 0), "Midline Color", ({ group: "Midline" }));
-  let midlineStyleOpt = pinescript.inputString("Dotted", "Midline Style", ({ options: ["Solid", "Dashed", "Dotted"], group: "Midline" }));
-  let showLabel = pinescript.inputBool(true, "Show FVG Label", ({ group: "Label" }));
-  let labelColor = pinescript.inputColor(pinescript.color.new(pinescript.color.black, 0), "Label Text Color", ({ group: "Label" }));
-  let labelSize = pinescript.inputString("Small", "Label Size", ({ options: ["Tiny", "Small", "Normal", "Large"], group: "Label" }));
-  let midlineStyle = ((midlineStyleOpt === "Solid") ? line.style_solid : ((midlineStyleOpt === "Dashed") ? line.style_dashed : line.style_dotted));
-  let textSize = ((labelSize === "Tiny") ? pinescript.size.tiny : ((labelSize === "Small") ? pinescript.size.small : ((labelSize === "Normal") ? pinescript.size.normal : pinescript.size.large)));
+  var alignedTF = getAlignedTimeframe();
+  var tfDisplay = getTimeframeDisplay(alignedTF);
+  var extendBars = pinescript.inputInt(20, "Extend boxes", ({ minval: 0, group: "Boxes" }));
+  var Gapsize = pinescript.inputFloat(0, "Min Gap Size (%)", ({ minval: 0, step: 0.1, group: "Boxes", tooltip: "Set the percentage size of how big the fvg should be" }));
+  var dynamicGaps = pinescript.inputBool(false, "Dynamic (shrinking) gaps", ({ group: "Boxes" }));
+  var maxGaps = pinescript.inputInt(10, "Max Unfilled Gaps to Display", ({ minval: 1, group: "Boxes" }));
+  var maxHistory = pinescript.inputInt(50, "Max FVGs in History", ({ minval: 50, maxval: 200, group: "Boxes", tooltip: "Higher = more unfilled gaps available, but slower performance" }));
+  var bullColor = pinescript.inputColor(pinescript.color.new(pinescript.color.hex("#47f7414d"), 85), "Bullish Gap Color", ({ group: "Colors" }));
+  var bearColor = pinescript.inputColor(pinescript.color.hex("#fa7b7b26"), "Bearish Gap Color", ({ group: "Colors" }));
+  var gapBorderColor = pinescript.inputColor(pinescript.color.black, "Gap Border Color", ({ group: "Colors" }));
+  var showMidline = pinescript.inputBool(true, "Show Midline", ({ group: "Midline" }));
+  var midlineColor = pinescript.inputColor(pinescript.color.new(pinescript.color.black, 0), "Midline Color", ({ group: "Midline" }));
+  var midlineStyleOpt = pinescript.inputString("Dotted", "Midline Style", ({ options: ["Solid", "Dashed", "Dotted"], group: "Midline" }));
+  var showLabel = pinescript.inputBool(true, "Show FVG Label", ({ group: "Label" }));
+  var labelColor = pinescript.inputColor(pinescript.color.new(pinescript.color.black, 0), "Label Text Color", ({ group: "Label" }));
+  var labelSize = pinescript.inputString("Small", "Label Size", ({ options: ["Tiny", "Small", "Normal", "Large"], group: "Label" }));
+  var midlineStyle = ((midlineStyleOpt === "Solid") ? line.style_solid : ((midlineStyleOpt === "Dashed") ? line.style_dashed : line.style_dotted));
+  var textSize = ((labelSize === "Tiny") ? pinescript.size.tiny : ((labelSize === "Small") ? pinescript.size.small : ((labelSize === "Normal") ? pinescript.size.normal : pinescript.size.large)));
   if (state.fvg_records === undefined) state.fvg_records = pinescript.arrayNew();
-  let [htfLow, htfHigh, htfLow2, htfHigh2, htfTime] = pinescript.unpack(pinescript.requestSecurity(syminfo.tickerid, alignedTF, [pinescript.hist(0, low, 1), pinescript.hist(1, high, 1), pinescript.hist(2, low, 3), pinescript.hist(3, high, 3), pinescript.hist(4, time, 1)], ({ lookahead: barmerge.lookahead_on })), 5);
-  let htfChanged = (pinescript.change(pinescript.series(5, htfTime)) !== 0);
+  var [htfLow, htfHigh, htfLow2, htfHigh2, htfTime] = pinescript.unpack(pinescript.requestSecurity(syminfo.tickerid, alignedTF, [pinescript.hist(0, low, 1), pinescript.hist(1, high, 1), pinescript.hist(2, low, 3), pinescript.hist(3, high, 3), pinescript.hist(4, time, 1)], ({ lookahead: barmerge.lookahead_on })), 5);
+  var htfChanged = (pinescript.change(pinescript.series(5, htfTime)) !== 0);
   if (state.htfBarStart === undefined) state.htfBarStart = null;
   if (state.htfBarStart1 === undefined) state.htfBarStart1 = null;
   if (state.htfBarStart2 === undefined) state.htfBarStart2 = null;
@@ -1782,25 +1941,25 @@ function main() {
     state.htfBarStart1 = state.htfBarStart;
     state.htfBarStart = bar_index;
   }
-  let threshold = (Gapsize / 100);
-  let bullFVG = ((htfChanged && (htfLow > htfHigh2)) && (((htfLow - htfHigh2) / htfHigh2) > threshold));
-  let bearFVG = ((htfChanged && (htfHigh < htfLow2)) && (((htfLow2 - htfHigh) / htfHigh) > threshold));
-  let bullFVG_entry = false;
-  let bearFVG_entry = false;
-  let i = 0;
+  var threshold = (Gapsize / 100);
+  var bullFVG = ((htfChanged && (htfLow > htfHigh2)) && (((htfLow - htfHigh2) / htfHigh2) > threshold));
+  var bearFVG = ((htfChanged && (htfHigh < htfLow2)) && (((htfLow2 - htfHigh) / htfHigh) > threshold));
+  var bullFVG_entry = false;
+  var bearFVG_entry = false;
+  var i = 0;
   while ((i < pinescript.arraySize(state.fvg_records))) {
-    let get = pinescript.arrayGet(state.fvg_records, i);
+    var get = pinescript.arrayGet(state.fvg_records, i);
     if (get.isFilled) {
       i += 1;
       continue;
     }
-    let right_edge = (bar_index + extendBars);
-    let top = get.top;
-    let bot = get.bot;
-    let changed = false;
-    let shouldMarkFilled = false;
+    var right_edge = (bar_index + extendBars);
+    var top = get.top;
+    var bot = get.bot;
+    var changed = false;
+    var shouldMarkFilled = false;
     if ((!get.triggered && (bar_index > get.created_bar))) {
-      let inGap = ((low <= top) && (high >= bot));
+      var inGap = ((low <= top) && (high >= bot));
       if (inGap) {
         if (get.Bullish) {
           bullFVG_entry = true;
@@ -1860,7 +2019,7 @@ function main() {
     if (get.isVisible) {
       box.set_right(get.fvgBox, right_edge);
       if ((showMidline && !pinescript.na(get.midLine))) {
-        let mid = ((top + bot) / 2);
+        var mid = ((top + bot) / 2);
         line.set_x2(get.midLine, right_edge);
         line.set_y1(get.midLine, mid);
         line.set_y2(get.midLine, mid);
@@ -1870,7 +2029,7 @@ function main() {
     i += 1;
   }
   function addFVG(isBull, top, bot, color, startBar) {
-    let fvgBox = pinescript.boxNew(({ left: startBar, top: top, right: (bar_index + extendBars), bottom: bot, bgcolor: pinescript.color, border_color: gapBorderColor }));
+    var fvgBox = pinescript.boxNew(({ left: startBar, top: top, right: (bar_index + extendBars), bottom: bot, bgcolor: pinescript.color, border_color: gapBorderColor }));
     if (showLabel) {
       box.set_text(fvgBox, (tfDisplay + " FVG"));
       box.set_text_color(fvgBox, labelColor);
@@ -1878,18 +2037,24 @@ function main() {
       box.set_text_halign(fvgBox, pinescript.text.align_center);
       box.set_text_valign(fvgBox, pinescript.text.align_center);
     }
-    mid = ((top + bot) / 2);
-    let midLine = (showMidline ? pinescript.lineNew(startBar, mid, (bar_index + extendBars), mid, xloc.bar_index, ({ color: midlineColor, style: midlineStyle })) : null);
-    let newFvg = FVG.new(top, bot, isBull, bar_index, startBar, false, fvgBox, midLine, false, true);
-    fvg_records.unshift(newFvg);
+    var mid = ((top + bot) / 2);
+    var midLine = (showMidline ? pinescript.lineNew(startBar, mid, (bar_index + extendBars), mid, xloc.bar_index, ({ color: midlineColor, style: midlineStyle })) : null);
+    var newFvg = FVG.new(top, bot, isBull, bar_index, startBar, false, fvgBox, midLine, false, true);
+    state.fvg_records.unshift(newFvg);
     if ((pinescript.arraySize(state.fvg_records) > maxHistory)) {
-      let oldFvg = pinescript.arrayPop(state.fvg_records);
+      var oldFvg = pinescript.arrayPop(state.fvg_records);
       if ((!oldFvg.isFilled && oldFvg.isVisible)) {
         pinescript.boxDelete(oldFvg.fvgBox);
         if ((showMidline && !pinescript.na(oldFvg.midLine))) {
-          pinescript.lineDelete(oldFvg.midLine);
+          return pinescript.lineDelete(oldFvg.midLine);
+        } else {
+          return null;
         }
+      } else {
+        return null;
       }
+    } else {
+      return null;
     }
   }
   if ((bullFVG && !pinescript.na(state.htfBarStart2))) {
@@ -1898,16 +2063,16 @@ function main() {
   if ((bearFVG && !pinescript.na(state.htfBarStart2))) {
     addFVG(false, htfLow2, htfHigh, bearColor, state.htfBarStart2);
   }
-  let unfilledCount = 0;
-  let i2 = 0;
+  var unfilledCount = 0;
+  var i2 = 0;
   while ((i2 < pinescript.arraySize(state.fvg_records))) {
-    let get2 = pinescript.arrayGet(state.fvg_records, i2);
+    var get2 = pinescript.arrayGet(state.fvg_records, i2);
     if (!get2.isFilled) {
       unfilledCount += 1;
       if ((unfilledCount <= maxGaps)) {
         if (!get2.isVisible) {
-          let color_1 = (get2.Bullish ? bullColor : bearColor);
-          let newBox = pinescript.boxNew(({ left: get2.start_bar, top: get2.top, right: (bar_index + extendBars), bottom: get2.bot, bgcolor: color_1, border_color: gapBorderColor }));
+          var color_1 = (get2.Bullish ? bullColor : bearColor);
+          var newBox = pinescript.boxNew(({ left: get2.start_bar, top: get2.top, right: (bar_index + extendBars), bottom: get2.bot, bgcolor: color_1, border_color: gapBorderColor }));
           if (showLabel) {
             box.set_text(newBox, (tfDisplay + " FVG"));
             box.set_text_color(newBox, labelColor);
@@ -1916,7 +2081,7 @@ function main() {
             box.set_text_valign(newBox, pinescript.text.align_center);
           }
           mid = ((get2.top + get2.bot) / 2);
-          let newLine = (showMidline ? pinescript.lineNew(get2.start_bar, mid, (bar_index + extendBars), mid, xloc.bar_index, ({ color: midlineColor, style: midlineStyle })) : null);
+          var newLine = (showMidline ? pinescript.lineNew(get2.start_bar, mid, (bar_index + extendBars), mid, xloc.bar_index, ({ color: midlineColor, style: midlineStyle })) : null);
           get2 = FVG.new(get2.top, get2.bot, get2.Bullish, get2.created_bar, get2.start_bar, get2.triggered, newBox, newLine, get2.isFilled, true);
           pinescript.arraySet(state.fvg_records, i2, get2);
         }
@@ -1977,6 +2142,10 @@ function run(data, options = {}) {
     rt.__shapeIdx = 0;
     globalThis.bar_index = i;
     globalThis.last_bar_index = n - 1;
+    globalThis.time_tradingday = inTime[i];
+    globalThis.time_close = inTime[i];
+    globalThis.last_bar_time = inTime[n - 1];
+    globalThis.timenow = inTime[n - 1];
     globalThis.barstate = {
       isfirst: i === 0, islast: i === n - 1, isrealtime: false, ishistory: true,
       isconfirmed: true, isnew: true, islastconfirmedhistory: i === n - 1,

@@ -24,6 +24,23 @@ const SERIES_ARG_FUNCS = {
   'pinescript.lowestbars': [0],
   'pinescript.sum': [0],
   'pinescript.offset': [0],
+  // Moving-average / dispersion indicators slice their source as an array, so a
+  // scalar source must be recorded into a per-bar history buffer first.
+  'pinescript.sma': [0],
+  'pinescript.ema': [0],
+  'pinescript.wma': [0],
+  'pinescript.rma': [0],
+  'pinescript.hma': [0],
+  'pinescript.alma': [0],
+  'pinescript.swma': [0],
+  'pinescript.rsi': [0],
+  'pinescript.roc': [0],
+  'pinescript.linreg': [0],
+  'pinescript.variance': [0],
+  'pinescript.stdev': [0],
+  'pinescript.median': [0],
+  'pinescript.bb': [0],
+  'pinescript.correlation': [0, 1],
 };
 
 class CodeGenerator {
@@ -51,6 +68,14 @@ class CodeGenerator {
     // engine can keep a separate per-bar history buffer for it.
     this.siteCounter = 0;
 
+    // Per-scope record of which variable names have already been declared, so we
+    // know when to emit a fresh `var` vs. a plain reassignment. PineScript is
+    // function-scoped (a variable first set inside an if/for block is visible for
+    // the rest of the function), so we declare with `var` -- which JavaScript
+    // hoists to the function top -- and track declarations per function scope so
+    // locals in one function don't suppress declarations in another.
+    this.scopeStack = [];
+
     this.reservedNamespaces = new Set([
       'ta', 'math', 'array', 'str',
       'color', 'table', 'position', 'location', 'shape', 'size', 'text',
@@ -62,6 +87,30 @@ class CodeGenerator {
   // Hands out the next stable call-site id for history-dependent runtime calls.
   nextSite() {
     return this.siteCounter++;
+  }
+
+  // --- Scope tracking for declarations ---
+  pushScope(names = []) {
+    this.scopeStack.push(new Set(names));
+  }
+
+  popScope() {
+    this.scopeStack.pop();
+  }
+
+  // Has `name` already been declared in the current function scope? Falls back to
+  // the global name set when no scope is active (e.g. module-level constructors).
+  scopeDeclared(name) {
+    const s = this.scopeStack[this.scopeStack.length - 1];
+    return s ? s.has(name) : this.context.variables.has(name);
+  }
+
+  // Record `name` as declared in the current scope (and globally, for getSafeName
+  // collision checks).
+  scopeDeclare(name) {
+    const s = this.scopeStack[this.scopeStack.length - 1];
+    if (s) s.add(name);
+    this.context.variables.add(name);
   }
 
   // Renames user-declared variables that collide with reserved Pine namespaces
@@ -157,12 +206,12 @@ class CodeGenerator {
     // of throwing "is not iterable" (Pine functions often return na early on).
     const rhs = `pinescript.unpack(${this.generate(node.value)}, ${(node.targets || []).length})`;
 
-    const needsDeclaration = targets.some(t => !this.context.variables.has(t) && !this.reservedNamespaces.has(t));
+    const needsDeclaration = targets.some(t => !this.scopeDeclared(t) && !this.reservedNamespaces.has(t));
     if (needsDeclaration) {
       for (const t of targets) {
-        if (!this.reservedNamespaces.has(t)) this.context.variables.add(t);
+        if (!this.reservedNamespaces.has(t)) this.scopeDeclare(t);
       }
-      this.writeln(`let ${lhs} = ${rhs};`);
+      this.writeln(`var ${lhs} = ${rhs};`);
       return;
     }
 
@@ -220,7 +269,7 @@ class CodeGenerator {
 
     // Shim for Pine's array namespace -- delegates to the pinescript runtime functions.
     this.write('globalThis.array = globalThis.array || {\n');
-    this.write('  from: (...items) => items,\n');
+    this.write('  from: (...items) => pinescript.__decArr(items),\n');
     this.write('  size: (arr) => pinescript.arraySize(arr),\n');
     this.write('  get: (arr, i) => pinescript.arrayGet(arr, i),\n');
     this.write('  set: (arr, i, v) => pinescript.arraySet(arr, i, v),\n');
@@ -326,13 +375,19 @@ class CodeGenerator {
     this.write('globalThis.chart = globalThis.chart || __pineNS({ point: __pineNS({}), bg_color: null, fg_color: null });\n');
     this.write('globalThis.line = globalThis.line || __pineNS({ style_solid: "solid", style_dashed: "dashed", style_dotted: "dotted" });\n');
     this.write('globalThis.box = globalThis.box || __pineNS({});\n');
+    // color is a namespace of constants (color.red) plus helpers (color.new/rgb).
+    // We don't render, so colors are opaque string tokens and helpers pass through.
+    this.write('globalThis.color = globalThis.color || __pineNS(Object.assign(function(c) { return c; }, { new: function(c, t) { return c; }, rgb: function(r, g, b, t) { return "#rgb(" + [r, g, b].join(",") + ")"; }, from_gradient: function(v, lo, hi, c1, c2) { return c1; }, r: function() { return 0; }, g: function() { return 0; }, b: function() { return 0; }, t: function() { return 0; }, aqua: "#00BCD4", black: "#363A45", blue: "#2962FF", fuchsia: "#E040FB", gray: "#787B86", green: "#4CAF50", lime: "#00E676", maroon: "#880E4F", navy: "#311B92", olive: "#808000", orange: "#FF9800", purple: "#9C27B0", red: "#FF5252", silver: "#B2B5BE", teal: "#00897B", white: "#FFFFFF", yellow: "#FFEB3B" }));\n');
     this.write('globalThis.label = globalThis.label || __pineNS({ style_label_down: "label_down", style_label_up: "label_up", style_none: "none" });\n');
     this.write('globalThis.polyline = globalThis.polyline || __pineNS({});\n');
     this.write('globalThis.linefill = globalThis.linefill || __pineNS({});\n');
     this.write('globalThis.matrix = globalThis.matrix || __pineNS({});\n');
     this.write('globalThis.map = globalThis.map || __pineNS({});\n');
     this.write('globalThis.session = globalThis.session || __pineNS({ regular: "regular", extended: "extended" });\n');
-    this.write('globalThis.dayofweek = globalThis.dayofweek || __pineNS({ sunday: 1, monday: 2, tuesday: 3, wednesday: 4, thursday: 5, friday: 6, saturday: 7 });\n');
+    this.write('globalThis.ticker = globalThis.ticker || __pineNS({});\n');
+    // dayofweek is both a function (dayofweek(time) -> 1..7, Sunday=1) and a holder
+    // of day-name constants (dayofweek.monday). Wrap a callable so both forms work.
+    this.write('globalThis.dayofweek = globalThis.dayofweek || __pineNS(Object.assign(function(t) { return new Date(t != null ? t : (globalThis.time || 0)).getUTCDay() + 1; }, { sunday: 1, monday: 2, tuesday: 3, wednesday: 4, thursday: 5, friday: 6, saturday: 7 }));\n');
     this.write('globalThis.timeframe = __pineNS(Object.assign(globalThis.timeframe || {}, { period: (globalThis.timeframe && globalThis.timeframe.period) || "D", isintraday: false, isdaily: true, multiplier: 1 }));\n');
     this.write('globalThis.request = __pineNS(globalThis.request || {});\n');
     this.write('globalThis.input = __pineNS(globalThis.input || {});\n');
@@ -359,7 +414,6 @@ class CodeGenerator {
     this.write('globalThis.float = globalThis.float || function(x) { return x == null ? null : Number(x); };\n');
     this.write('globalThis.bool = globalThis.bool || function(x) { return Boolean(x); };\n');
     this.write('globalThis.string = globalThis.string || function(x) { return x == null ? null : String(x); };\n');
-    this.write('globalThis.dayofweek = globalThis.dayofweek || __pineNS({ sunday: 1, monday: 2, tuesday: 3, wednesday: 4, thursday: 5, friday: 6, saturday: 7 });\n');
     this.write('globalThis.str = globalThis.str || __pineNS({});\n');
     // The reserved namespaces (ta, math, str, array) are emitted as pinescript.<ns>
     // when a script uses them as a value (e.g. `math.pi`), so mirror the global
@@ -412,7 +466,9 @@ class CodeGenerator {
     // Table namespace -- enough to let scripts create tables and populate cells
     // without crashing, even though we don't render them visually.
     this.write('pinescript.table = {\n');
-    this.write('  new: function(position, columns, rows, opts) { return { position, columns, rows, opts: opts || {}, cells: [] }; },\n');
+    // __decDraw lets Pine v6 method syntax (t.cell(...), t.merge_cells(...)) work as
+    // chainable no-ops while the real `cells` array still backs the function form.
+    this.write('  new: function(position, columns, rows, opts) { return pinescript.__decDraw({ position, columns, rows, opts: opts || {}, cells: [] }); },\n');
     this.write('  cell: function(table, column, row, text, opts) {\n');
     this.write('    if (!table) return null;\n');
     this.write('    table.cells.push({ column, row, text, opts: opts || {} });\n');
@@ -446,6 +502,7 @@ class CodeGenerator {
     this.pushIndent();
 
     this.functionLocalDeclStack.push(new Set());
+    this.pushScope();
 
     this.writeln('globalThis.__pineState = globalThis.__pineState || {};');
     this.writeln('const state = globalThis.__pineState["main"] = globalThis.__pineState["main"] || {};');
@@ -461,6 +518,7 @@ class CodeGenerator {
       this.generate(statement);
     }
 
+    this.popScope();
     this.functionLocalDeclStack.pop();
 
     this.popIndent();
@@ -529,6 +587,10 @@ function run(data, options = {}) {
     rt.__shapeIdx = 0;
     globalThis.bar_index = i;
     globalThis.last_bar_index = n - 1;
+    globalThis.time_tradingday = inTime[i];
+    globalThis.time_close = inTime[i];
+    globalThis.last_bar_time = inTime[n - 1];
+    globalThis.timenow = inTime[n - 1];
     globalThis.barstate = {
       isfirst: i === 0, islast: i === n - 1, isrealtime: false, ishistory: true,
       isconfirmed: true, isnew: true, islastconfirmedhistory: i === n - 1,
@@ -575,7 +637,6 @@ function run(data, options = {}) {
 
   generateVariableDeclaration(node) {
     const name = this.getSafeName(node.name);
-    const prefix = (node.isVarip || node.isVar || node.declaredType) ? 'let' : 'const';
     if (node.isVar || node.isVarip) {
       // var/varip declarations persist across bars, so we store them in the state object
       // and only initialize on the very first bar.
@@ -584,22 +645,26 @@ function run(data, options = {}) {
       return;
     }
 
-    this.context.variables.add(name);
-    this.writeln(`${prefix} ${name} = ${this.generate(node.value)};`);
+    // `var` (function-scoped) so the variable matches PineScript's scoping even
+    // when declared inside a block.
+    const decl = this.scopeDeclared(name) ? '' : 'var ';
+    this.scopeDeclare(name);
+    this.writeln(`${decl}${name} = ${this.generate(node.value)};`);
   }
 
   generateAssignment(node) {
-    // Pine lets you assign to a variable without declaring it first.
-    // We detect the first assignment and emit a `let` declaration automatically.
+    // Pine lets you assign to a variable without declaring it first. We detect the
+    // first assignment in a scope and emit a `var` declaration automatically (var,
+    // not let, so it is function-scoped like PineScript).
     if (node.target && node.target.type === 'Identifier') {
       const name = this.getSafeName(node.target.name);
       if (this.context.stateVars.has(name)) {
         this.writeln(`state.${name} = ${this.generate(node.value)};`);
         return;
       }
-      if (!this.context.variables.has(name) && !this.reservedNamespaces.has(name)) {
-        this.context.variables.add(name);
-        this.writeln(`let ${name} = ${this.generate(node.value)};`);
+      if (!this.scopeDeclared(name) && !this.reservedNamespaces.has(name)) {
+        this.scopeDeclare(name);
+        this.writeln(`var ${name} = ${this.generate(node.value)};`);
         return;
       }
     }
@@ -657,8 +722,15 @@ function run(data, options = {}) {
   }
 
   generateForInStatement(node) {
-    const variable = Array.isArray(node.variable) ? `[${node.variable.join(', ')}]` : node.variable;
-    this.writeln(`for (const ${variable} of ${this.generate(node.iterable)}) {`);
+    const iterable = this.generate(node.iterable);
+    if (Array.isArray(node.variable)) {
+      // Pine's `for [index, value] in collection` yields the index/key alongside
+      // the value, which maps to JS .entries() (works for arrays and Maps alike).
+      // Guard against a null/undefined collection so the loop simply doesn't run.
+      this.writeln(`for (const [${node.variable.join(', ')}] of (${iterable} ?? []).entries()) {`);
+    } else {
+      this.writeln(`for (const ${node.variable} of (${iterable} ?? [])) {`);
+    }
     this.pushIndent();
     this.generate(node.body);
     this.popIndent();
@@ -749,22 +821,27 @@ function run(data, options = {}) {
     }
 
     const localRename = new Map();
+    const paramNames = [];
     const params = (node.params || []).map(p => {
-      if (typeof p === 'string') return p;
+      if (typeof p === 'string') { paramNames.push(p); return p; }
       if (p && typeof p === 'object') {
         let paramName = p.name;
         if (node.isMethod && paramName === 'this') {
           paramName = '_this';
           localRename.set('this', '_this');
         }
+        paramNames.push(paramName);
         if (p.defaultValue) return `${paramName} = ${this.generate(p.defaultValue)}`;
         return paramName;
       }
+      paramNames.push(String(p));
       return String(p);
     });
 
     this.localRenameStack.push(localRename);
     this.functionLocalDeclStack.push(new Set());
+    // New function scope, seeded with the parameter names so they aren't re-declared.
+    this.pushScope(paramNames);
     this.writeln(`function ${node.name}(${params.join(', ')}) {`);
     this.pushIndent();
 
@@ -773,8 +850,10 @@ function run(data, options = {}) {
       for (let i = 0; i < stmts.length; i++) {
         const statement = stmts[i];
         const isLast = i === stmts.length - 1;
-        if (isLast && statement && statement.type === 'ExpressionStatement') {
-          this.writeln(`return ${this.generate(statement.expression)};`);
+        if (isLast) {
+          // A Pine function returns the value of its last expression -- including
+          // when that expression is an if/else, which we turn into returns.
+          this.generateReturnable(statement);
         } else {
           this.generate(statement);
         }
@@ -785,6 +864,58 @@ function run(data, options = {}) {
 
     this.popIndent();
     this.writeln('}');
+    this.popScope();
+    this.functionLocalDeclStack.pop();
+    this.localRenameStack.pop();
+  }
+
+  // Emits a statement in "return position": the value it produces becomes the
+  // function's return value. Handles plain expressions and if/else (whose taken
+  // branch's last expression is what Pine returns).
+  generateReturnable(stmt) {
+    if (!stmt) {
+      this.writeln('return null;');
+      return;
+    }
+    if (stmt.type === 'ExpressionStatement') {
+      this.writeln(`return ${this.generate(stmt.expression)};`);
+      return;
+    }
+    if (stmt.type === 'IfStatement') {
+      this.writeln(`if (${this.generate(stmt.condition)}) {`);
+      this.pushIndent();
+      this.generateBranchReturnable(stmt.thenBranch);
+      this.popIndent();
+      this.writeln('} else {');
+      this.pushIndent();
+      if (stmt.elseBranch) this.generateBranchReturnable(stmt.elseBranch);
+      else this.writeln('return null;');
+      this.popIndent();
+      this.writeln('}');
+      return;
+    }
+    // Anything else (assignment, loop, ...) can't be a return value; emit it as a
+    // normal statement. The function then returns undefined down this path, which
+    // matches Pine returning na from a branch that ends in a non-expression.
+    this.generate(stmt);
+  }
+
+  // Generates a branch (Block or single statement) with its last statement in
+  // return position.
+  generateBranchReturnable(branch) {
+    if (branch && branch.type === 'Block') {
+      const stmts = branch.statements || [];
+      if (stmts.length === 0) {
+        this.writeln('return null;');
+        return;
+      }
+      for (let i = 0; i < stmts.length; i++) {
+        if (i === stmts.length - 1) this.generateReturnable(stmts[i]);
+        else this.generate(stmts[i]);
+      }
+    } else {
+      this.generateReturnable(branch);
+    }
   }
 
   generateBlock(node) {
@@ -947,7 +1078,14 @@ function run(data, options = {}) {
     }
     if (node.type === 'PropertyAccess') {
       const fullName = this.flattenPropertyAccess(node);
-      if (fullName) return this.mapFunctionName(fullName);
+      if (fullName) {
+        const mapped = this.mapFunctionName(fullName);
+        // Only use the mapping if the name actually resolved to a runtime function.
+        // Otherwise fall through to normal generation so the receiver resolves
+        // correctly -- e.g. a method call on a `var` array (uniqueLengths.push(x))
+        // becomes state.uniqueLengths.push(x), not bare uniqueLengths.push(x).
+        if (mapped !== fullName) return mapped;
+      }
     }
     return this.generate(node);
   }
@@ -1087,6 +1225,7 @@ function run(data, options = {}) {
       'array.new_line': 'pinescript.arrayNew',
       'array.new_box': 'pinescript.arrayNew',
       'array.new_polyline': 'pinescript.arrayNew',
+      'array.new_linefill': 'pinescript.arrayNew',
       'array.size': 'pinescript.arraySize',
       'array.get': 'pinescript.arrayGet',
       'array.set': 'pinescript.arraySet',
@@ -1203,6 +1342,8 @@ function run(data, options = {}) {
       // Plotting and visual output
       'plot': 'pinescript.plot',
       'plotshape': 'pinescript.plotshape',
+      'plotchar': 'pinescript.plotchar',
+      'plotarrow': 'pinescript.plotarrow',
       'plotbar': 'pinescript.plotbar',
       'plotcandle': 'pinescript.plotcandle',
       'bgcolor': 'pinescript.bgcolor',
