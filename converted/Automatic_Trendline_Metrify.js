@@ -42,6 +42,80 @@ const pinescript = {
     if (value != null && typeof value[Symbol.iterator] === 'function') return Array.from(value);
     return new Array(count || 0).fill(null);
   },
+  __decArr: function(arr) {
+    if (!Array.isArray(arr) || arr.__pineDecorated) return arr;
+    const self = this;
+    const def = (name, fn) => Object.defineProperty(arr, name, { value: fn, writable: true, configurable: true });
+    Object.defineProperty(arr, '__pineDecorated', { value: true, configurable: true });
+    def('get', (i) => (arr[i] === undefined ? null : arr[i]));
+    def('set', (i, v) => { arr[i] = v; return v; });
+    def('size', () => arr.length);
+    def('clear', () => { arr.length = 0; });
+    def('insert', (i, v) => { arr.splice(i, 0, v); });
+    def('remove', (i) => arr.splice(i, 1)[0]);
+    def('contains', (v) => arr.includes(v));
+    def('indexof', (v) => arr.indexOf(v));
+    def('lastindexof', (v) => arr.lastIndexOf(v));
+    def('first', () => (arr.length ? arr[0] : null));
+    def('last', () => (arr.length ? arr[arr.length - 1] : null));
+    def('sum', () => arr.reduce((a, b) => a + b, 0));
+    def('avg', () => (arr.length ? arr.reduce((a, b) => a + b, 0) / arr.length : 0));
+    def('min', () => (arr.length ? Math.min(...arr) : null));
+    def('max', () => (arr.length ? Math.max(...arr) : null));
+    def('range', () => (arr.length ? Math.max(...arr) - Math.min(...arr) : null));
+    // Statistical methods that route to the array.* built-ins (these names are not
+    // native to JS arrays, so attaching them here is safe from recursion).
+    def('median', () => self.arrayMedian(arr));
+    def('mode', () => self.arrayMode(arr));
+    def('stdev', () => self.arrayStdev(arr));
+    def('variance', () => self.arrayVariance(arr));
+    def('covariance', (other) => self.arrayCovariance(arr, other));
+    def('percentile_linear_interpolation', (p) => self.arrayPercentileLinearInterpolation(arr, p));
+    def('percentile_nearest_rank', (p) => self.arrayPercentileNearestRank(arr, p));
+    def('abs', () => self.__decArr(self.arrayAbs(arr)));
+    def('binary_search', (v) => self.arrayBinarySearch(arr, v));
+    // Pine's array.sort takes an order string, not a comparator. Use the native
+    // sort via .call so we don't recurse through this overridden method.
+    def('sort', (order) => { Array.prototype.sort.call(arr, (a, b) => (order === 'descending' ? b - a : a - b)); return arr; });
+    def('sort_indices', (order) => self.__decArr(arr.map((_, i) => i).sort((a, b) => (order === 'descending' ? arr[b] - arr[a] : arr[a] - arr[b]))));
+    // join/slice/reverse/concat/includes/fill already exist natively on Array with
+    // compatible semantics, so we deliberately leave them to the native methods.
+    return arr;
+  },
+  __decMap: function(m) {
+    if (!(m instanceof Map) || m.__pineDecorated) return m;
+    const def = (name, fn) => Object.defineProperty(m, name, { value: fn, writable: true, configurable: true });
+    Object.defineProperty(m, '__pineDecorated', { value: true, configurable: true });
+    def('put', (k, v) => { m.set(k, v); return v; });
+    def('contains', (k) => m.has(k));
+    def('remove', (k) => m.delete(k));
+    def('keys', () => Array.from(Map.prototype.keys.call(m)));
+    def('values', () => Array.from(Map.prototype.values.call(m)));
+    def('size_', () => m.size);
+    return m;
+  },
+  __decMatrix: function(m) {
+    if (!m || typeof m !== 'object' || m.__pineDecorated) return m;
+    const self = this;
+    const def = (name, fn) => Object.defineProperty(m, name, { value: fn, writable: true, configurable: true });
+    Object.defineProperty(m, '__pineDecorated', { value: true, configurable: true });
+    def('get', (r, c) => self.matrixGet(m, r, c));
+    def('set', (r, c, v) => self.matrixSet(m, r, c, v));
+    def('rows_', () => m.rows);
+    def('columns', () => m.cols);
+    def('fill', (v) => self.matrixFill(m, v));
+    return m;
+  },
+  __decDraw: function(obj) {
+    if (!obj || typeof obj !== 'object') return obj;
+    const p = new Proxy(obj, {
+      get(t, k) {
+        if (k in t || typeof k === 'symbol') return t[k];
+        return function() { return p; };
+      },
+    });
+    return p;
+  },
   alertcondition: function(condition, ...rest) {
     if (globalThis.__pineRuntime) {
       globalThis.__pineRuntime.alerts.push({ condition, args: rest });
@@ -49,6 +123,32 @@ const pinescript = {
     return null;
   },
   barcolor: function(color) { return null; },
+  plotchar: function(series, ...rest) {
+    const rt = globalThis.__pineRuntime;
+    if (!rt) return series;
+    const bar = rt.__barIndex | 0;
+    const ord = (rt.__shapeIdx = (rt.__shapeIdx | 0) + 1) - 1;
+    let key = 'char_' + ord;
+    for (const r of rest) {
+      if (typeof r === 'string') { key = r; break; }
+      if (r && typeof r === 'object' && r.title) { key = String(r.title); break; }
+    }
+    let s = rt.plotshapes[key];
+    if (!s) s = rt.plotshapes[key] = { title: key, data: [] };
+    s.data[bar] = this.__scalar(series);
+    return series;
+  },
+  plotarrow: function(series, ...rest) {
+    const rt = globalThis.__pineRuntime;
+    if (!rt) return series;
+    const bar = rt.__barIndex | 0;
+    const ord = (rt.__plotIdx = (rt.__plotIdx | 0) + 1) - 1;
+    const key = 'arrow_' + ord;
+    let p = rt.plots[key];
+    if (!p) p = rt.plots[key] = { title: key, data: [] };
+    p.data[bar] = this.__scalar(series);
+    return series;
+  },
   bgcolor: function(color, title, editable, showLast) {
     return null;
   },
@@ -470,6 +570,12 @@ const pinescript = {
   atan: function(value) {
     return Math.atan(value);
   },
+  todegrees: function(radians) {
+    return radians * (180 / Math.PI);
+  },
+  toradians: function(degrees) {
+    return degrees * (Math.PI / 180);
+  },
   floor: function(value) {
     return Math.floor(value);
   },
@@ -641,7 +747,7 @@ const pinescript = {
     return series;
   },
   lineNew: function(x1, y1, x2, y2, opts = {}) {
-    return { x1, y1, x2, y2, opts, _type: 'line' };
+    return this.__decDraw({ x1, y1, x2, y2, opts, _type: 'line' });
   },
   lineDelete: function(l) {
     return null;
@@ -661,7 +767,7 @@ const pinescript = {
     return point === 0 || point === 'y1' ? line.y1 : line.y2;
   },
   labelNew: function(x, y, text = '', opts = {}) {
-    return { x, y, text, opts, _type: 'label' };
+    return this.__decDraw({ x, y, text, opts, _type: 'label' });
   },
   labelDelete: function(l) {
     return null;
@@ -676,7 +782,7 @@ const pinescript = {
     return label.text || '';
   },
   boxNew: function(left, top, right, bottom, opts = {}) {
-    return { left, top, right, bottom, opts, _type: 'box' };
+    return this.__decDraw({ left, top, right, bottom, opts, _type: 'box' });
   },
   boxDelete: function(box) {
     return null;
@@ -694,7 +800,7 @@ const pinescript = {
     return box;
   },
   polylineNew: function(points, opts = {}) {
-    return { points: points || [], opts, _type: 'polyline' };
+    return this.__decDraw({ points: points || [], opts, _type: 'polyline' });
   },
   polylineDelete: function(poly) {
     return null;
@@ -765,7 +871,7 @@ const pinescript = {
     return { time: _time ?? null, price: _price ?? null };
   },
   mapNew: function() {
-    return new Map();
+    return this.__decMap(new Map());
   },
   mapSize: function(m) {
     return m instanceof Map ? m.size : 0;
@@ -800,7 +906,7 @@ const pinescript = {
     const r = Math.max(0, rows ?? 0);
     const c = Math.max(0, cols ?? 0);
     const data = Array.from({ length: r }, () => Array.from({ length: c }, () => initialValue));
-    return { rows: r, cols: c, data };
+    return this.__decMatrix({ rows: r, cols: c, data });
   },
   matrixRows: function(m) {
     return m?.rows ?? 0;
@@ -923,11 +1029,62 @@ const pinescript = {
     }
     return null;
   },
+  __jacobiEigen: function(m) {
+    if (!m || !Array.isArray(m.data)) return null;
+    const n = m.rows ?? 0;
+    if (n === 0 || n !== (m.cols ?? 0)) return null;
+    // Work on a copy so the input matrix is untouched.
+    const a = m.data.map(row => row.slice());
+    const v = Array.from({ length: n }, (_, i) => Array.from({ length: n }, (_, j) => (i === j ? 1 : 0)));
+    for (let sweep = 0; sweep < 100; sweep++) {
+      let off = 0;
+      for (let p = 0; p < n; p++) for (let q = p + 1; q < n; q++) off += a[p][q] * a[p][q];
+      if (off < 1e-20) break;
+      for (let p = 0; p < n; p++) {
+        for (let q = p + 1; q < n; q++) {
+          if (Math.abs(a[p][q]) < 1e-18) continue;
+          const theta = (a[q][q] - a[p][p]) / (2 * a[p][q]);
+          const t = Math.sign(theta || 1) / (Math.abs(theta) + Math.sqrt(theta * theta + 1));
+          const cos = 1 / Math.sqrt(t * t + 1);
+          const sin = t * cos;
+          for (let k = 0; k < n; k++) {
+            const akp = a[k][p], akq = a[k][q];
+            a[k][p] = cos * akp - sin * akq;
+            a[k][q] = sin * akp + cos * akq;
+          }
+          for (let k = 0; k < n; k++) {
+            const apk = a[p][k], aqk = a[q][k];
+            a[p][k] = cos * apk - sin * aqk;
+            a[q][k] = sin * apk + cos * aqk;
+          }
+          for (let k = 0; k < n; k++) {
+            const vkp = v[k][p], vkq = v[k][q];
+            v[k][p] = cos * vkp - sin * vkq;
+            v[k][q] = sin * vkp + cos * vkq;
+          }
+        }
+      }
+    }
+    // Sort eigenpairs by eigenvalue, descending.
+    const order = Array.from({ length: n }, (_, i) => i).sort((i, j) => a[j][j] - a[i][i]);
+    const values = order.map(i => a[i][i]);
+    const vectors = Array.from({ length: n }, (_, r) => order.map(c => v[r][c]));
+    return { values, vectors };
+  },
+  matrixEigenvalues: function(m) {
+    const e = this.__jacobiEigen(m);
+    return this.__decArr(e ? e.values : []);
+  },
+  matrixEigenvectors: function(m) {
+    const e = this.__jacobiEigen(m);
+    if (!e) return this.__decMatrix({ rows: 0, cols: 0, data: [] });
+    return this.__decMatrix({ rows: e.vectors.length, cols: e.vectors.length, data: e.vectors });
+  },
   requestSecurity: function(symbol, timeframe, expression) {
     return expression;
   },
   arrayNew: function(initialSize = 0, initialValue = 0) {
-    return Array(initialSize).fill(initialValue);
+    return this.__decArr(Array(initialSize).fill(initialValue));
   },
   arraySize: function(arr) {
     return arr ? arr.length : 0;
@@ -978,10 +1135,10 @@ const pinescript = {
     return arr;
   },
   arraySlice: function(arr, startIndex = 0, endIndex = null) {
-    if (!arr) return [];
+    if (!arr) return this.__decArr([]);
     const start = Number(startIndex) || 0;
     const end = endIndex === null || endIndex === undefined ? arr.length : Number(endIndex) || 0;
-    return arr.slice(start, end);
+    return this.__decArr(arr.slice(start, end));
   },
   arraySort: function(arr, order = 'ascending') {
     if (arr) arr.sort((a, b) => order === 'ascending' ? a - b : b - a);
@@ -1191,7 +1348,7 @@ const pinescript = {
     const info = { ticker: 'AAPL', tickerid: 'NASDAQ:AAPL', prefix: 'NASDAQ', root: 'AAPL', suffix: '' };
     return info[type] || '';
   },
-  timenow: 1781574526661,
+  timenow: 1782783575948,
   barstate: "LAST",
   dividends: {},
   splits: {},
@@ -1245,11 +1402,11 @@ const pinescript = {
   arrayConcat: function(arr1, arr2) {
     if (!arr1) return arr2 || [];
     if (!arr2) return arr1;
-    return arr1.concat(arr2);
+    return this.__decArr(arr1.concat(arr2));
   },
   arrayCopy: function(arr) {
-    if (!arr) return [];
-    return [...arr];
+    if (!arr) return this.__decArr([]);
+    return this.__decArr([...arr]);
   },
   arrayBinarySearch: function(arr, value) {
     if (!arr || arr.length === 0) return -1;
@@ -1339,7 +1496,7 @@ globalThis.input.timeframe = globalThis.input.timeframe || ((defval) => defval);
 
 globalThis.array = globalThis.array || {
 
-  from: (...items) => items,
+  from: (...items) => pinescript.__decArr(items),
 
   size: (arr) => pinescript.arraySize(arr),
 
@@ -1508,6 +1665,8 @@ globalThis.line = globalThis.line || __pineNS({ style_solid: "solid", style_dash
 
 globalThis.box = globalThis.box || __pineNS({});
 
+globalThis.color = globalThis.color || __pineNS(Object.assign(function(c) { return c; }, { new: function(c, t) { return c; }, rgb: function(r, g, b, t) { return "#rgb(" + [r, g, b].join(",") + ")"; }, from_gradient: function(v, lo, hi, c1, c2) { return c1; }, r: function() { return 0; }, g: function() { return 0; }, b: function() { return 0; }, t: function() { return 0; }, aqua: "#00BCD4", black: "#363A45", blue: "#2962FF", fuchsia: "#E040FB", gray: "#787B86", green: "#4CAF50", lime: "#00E676", maroon: "#880E4F", navy: "#311B92", olive: "#808000", orange: "#FF9800", purple: "#9C27B0", red: "#FF5252", silver: "#B2B5BE", teal: "#00897B", white: "#FFFFFF", yellow: "#FFEB3B" }));
+
 globalThis.label = globalThis.label || __pineNS({ style_label_down: "label_down", style_label_up: "label_up", style_none: "none" });
 
 globalThis.polyline = globalThis.polyline || __pineNS({});
@@ -1520,7 +1679,9 @@ globalThis.map = globalThis.map || __pineNS({});
 
 globalThis.session = globalThis.session || __pineNS({ regular: "regular", extended: "extended" });
 
-globalThis.dayofweek = globalThis.dayofweek || __pineNS({ sunday: 1, monday: 2, tuesday: 3, wednesday: 4, thursday: 5, friday: 6, saturday: 7 });
+globalThis.ticker = globalThis.ticker || __pineNS({});
+
+globalThis.dayofweek = globalThis.dayofweek || __pineNS(Object.assign(function(t) { return new Date(t != null ? t : (globalThis.time || 0)).getUTCDay() + 1; }, { sunday: 1, monday: 2, tuesday: 3, wednesday: 4, thursday: 5, friday: 6, saturday: 7 }));
 
 globalThis.timeframe = __pineNS(Object.assign(globalThis.timeframe || {}, { period: (globalThis.timeframe && globalThis.timeframe.period) || "D", isintraday: false, isdaily: true, multiplier: 1 }));
 
@@ -1567,8 +1728,6 @@ globalThis.float = globalThis.float || function(x) { return x == null ? null : N
 globalThis.bool = globalThis.bool || function(x) { return Boolean(x); };
 
 globalThis.string = globalThis.string || function(x) { return x == null ? null : String(x); };
-
-globalThis.dayofweek = globalThis.dayofweek || __pineNS({ sunday: 1, monday: 2, tuesday: 3, wednesday: 4, thursday: 5, friday: 6, saturday: 7 });
 
 globalThis.str = globalThis.str || __pineNS({});
 
@@ -1655,7 +1814,7 @@ pinescript.text = { align_center: "center" };
 
 pinescript.table = {
 
-  new: function(position, columns, rows, opts) { return { position, columns, rows, opts: opts || {}, cells: [] }; },
+  new: function(position, columns, rows, opts) { return pinescript.__decDraw({ position, columns, rows, opts: opts || {}, cells: [] }); },
 
   cell: function(table, column, row, text, opts) {
 
@@ -1689,48 +1848,48 @@ function main() {
   null;
   // Study: Automatic Trendline [Metrify]
   // Options: {"overlay":true,"max_bars_back":5000,"max_lines_count":20}
-  let GROUP_ENGINE = "Engine";
-  let GROUP_FILTER = "Quality Filters";
-  let GROUP_VISUAL = "Visual";
-  let atrLenTooltip = "Controls how ATR is calculated.nnATR measures average recent candle movement (volatility).nHigher value = smoother, slower adaptation.nLower value = faster, more reactive adaptation.";
-  let breakTolTooltip = "How far price must move through a trendline before the script treats it as a real break.nHigher value reduces false breaks from small wicks/noise.";
-  let maxRelevanceTooltip = "Keeps selected trendlines close enough to current price.nnIf a candidate line is too far from current price (in ATR units), it is ignored.nLower value = more actionable nearby lines.nHigher value = allows farther/older lines.";
-  let pivotLen = pinescript.inputInt(10, "Pivot Length", ({ minval: 2, maxval: 120, group: GROUP_ENGINE }));
-  let lookbackBars = pinescript.inputInt(1000, "Lookback Bars", ({ minval: 150, maxval: 4000, group: GROUP_ENGINE }));
-  let atrLen = pinescript.inputInt(100, "ATR Length", ({ minval: 10, maxval: 500, group: GROUP_ENGINE, tooltip: atrLenTooltip }));
-  let maxViolations = pinescript.inputInt(2, "Max Violations", ({ minval: 0, maxval: 6, group: GROUP_FILTER }));
-  let touchTolATR = pinescript.inputFloat(0.3, "Touch Tolerance (ATR)", ({ step: 0.05, minval: 0.05, maxval: 2, group: GROUP_FILTER }));
-  let maxSlopeDeg = pinescript.inputFloat(6, "Max Slope Angle", ({ step: 1, minval: 1, maxval: 30, group: GROUP_FILTER }));
-  let maxRelevanceATR = pinescript.inputFloat(8, "Max Relevance Distance (ATR)", ({ step: 0.5, minval: 1, maxval: 30, group: GROUP_FILTER, tooltip: maxRelevanceTooltip }));
-  let extendBars = pinescript.inputInt(60, "Line Extend (Bars)", ({ minval: 10, maxval: 300, group: GROUP_VISUAL }));
-  let lineWidth = pinescript.inputInt(2, "Line Width", ({ minval: 1, maxval: 4, group: GROUP_VISUAL }));
-  let showFill = pinescript.inputBool(true, "Show Fill Between Lines", ({ group: GROUP_VISUAL }));
-  let supportColor = pinescript.inputColor(pinescript.color.new(pinescript.color.hex("#20A56C"), 0), "Support Color", ({ group: GROUP_VISUAL }));
-  let resistColor = pinescript.inputColor(pinescript.color.new(pinescript.color.hex("#C24545"), 0), "Resistance Color", ({ group: GROUP_VISUAL }));
-  let neutralColor = pinescript.inputColor(pinescript.color.new(pinescript.color.hex("#607D8B"), 0), "Fill Base Color", ({ group: GROUP_VISUAL }));
-  let FAST_LOAD_BUFFER_BARS = 100;
-  let BAR_SCAN_WINDOW = 250;
-  let BAR_SCAN_STEP = 5;
-  let minAnchorBars = 10;
-  let pivotMemory = 200;
-  let maxBarViolRatio = 1;
-  let minTouches = 2;
-  let breakTolATR = 0.6;
+  var GROUP_ENGINE = "Engine";
+  var GROUP_FILTER = "Quality Filters";
+  var GROUP_VISUAL = "Visual";
+  var atrLenTooltip = "Controls how ATR is calculated.nnATR measures average recent candle movement (volatility).nHigher value = smoother, slower adaptation.nLower value = faster, more reactive adaptation.";
+  var breakTolTooltip = "How far price must move through a trendline before the script treats it as a real break.nHigher value reduces false breaks from small wicks/noise.";
+  var maxRelevanceTooltip = "Keeps selected trendlines close enough to current price.nnIf a candidate line is too far from current price (in ATR units), it is ignored.nLower value = more actionable nearby lines.nHigher value = allows farther/older lines.";
+  var pivotLen = pinescript.inputInt(10, "Pivot Length", ({ minval: 2, maxval: 120, group: GROUP_ENGINE }));
+  var lookbackBars = pinescript.inputInt(1000, "Lookback Bars", ({ minval: 150, maxval: 4000, group: GROUP_ENGINE }));
+  var atrLen = pinescript.inputInt(100, "ATR Length", ({ minval: 10, maxval: 500, group: GROUP_ENGINE, tooltip: atrLenTooltip }));
+  var maxViolations = pinescript.inputInt(2, "Max Violations", ({ minval: 0, maxval: 6, group: GROUP_FILTER }));
+  var touchTolATR = pinescript.inputFloat(0.3, "Touch Tolerance (ATR)", ({ step: 0.05, minval: 0.05, maxval: 2, group: GROUP_FILTER }));
+  var maxSlopeDeg = pinescript.inputFloat(6, "Max Slope Angle", ({ step: 1, minval: 1, maxval: 30, group: GROUP_FILTER }));
+  var maxRelevanceATR = pinescript.inputFloat(8, "Max Relevance Distance (ATR)", ({ step: 0.5, minval: 1, maxval: 30, group: GROUP_FILTER, tooltip: maxRelevanceTooltip }));
+  var extendBars = pinescript.inputInt(60, "Line Extend (Bars)", ({ minval: 10, maxval: 300, group: GROUP_VISUAL }));
+  var lineWidth = pinescript.inputInt(2, "Line Width", ({ minval: 1, maxval: 4, group: GROUP_VISUAL }));
+  var showFill = pinescript.inputBool(true, "Show Fill Between Lines", ({ group: GROUP_VISUAL }));
+  var supportColor = pinescript.inputColor(pinescript.color.new(pinescript.color.hex("#20A56C"), 0), "Support Color", ({ group: GROUP_VISUAL }));
+  var resistColor = pinescript.inputColor(pinescript.color.new(pinescript.color.hex("#C24545"), 0), "Resistance Color", ({ group: GROUP_VISUAL }));
+  var neutralColor = pinescript.inputColor(pinescript.color.new(pinescript.color.hex("#607D8B"), 0), "Fill Base Color", ({ group: GROUP_VISUAL }));
+  var FAST_LOAD_BUFFER_BARS = 100;
+  var BAR_SCAN_WINDOW = 250;
+  var BAR_SCAN_STEP = 5;
+  var minAnchorBars = 10;
+  var pivotMemory = 200;
+  var maxBarViolRatio = 1;
+  var minTouches = 2;
+  var breakTolATR = 0.6;
   function f_line_y(x1, y1, x2, y2, x) {
-    let dx = (x2 - x1);
+    var dx = (x2 - x1);
     return ((dx === 0) ? y2 : (y1 + (((y2 - y1) * (x - x1)) / dx)));
   }
   function f_store_pivot(idxArr, priceArr, idx, price, isLow, mergeBars, maxCount) {
-    let sz = pinescript.arraySize(idxArr);
+    var sz = pinescript.arraySize(idxArr);
     if ((sz === 0)) {
       pinescript.arrayUnshift(idxArr, idx);
       pinescript.arrayUnshift(priceArr, price);
     } else {
-      let latestIdx = pinescript.arrayGet(idxArr, 0);
-      let latestPrice = pinescript.arrayGet(priceArr, 0);
+      var latestIdx = pinescript.arrayGet(idxArr, 0);
+      var latestPrice = pinescript.arrayGet(priceArr, 0);
       if ((idx > latestIdx)) {
         if (((idx - latestIdx) <= mergeBars)) {
-          let replace = (isLow ? (price < latestPrice) : (price > latestPrice));
+          var replace = (isLow ? (price < latestPrice) : (price > latestPrice));
           if (replace) {
             pinescript.arraySet(idxArr, 0, idx);
             pinescript.arraySet(priceArr, 0, price);
@@ -1748,7 +1907,7 @@ function main() {
   }
   function f_trim_lookback(idxArr, priceArr, lbBars) {
     while ((pinescript.arraySize(idxArr) > 0)) {
-      let oldestIdx = pinescript.arrayGet(idxArr, (pinescript.arraySize(idxArr) - 1));
+      var oldestIdx = pinescript.arrayGet(idxArr, (pinescript.arraySize(idxArr) - 1));
       if (((bar_index - oldestIdx) > lbBars)) {
         pinescript.arrayPop(idxArr);
         pinescript.arrayPop(priceArr);
@@ -1759,60 +1918,60 @@ function main() {
     return 0;
   }
   function f_find_best_line(idxArr, priceArr, support, atrValue, lbBars, minSpan, needTouches, allowViol, touchTolMult, breakTolMult, maxDeg, maxRelAtrMult, barWindow, sampleStep, maxBarBreakRatio) {
-    let bestValid = false;
-    let bestX1 = null;
-    let bestY1 = null;
-    let bestX2 = null;
-    let bestY2 = null;
-    let bestScore = null;
-    let n = pinescript.arraySize(idxArr);
-    let safeAtr = pinescript.max(atrValue, syminfo.mintick);
-    let touchTol = (safeAtr * touchTolMult);
-    let breakTol = (safeAtr * breakTolMult);
-    let maxSlopeAtrPerBar = pinescript.tan(((maxDeg * pinescript.math.pi) / 180));
-    let maxRelDist = (safeAtr * maxRelAtrMult);
+    var bestValid = false;
+    var bestX1 = null;
+    var bestY1 = null;
+    var bestX2 = null;
+    var bestY2 = null;
+    var bestScore = null;
+    var n = pinescript.arraySize(idxArr);
+    var safeAtr = pinescript.max(atrValue, syminfo.mintick);
+    var touchTol = (safeAtr * touchTolMult);
+    var breakTol = (safeAtr * breakTolMult);
+    var maxSlopeAtrPerBar = pinescript.tan(((maxDeg * pinescript.math.pi) / 180));
+    var maxRelDist = (safeAtr * maxRelAtrMult);
     if ((n >= needTouches)) {
-      let localBest = -10000000000;
+      var localBest = -10000000000;
       for (let newer = 0; newer <= (n - 2); newer++) {
-        let p2Idx = pinescript.arrayGet(idxArr, newer);
-        let p2Price = pinescript.arrayGet(priceArr, newer);
+        var p2Idx = pinescript.arrayGet(idxArr, newer);
+        var p2Price = pinescript.arrayGet(priceArr, newer);
         if (((bar_index - p2Idx) > lbBars)) {
           break;
         }
         for (let older = (newer + 1); older <= (n - 1); older++) {
-          let p1Idx = pinescript.arrayGet(idxArr, older);
-          let p1Price = pinescript.arrayGet(priceArr, older);
+          var p1Idx = pinescript.arrayGet(idxArr, older);
+          var p1Price = pinescript.arrayGet(priceArr, older);
           if (((bar_index - p1Idx) > lbBars)) {
             break;
           }
-          let span = (p2Idx - p1Idx);
+          var span = (p2Idx - p1Idx);
           if ((span >= minSpan)) {
-            let slope = ((p2Price - p1Price) / span);
-            let slopeAtrPerBar = ((safeAtr > 0) ? (pinescript.abs(slope) / safeAtr) : 0);
+            var slope = ((p2Price - p1Price) / span);
+            var slopeAtrPerBar = ((safeAtr > 0) ? (pinescript.abs(slope) / safeAtr) : 0);
             if ((slopeAtrPerBar <= maxSlopeAtrPerBar)) {
-              let yNow = (p1Price + (slope * (bar_index - p1Idx)));
+              var yNow = (p1Price + (slope * (bar_index - p1Idx)));
               if ((pinescript.abs((close - yNow)) <= maxRelDist)) {
-                let touches = 0;
-                let violations = 0;
-                let errorSum = 0;
-                let touchedPoints = 0;
-                let eligible = (older + 1);
+                var touches = 0;
+                var violations = 0;
+                var errorSum = 0;
+                var touchedPoints = 0;
+                var eligible = (older + 1);
                 for (let k = 0; k <= (eligible - 1); k++) {
-                  let pIdx = pinescript.arrayGet(idxArr, k);
-                  let pPrice = pinescript.arrayGet(priceArr, k);
-                  let y = (p1Price + (slope * (pIdx - p1Idx)));
-                  let dev = (pPrice - y);
-                  let isTouch = (pinescript.abs(dev) <= touchTol);
+                  var pIdx = pinescript.arrayGet(idxArr, k);
+                  var pPrice = pinescript.arrayGet(priceArr, k);
+                  var y = (p1Price + (slope * (pIdx - p1Idx)));
+                  var dev = (pPrice - y);
+                  var isTouch = (pinescript.abs(dev) <= touchTol);
                   if (isTouch) {
                     touches = (touches + 1);
                     errorSum = (errorSum + pinescript.abs(dev));
                     touchedPoints = (touchedPoints + 1);
                   }
-                  let isViolation = (support ? (dev < -breakTol) : (dev > breakTol));
+                  var isViolation = (support ? (dev < -breakTol) : (dev > breakTol));
                   if (isViolation) {
                     violations = (violations + 1);
                   }
-                  let remaining = ((eligible - 1) - k);
+                  var remaining = ((eligible - 1) - k);
                   if (((touches + remaining) < needTouches)) {
                     break;
                   }
@@ -1820,37 +1979,37 @@ function main() {
                     break;
                   }
                 }
-                let brokenNow = (support ? (close < (yNow - breakTol)) : (close > (yNow + breakTol)));
+                var brokenNow = (support ? (close < (yNow - breakTol)) : (close > (yNow + breakTol)));
                 if (brokenNow) {
                   violations = (violations + 2);
                 }
                 if (((touches >= needTouches) && (violations <= allowViol))) {
-                  let avgErr = ((touchedPoints > 0) ? (errorSum / touchedPoints) : touchTol);
-                  let recency = (1 - pinescript.min(((bar_index - p2Idx) / (lbBars * 1)), 1));
-                  let spanScore = pinescript.min((span / (lbBars * 1)), 1);
-                  let tightness = (1 - pinescript.min((avgErr / touchTol), 1));
-                  let slopePenalty = ((maxSlopeAtrPerBar > 0) ? (slopeAtrPerBar / maxSlopeAtrPerBar) : 0);
-                  let preScore = (touches * 2.8);
+                  var avgErr = ((touchedPoints > 0) ? (errorSum / touchedPoints) : touchTol);
+                  var recency = (1 - pinescript.min(((bar_index - p2Idx) / (lbBars * 1)), 1));
+                  var spanScore = pinescript.min((span / (lbBars * 1)), 1);
+                  var tightness = (1 - pinescript.min((avgErr / touchTol), 1));
+                  var slopePenalty = ((maxSlopeAtrPerBar > 0) ? (slopeAtrPerBar / maxSlopeAtrPerBar) : 0);
+                  var preScore = (touches * 2.8);
                   preScore = (preScore + (recency * 1.2));
                   preScore = (preScore + (spanScore * 1));
                   preScore = (preScore + (tightness * 1.3));
                   preScore = (preScore - (violations * 2.2));
                   preScore = (preScore - (slopePenalty * 0.5));
                   if ((preScore > localBest)) {
-                    let scanLen = pinescript.min(barWindow, (bar_index - p1Idx));
-                    let barSamples = 0;
-                    let barBreaks = 0;
-                    let maxSamples = ((scanLen / sampleStep) + 1);
-                    let scanRejected = false;
-                    let off = 0;
+                    var scanLen = pinescript.min(barWindow, (bar_index - p1Idx));
+                    var barSamples = 0;
+                    var barBreaks = 0;
+                    var maxSamples = ((scanLen / sampleStep) + 1);
+                    var scanRejected = false;
+                    var off = 0;
                     while ((off <= scanLen)) {
-                      let yBar = (p1Price + (slope * ((bar_index - off) - p1Idx)));
-                      let barBreak = (support ? (pinescript.hist(0, low, off) < (yBar - breakTol)) : (pinescript.hist(1, high, off) > (yBar + breakTol)));
+                      var yBar = (p1Price + (slope * ((bar_index - off) - p1Idx)));
+                      var barBreak = (support ? (pinescript.hist(0, low, off) < (yBar - breakTol)) : (pinescript.hist(1, high, off) > (yBar + breakTol)));
                       barSamples = (barSamples + 1);
                       if (barBreak) {
                         barBreaks = (barBreaks + 1);
                       }
-                      let minPossibleRatio = (barBreaks / (maxSamples * 1));
+                      var minPossibleRatio = (barBreaks / (maxSamples * 1));
                       if ((minPossibleRatio > maxBarBreakRatio)) {
                         scanRejected = true;
                         break;
@@ -1858,15 +2017,15 @@ function main() {
                       off = (off + sampleStep);
                     }
                     if (!scanRejected) {
-                      let barBreakRatio = ((barSamples > 0) ? (barBreaks / (barSamples * 1)) : 1);
-                      let finalViol = violations;
+                      var barBreakRatio = ((barSamples > 0) ? (barBreaks / (barSamples * 1)) : 1);
+                      var finalViol = violations;
                       if ((barBreakRatio > maxBarBreakRatio)) {
                         finalViol = ((finalViol + allowViol) + 1);
                       } else {
                         finalViol = (finalViol + int(pinescript.floor((barBreakRatio * 2))));
                       }
                       if ((finalViol <= allowViol)) {
-                        let score = preScore;
+                        var score = preScore;
                         score = (score - ((finalViol - violations) * 2.2));
                         score = (score - (barBreakRatio * 2));
                         if ((score > localBest)) {
@@ -1897,12 +2056,12 @@ function main() {
   if (state.supportLine === undefined) state.supportLine = pinescript.lineNew(null, null, null, null, ({ xloc: xloc.bar_index }));
   if (state.resistanceLine === undefined) state.resistanceLine = pinescript.lineNew(null, null, null, null, ({ xloc: xloc.bar_index }));
   if (state.channelFill === undefined) state.channelFill = linefill.new(state.supportLine, state.resistanceLine, pinescript.color.new(neutralColor, 95));
-  let atrValue = pinescript.atr(atrLen);
-  let requiredHistoryBars = (((lookbackBars + BAR_SCAN_WINDOW) + (pivotLen * 3)) + FAST_LOAD_BUFFER_BARS);
-  let processStartBar = pinescript.max(0, (last_bar_index - requiredHistoryBars));
-  let processEngine = (bar_index >= processStartBar);
-  let ph = ta.pivothigh(high, pivotLen, pivotLen);
-  let pl = ta.pivotlow(low, pivotLen, pivotLen);
+  var atrValue = pinescript.atr(atrLen);
+  var requiredHistoryBars = (((lookbackBars + BAR_SCAN_WINDOW) + (pivotLen * 3)) + FAST_LOAD_BUFFER_BARS);
+  var processStartBar = pinescript.max(0, (last_bar_index - requiredHistoryBars));
+  var processEngine = (bar_index >= processStartBar);
+  var ph = pinescript.ta.pivothigh(high, pivotLen, pivotLen);
+  var pl = pinescript.ta.pivotlow(low, pivotLen, pivotLen);
   if ((processEngine && !pinescript.na(pl))) {
     f_store_pivot(state.lowPivotIdxs, state.lowPivotPrices, (bar_index - pivotLen), pl, true, pivotLen, pivotMemory);
   }
@@ -1913,13 +2072,13 @@ function main() {
     f_trim_lookback(state.lowPivotIdxs, state.lowPivotPrices, lookbackBars);
     f_trim_lookback(state.highPivotIdxs, state.highPivotPrices, lookbackBars);
   }
-  let [supValid, supX1, supY1, supX2, supY2, supScore] = pinescript.unpack(f_find_best_line(state.lowPivotIdxs, state.lowPivotPrices, true, atrValue, lookbackBars, minAnchorBars, minTouches, maxViolations, touchTolATR, breakTolATR, maxSlopeDeg, maxRelevanceATR, BAR_SCAN_WINDOW, BAR_SCAN_STEP, maxBarViolRatio), 6);
-  let [resValid, resX1, resY1, resX2, resY2, resScore] = pinescript.unpack(f_find_best_line(state.highPivotIdxs, state.highPivotPrices, false, atrValue, lookbackBars, minAnchorBars, minTouches, maxViolations, touchTolATR, breakTolATR, maxSlopeDeg, maxRelevanceATR, BAR_SCAN_WINDOW, BAR_SCAN_STEP, maxBarViolRatio), 6);
-  let supRight = null;
+  var [supValid, supX1, supY1, supX2, supY2, supScore] = pinescript.unpack(f_find_best_line(state.lowPivotIdxs, state.lowPivotPrices, true, atrValue, lookbackBars, minAnchorBars, minTouches, maxViolations, touchTolATR, breakTolATR, maxSlopeDeg, maxRelevanceATR, BAR_SCAN_WINDOW, BAR_SCAN_STEP, maxBarViolRatio), 6);
+  var [resValid, resX1, resY1, resX2, resY2, resScore] = pinescript.unpack(f_find_best_line(state.highPivotIdxs, state.highPivotPrices, false, atrValue, lookbackBars, minAnchorBars, minTouches, maxViolations, touchTolATR, breakTolATR, maxSlopeDeg, maxRelevanceATR, BAR_SCAN_WINDOW, BAR_SCAN_STEP, maxBarViolRatio), 6);
+  var supRight = null;
   if (supValid) {
     supRight = f_line_y(supX1, supY1, supX2, supY2, (bar_index + extendBars));
   }
-  let resRight = null;
+  var resRight = null;
   if (resValid) {
     resRight = f_line_y(resX1, resY1, resX2, resY2, (bar_index + extendBars));
   }
@@ -1946,10 +2105,10 @@ function main() {
     line.set_color(state.resistanceLine, pinescript.color.new(resistColor, 100));
   }
   if (((showFill && supValid) && resValid)) {
-    let supNow = f_line_y(supX1, supY1, supX2, supY2, bar_index);
-    let resNow = f_line_y(resX1, resY1, resX2, resY2, bar_index);
-    let mid = ((supNow + resNow) * 0.5);
-    let fillColor = ((close >= mid) ? pinescript.color.new(supportColor, 92) : pinescript.color.new(resistColor, 92));
+    var supNow = f_line_y(supX1, supY1, supX2, supY2, bar_index);
+    var resNow = f_line_y(resX1, resY1, resX2, resY2, bar_index);
+    var mid = ((supNow + resNow) * 0.5);
+    var fillColor = ((close >= mid) ? pinescript.color.new(supportColor, 92) : pinescript.color.new(resistColor, 92));
     linefill.set_color(state.channelFill, fillColor);
   } else {
     linefill.set_color(state.channelFill, pinescript.color.new(neutralColor, 100));
@@ -1998,6 +2157,10 @@ function run(data, options = {}) {
     rt.__shapeIdx = 0;
     globalThis.bar_index = i;
     globalThis.last_bar_index = n - 1;
+    globalThis.time_tradingday = inTime[i];
+    globalThis.time_close = inTime[i];
+    globalThis.last_bar_time = inTime[n - 1];
+    globalThis.timenow = inTime[n - 1];
     globalThis.barstate = {
       isfirst: i === 0, islast: i === n - 1, isrealtime: false, ishistory: true,
       isconfirmed: true, isnew: true, islastconfirmedhistory: i === n - 1,

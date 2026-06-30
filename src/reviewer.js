@@ -1,8 +1,20 @@
 import vm from 'node:vm';
-import { spawn } from 'node:child_process';
 import { builtins as runtimeBuiltins } from './builtins.js';
 
 const uniq = (arr) => Array.from(new Set(arr));
+
+// Blank out string literals and comments so heuristic scans don't trip over
+// "word(" sequences inside text. Strings are removed before comments so a "//"
+// inside a string can't be mistaken for a comment. Good enough for review
+// heuristics, not a full tokenizer.
+function stripNonCode(code) {
+  return code
+    .replace(/`(?:\\.|[^`\\])*`/g, '``')
+    .replace(/"(?:\\.|[^"\\])*"/g, '""')
+    .replace(/'(?:\\.|[^'\\])*'/g, "''")
+    .replace(/\/\*[\s\S]*?\*\//g, ' ')
+    .replace(/\/\/[^\n]*/g, ' ');
+}
 
 function extractPinescriptMembers(code) {
   const re = /\bpinescript\.([A-Za-z_$][A-Za-z0-9_$]*)/g;
@@ -86,21 +98,6 @@ function allowedMembers() {
   ]);
 }
 
-function buildAiReviewSnippet(code) {
-  const lines = code.split(/\r?\n/);
-  if (lines.length <= 240) return code;
-
-  // The generator emits a marker right before the user's script body.
-  const marker = '// Main script logic';
-  const idx = lines.findIndex((l) => l.includes(marker));
-  if (idx >= 0) {
-    return lines.slice(idx, idx + 420).join('\n');
-  }
-
-  // Fallback: last N lines.
-  return lines.slice(-300).join('\n');
-}
-
 // ---------------------------------------------------------------------------
 // New review stages
 // ---------------------------------------------------------------------------
@@ -157,17 +154,24 @@ function checkCompleteness(code) {
 function checkUndefinedFunctions(code) {
   const warnings = [];
 
+  // Comments and string literals routinely contain "word(" sequences (e.g.
+  // "// Stop Loss (SL)") that are not function calls. Strip them first so we
+  // only inspect actual code.
+  const scan = stripNonCode(code);
+
   // Collect declared functions / const arrow functions
   const declaredRe = /(?:function\s+(\w+)|const\s+(\w+)\s*=\s*(?:\([^)]*\)|[^=])\s*=>)/g;
   const declared = new Set();
-  for (let m; (m = declaredRe.exec(code)) !== null;) {
+  for (let m; (m = declaredRe.exec(scan)) !== null;) {
     declared.add(m[1] || m[2]);
   }
 
-  // Collect all function-call-like identifiers
-  const callRe = /\b([a-zA-Z_$][a-zA-Z0-9_$]*)\s*\(/g;
+  // Collect bare function-call identifiers. The negative lookbehind for "."
+  // skips member calls like color.rgb() or obj.set_x1() -- those resolve at
+  // runtime against the runtime object, not as standalone functions.
+  const callRe = /(?<![.\w$])([a-zA-Z_$][a-zA-Z0-9_$]*)\s*\(/g;
   const called = new Set();
-  for (let m; (m = callRe.exec(code)) !== null;) {
+  for (let m; (m = callRe.exec(scan)) !== null;) {
     called.add(m[1]);
   }
 
@@ -198,7 +202,12 @@ function checkUndefinedFunctions(code) {
     'lastIndexOf', 'substring', 'startsWith', 'endsWith', 'toLowerCase', 'toUpperCase',
     'trim', 'trimStart', 'trimEnd', 'padStart', 'padEnd', 'repeat', 'charAt', 'charCodeAt',
     'codePointAt', 'normalize', 'localeCompare', 'search', 'matchAll',
-    'downtrend', 'uptrend', 'direction', 'trend'
+    'downtrend', 'uptrend', 'direction', 'trend',
+    // Pine top-level builtins the generator emits as callable globals
+    'dayofweek', 'dayofmonth', 'time', 'timestamp', 'plot', 'plotshape', 'plotchar',
+    'plotcandle', 'plotbar', 'plotarrow', 'hline', 'fill', 'bgcolor', 'barcolor',
+    'alert', 'alertcondition', 'indicator', 'strategy', 'library', 'input',
+    'bool', 'float', 'int', 'string', 'na', 'nz', 'fixnan'
   ]);
 
   const builtinKeys = new Set(Array.from(runtimeBuiltins.keys()));
@@ -232,8 +241,9 @@ function checkUndefinedFunctions(code) {
 function checkSeriesSafety(code) {
   const warnings = [];
 
-  // Common series variable names that should use pinescript.offset()
-  const seriesKeywords = /\b(close|open|high|low|volume|hl2|hlc3|ohlc4|time|src|source)\s*\[\s*\d+\s*\]/g;
+  // Common series variable names that should use pinescript.offset().
+  // Only flag nonzero offsets -- [0] is the current bar's value, always safe.
+  const seriesKeywords = /\b(close|open|high|low|volume|hl2|hlc3|ohlc4|time|src|source)\s*\[\s*[1-9]\d*\s*\]/g;
   const matches = code.match(seriesKeywords);
   if (matches) {
     const deduped = uniq(matches.map((m) => m.trim()));
@@ -464,95 +474,10 @@ export async function reviewGeneratedCode(code, opts = {}) {
   const stateWarnings = checkStatePersistence(code);
   report.warnings.push(...stateWarnings);
 
-  // 8) AI review (optional)
-  if (options.ai) {
-    const python = process.env.PINE_REVIEWER_PYTHON || 'python';
-    const script = process.env.PINE_REVIEWER_SCRIPT || 'ai_reviewer/review.py';
-    try {
-      const input = JSON.stringify({ code: buildAiReviewSnippet(code) });
-
-      const payload = await new Promise((resolve, reject) => {
-        const child = spawn(python, [script], {
-          stdio: ['pipe', 'pipe', 'pipe'],
-          env: {
-            ...process.env,
-            HF_HUB_DISABLE_SYMLINKS_WARNING: process.env.HF_HUB_DISABLE_SYMLINKS_WARNING ?? '1',
-            TRANSFORMERS_VERBOSITY: process.env.TRANSFORMERS_VERBOSITY ?? 'error',
-            TF_CPP_MIN_LOG_LEVEL: process.env.TF_CPP_MIN_LOG_LEVEL ?? '3',
-            TOKENIZERS_PARALLELISM: process.env.TOKENIZERS_PARALLELISM ?? 'false',
-            PYTHONWARNINGS: process.env.PYTHONWARNINGS ?? 'ignore',
-            TRANSFORMERS_NO_TF: process.env.TRANSFORMERS_NO_TF ?? '1',
-            TRANSFORMERS_NO_FLAX: process.env.TRANSFORMERS_NO_FLAX ?? '1'
-          }
-        });
-        let stdout = '';
-        let stderr = '';
-
-        const start = Date.now();
-        const spinnerFrames = ['|', '/', '-', '\\'];
-        let spinnerIdx = 0;
-        const spinner = setInterval(() => {
-          const elapsedSec = Math.floor((Date.now() - start) / 1000);
-          const frame = spinnerFrames[spinnerIdx++ % spinnerFrames.length];
-          process.stderr.write(`\r[ai-review] ${frame} running... ${elapsedSec}s`);
-        }, 250);
-
-        const clearSpinnerLine = () => {
-          process.stderr.write('\r\x1b[2K');
-        };
-
-        child.stdout.setEncoding('utf8');
-        child.stderr.setEncoding('utf8');
-
-        child.stdout.on('data', (d) => {
-          stdout += d;
-        });
-        child.stderr.on('data', (d) => {
-          stderr += d;
-          clearSpinnerLine();
-          process.stderr.write(d);
-        });
-
-        child.on('error', (err) => reject(err));
-        child.on('close', (code) => {
-          clearInterval(spinner);
-          clearSpinnerLine();
-          if (code !== 0) {
-            const msg = `AI reviewer exited with code ${code}${stderr ? `\n${stderr}` : ''}`;
-            reject(new Error(msg));
-            return;
-          }
-
-          try {
-            resolve(JSON.parse(stdout || '{}'));
-          } catch (e) {
-            reject(new Error(`AI reviewer returned invalid JSON: ${e?.message || String(e)}${stdout ? `\n${stdout}` : ''}`));
-          }
-        });
-
-        child.stdin.write(input);
-        child.stdin.end();
-      });
-
-      if (payload && typeof payload === 'object') {
-        if (Array.isArray(payload.errors)) report.errors.push(...payload.errors.map(String));
-        if (Array.isArray(payload.warnings)) report.warnings.push(...payload.warnings.map(String));
-        if (Array.isArray(payload.notes)) report.notes.push(...payload.notes.map(String));
-        if (payload.ok === false) report.ok = false;
-      } else {
-        report.warnings.push('AI review returned non-object JSON.');
-      }
-    } catch (e) {
-      report.notes.push(
-        `AI review unavailable: ${e?.message || String(e)} (install optional deps: pip install -r ai_reviewer/requirements.txt)`
-      );
-    }
-  }
-
-  // 9) Generate suggestions
+  // 8) Generate suggestions
   report.suggestions = generateSuggestions(code, report);
 
-  // 10) Compute confidence score
+  // 9) Compute confidence score
   report.confidence = computeConfidence(report);
 
   return report;

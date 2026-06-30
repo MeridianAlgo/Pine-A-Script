@@ -1,5 +1,0 @@
-transformers>=4.36.0
-torch
-sentencepiece
-safetensors
-accelerate

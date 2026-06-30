@@ -4,6 +4,14 @@ A production-grade transpiler that converts TradingView PineScript (v5/v6) into 
 
 This is not a toy converter. It handles real-world PineScript with 240+ function mappings, full series semantics, state persistence across bars, multi-timeframe support, and a post-conversion reviewer that catches problems before they hit you at runtime.
 
+## Try It Online
+
+Paste your PineScript and convert it right in your browser — nothing is uploaded, the transpiler runs client-side:
+
+**https://meridianalgo.github.io/Pine-A-Script/**
+
+(Published automatically from `web/index.html` by the GitHub Pages workflow. Enable it once under repo Settings → Pages → Source: GitHub Actions.)
+
 ## What It Does
 
 - Converts PineScript v5/v6 into standard JavaScript (ESM modules)
@@ -12,7 +20,6 @@ This is not a toy converter. It handles real-world PineScript with 240+ function
 - Persists `var` / `varip` state across bar executions, just like TradingView does
 - Supports multi-timeframe data via `request.security()` with timeframe resampling
 - Runs a multi-stage post-conversion reviewer that catches syntax errors, missing functions, and conversion artifacts
-- Optional local AI review using a lightweight code model (no server or API key needed)
 
 ## Project Layout
 
@@ -26,7 +33,7 @@ src/
   cli.js          Command-line interface for converting files
   reviewer.js     Post-conversion quality checks and validation
 
-ai_reviewer/      Optional local AI review (Python, runs on your machine)
+web/              Browser-based converter demo (deployed to GitHub Pages)
 test/             Test suite including bar-by-bar runtime smoke tests
 tools/            Batch conversion utilities and status tracking
 examples/         Sample PineScript files for testing
@@ -100,31 +107,6 @@ Environment variables for fine-grained control:
 |----------|--------|
 | `PINE_REVIEW=0` | Disables the reviewer completely |
 | `PINE_REVIEW_IMPORT=0` | Skips the import smoke test |
-| `PINE_REVIEW_AI=1` | Enables the optional AI review |
-| `PINE_REVIEWER_MODEL` | Sets the HuggingFace model for AI review |
-| `PINE_REVIEWER_PYTHON` | Path to your Python interpreter |
-| `PINE_REVIEWER_USE_CUDA=1` | Enables GPU acceleration for AI review |
-
-### Optional AI review
-
-The repo includes a fully local AI reviewer that runs a small code model on your machine. No server, no API key, no data leaves your laptop.
-
-Default model: `Qwen/Qwen2.5-Coder-0.5B-Instruct` (fast, low RAM)
-Larger model: `Qwen/Qwen2.5-Coder-1.5B-Instruct` (better results, slower)
-
-Setup:
-
-```bash
-pip install -r ai_reviewer/requirements.txt
-```
-
-Run with AI review enabled:
-
-```bash
-PINE_REVIEW_AI=1 node src/cli.js script.pine output.js --review-ai
-```
-
-Note: Small models can produce repetitive or low-quality output. The reviewer sanitizes bad responses and will suggest switching models if needed.
 
 ## Supported PineScript Features
 
@@ -355,7 +337,6 @@ Options:
   --tokens            Output the token stream instead of JavaScript
   --no-review         Skip post-conversion review
   --no-review-import  Skip the runtime import test only
-  --review-ai         Enable local AI review (needs Python deps)
 ```
 
 ### Example workflow
@@ -369,9 +350,6 @@ node src/cli.js my_indicator.pine --ast
 
 # Convert without any review (fastest)
 node src/cli.js my_indicator.pine my_indicator.js --no-review
-
-# Convert with AI review for deeper analysis
-PINE_REVIEW_AI=1 node src/cli.js my_indicator.pine my_indicator.js --review-ai
 ```
 
 ## Running Tests

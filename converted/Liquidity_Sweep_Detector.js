@@ -42,6 +42,80 @@ const pinescript = {
     if (value != null && typeof value[Symbol.iterator] === 'function') return Array.from(value);
     return new Array(count || 0).fill(null);
   },
+  __decArr: function(arr) {
+    if (!Array.isArray(arr) || arr.__pineDecorated) return arr;
+    const self = this;
+    const def = (name, fn) => Object.defineProperty(arr, name, { value: fn, writable: true, configurable: true });
+    Object.defineProperty(arr, '__pineDecorated', { value: true, configurable: true });
+    def('get', (i) => (arr[i] === undefined ? null : arr[i]));
+    def('set', (i, v) => { arr[i] = v; return v; });
+    def('size', () => arr.length);
+    def('clear', () => { arr.length = 0; });
+    def('insert', (i, v) => { arr.splice(i, 0, v); });
+    def('remove', (i) => arr.splice(i, 1)[0]);
+    def('contains', (v) => arr.includes(v));
+    def('indexof', (v) => arr.indexOf(v));
+    def('lastindexof', (v) => arr.lastIndexOf(v));
+    def('first', () => (arr.length ? arr[0] : null));
+    def('last', () => (arr.length ? arr[arr.length - 1] : null));
+    def('sum', () => arr.reduce((a, b) => a + b, 0));
+    def('avg', () => (arr.length ? arr.reduce((a, b) => a + b, 0) / arr.length : 0));
+    def('min', () => (arr.length ? Math.min(...arr) : null));
+    def('max', () => (arr.length ? Math.max(...arr) : null));
+    def('range', () => (arr.length ? Math.max(...arr) - Math.min(...arr) : null));
+    // Statistical methods that route to the array.* built-ins (these names are not
+    // native to JS arrays, so attaching them here is safe from recursion).
+    def('median', () => self.arrayMedian(arr));
+    def('mode', () => self.arrayMode(arr));
+    def('stdev', () => self.arrayStdev(arr));
+    def('variance', () => self.arrayVariance(arr));
+    def('covariance', (other) => self.arrayCovariance(arr, other));
+    def('percentile_linear_interpolation', (p) => self.arrayPercentileLinearInterpolation(arr, p));
+    def('percentile_nearest_rank', (p) => self.arrayPercentileNearestRank(arr, p));
+    def('abs', () => self.__decArr(self.arrayAbs(arr)));
+    def('binary_search', (v) => self.arrayBinarySearch(arr, v));
+    // Pine's array.sort takes an order string, not a comparator. Use the native
+    // sort via .call so we don't recurse through this overridden method.
+    def('sort', (order) => { Array.prototype.sort.call(arr, (a, b) => (order === 'descending' ? b - a : a - b)); return arr; });
+    def('sort_indices', (order) => self.__decArr(arr.map((_, i) => i).sort((a, b) => (order === 'descending' ? arr[b] - arr[a] : arr[a] - arr[b]))));
+    // join/slice/reverse/concat/includes/fill already exist natively on Array with
+    // compatible semantics, so we deliberately leave them to the native methods.
+    return arr;
+  },
+  __decMap: function(m) {
+    if (!(m instanceof Map) || m.__pineDecorated) return m;
+    const def = (name, fn) => Object.defineProperty(m, name, { value: fn, writable: true, configurable: true });
+    Object.defineProperty(m, '__pineDecorated', { value: true, configurable: true });
+    def('put', (k, v) => { m.set(k, v); return v; });
+    def('contains', (k) => m.has(k));
+    def('remove', (k) => m.delete(k));
+    def('keys', () => Array.from(Map.prototype.keys.call(m)));
+    def('values', () => Array.from(Map.prototype.values.call(m)));
+    def('size_', () => m.size);
+    return m;
+  },
+  __decMatrix: function(m) {
+    if (!m || typeof m !== 'object' || m.__pineDecorated) return m;
+    const self = this;
+    const def = (name, fn) => Object.defineProperty(m, name, { value: fn, writable: true, configurable: true });
+    Object.defineProperty(m, '__pineDecorated', { value: true, configurable: true });
+    def('get', (r, c) => self.matrixGet(m, r, c));
+    def('set', (r, c, v) => self.matrixSet(m, r, c, v));
+    def('rows_', () => m.rows);
+    def('columns', () => m.cols);
+    def('fill', (v) => self.matrixFill(m, v));
+    return m;
+  },
+  __decDraw: function(obj) {
+    if (!obj || typeof obj !== 'object') return obj;
+    const p = new Proxy(obj, {
+      get(t, k) {
+        if (k in t || typeof k === 'symbol') return t[k];
+        return function() { return p; };
+      },
+    });
+    return p;
+  },
   alertcondition: function(condition, ...rest) {
     if (globalThis.__pineRuntime) {
       globalThis.__pineRuntime.alerts.push({ condition, args: rest });
@@ -49,6 +123,32 @@ const pinescript = {
     return null;
   },
   barcolor: function(color) { return null; },
+  plotchar: function(series, ...rest) {
+    const rt = globalThis.__pineRuntime;
+    if (!rt) return series;
+    const bar = rt.__barIndex | 0;
+    const ord = (rt.__shapeIdx = (rt.__shapeIdx | 0) + 1) - 1;
+    let key = 'char_' + ord;
+    for (const r of rest) {
+      if (typeof r === 'string') { key = r; break; }
+      if (r && typeof r === 'object' && r.title) { key = String(r.title); break; }
+    }
+    let s = rt.plotshapes[key];
+    if (!s) s = rt.plotshapes[key] = { title: key, data: [] };
+    s.data[bar] = this.__scalar(series);
+    return series;
+  },
+  plotarrow: function(series, ...rest) {
+    const rt = globalThis.__pineRuntime;
+    if (!rt) return series;
+    const bar = rt.__barIndex | 0;
+    const ord = (rt.__plotIdx = (rt.__plotIdx | 0) + 1) - 1;
+    const key = 'arrow_' + ord;
+    let p = rt.plots[key];
+    if (!p) p = rt.plots[key] = { title: key, data: [] };
+    p.data[bar] = this.__scalar(series);
+    return series;
+  },
   bgcolor: function(color, title, editable, showLast) {
     return null;
   },
@@ -470,6 +570,12 @@ const pinescript = {
   atan: function(value) {
     return Math.atan(value);
   },
+  todegrees: function(radians) {
+    return radians * (180 / Math.PI);
+  },
+  toradians: function(degrees) {
+    return degrees * (Math.PI / 180);
+  },
   floor: function(value) {
     return Math.floor(value);
   },
@@ -641,7 +747,7 @@ const pinescript = {
     return series;
   },
   lineNew: function(x1, y1, x2, y2, opts = {}) {
-    return { x1, y1, x2, y2, opts, _type: 'line' };
+    return this.__decDraw({ x1, y1, x2, y2, opts, _type: 'line' });
   },
   lineDelete: function(l) {
     return null;
@@ -661,7 +767,7 @@ const pinescript = {
     return point === 0 || point === 'y1' ? line.y1 : line.y2;
   },
   labelNew: function(x, y, text = '', opts = {}) {
-    return { x, y, text, opts, _type: 'label' };
+    return this.__decDraw({ x, y, text, opts, _type: 'label' });
   },
   labelDelete: function(l) {
     return null;
@@ -676,7 +782,7 @@ const pinescript = {
     return label.text || '';
   },
   boxNew: function(left, top, right, bottom, opts = {}) {
-    return { left, top, right, bottom, opts, _type: 'box' };
+    return this.__decDraw({ left, top, right, bottom, opts, _type: 'box' });
   },
   boxDelete: function(box) {
     return null;
@@ -694,7 +800,7 @@ const pinescript = {
     return box;
   },
   polylineNew: function(points, opts = {}) {
-    return { points: points || [], opts, _type: 'polyline' };
+    return this.__decDraw({ points: points || [], opts, _type: 'polyline' });
   },
   polylineDelete: function(poly) {
     return null;
@@ -765,7 +871,7 @@ const pinescript = {
     return { time: _time ?? null, price: _price ?? null };
   },
   mapNew: function() {
-    return new Map();
+    return this.__decMap(new Map());
   },
   mapSize: function(m) {
     return m instanceof Map ? m.size : 0;
@@ -800,7 +906,7 @@ const pinescript = {
     const r = Math.max(0, rows ?? 0);
     const c = Math.max(0, cols ?? 0);
     const data = Array.from({ length: r }, () => Array.from({ length: c }, () => initialValue));
-    return { rows: r, cols: c, data };
+    return this.__decMatrix({ rows: r, cols: c, data });
   },
   matrixRows: function(m) {
     return m?.rows ?? 0;
@@ -923,11 +1029,62 @@ const pinescript = {
     }
     return null;
   },
+  __jacobiEigen: function(m) {
+    if (!m || !Array.isArray(m.data)) return null;
+    const n = m.rows ?? 0;
+    if (n === 0 || n !== (m.cols ?? 0)) return null;
+    // Work on a copy so the input matrix is untouched.
+    const a = m.data.map(row => row.slice());
+    const v = Array.from({ length: n }, (_, i) => Array.from({ length: n }, (_, j) => (i === j ? 1 : 0)));
+    for (let sweep = 0; sweep < 100; sweep++) {
+      let off = 0;
+      for (let p = 0; p < n; p++) for (let q = p + 1; q < n; q++) off += a[p][q] * a[p][q];
+      if (off < 1e-20) break;
+      for (let p = 0; p < n; p++) {
+        for (let q = p + 1; q < n; q++) {
+          if (Math.abs(a[p][q]) < 1e-18) continue;
+          const theta = (a[q][q] - a[p][p]) / (2 * a[p][q]);
+          const t = Math.sign(theta || 1) / (Math.abs(theta) + Math.sqrt(theta * theta + 1));
+          const cos = 1 / Math.sqrt(t * t + 1);
+          const sin = t * cos;
+          for (let k = 0; k < n; k++) {
+            const akp = a[k][p], akq = a[k][q];
+            a[k][p] = cos * akp - sin * akq;
+            a[k][q] = sin * akp + cos * akq;
+          }
+          for (let k = 0; k < n; k++) {
+            const apk = a[p][k], aqk = a[q][k];
+            a[p][k] = cos * apk - sin * aqk;
+            a[q][k] = sin * apk + cos * aqk;
+          }
+          for (let k = 0; k < n; k++) {
+            const vkp = v[k][p], vkq = v[k][q];
+            v[k][p] = cos * vkp - sin * vkq;
+            v[k][q] = sin * vkp + cos * vkq;
+          }
+        }
+      }
+    }
+    // Sort eigenpairs by eigenvalue, descending.
+    const order = Array.from({ length: n }, (_, i) => i).sort((i, j) => a[j][j] - a[i][i]);
+    const values = order.map(i => a[i][i]);
+    const vectors = Array.from({ length: n }, (_, r) => order.map(c => v[r][c]));
+    return { values, vectors };
+  },
+  matrixEigenvalues: function(m) {
+    const e = this.__jacobiEigen(m);
+    return this.__decArr(e ? e.values : []);
+  },
+  matrixEigenvectors: function(m) {
+    const e = this.__jacobiEigen(m);
+    if (!e) return this.__decMatrix({ rows: 0, cols: 0, data: [] });
+    return this.__decMatrix({ rows: e.vectors.length, cols: e.vectors.length, data: e.vectors });
+  },
   requestSecurity: function(symbol, timeframe, expression) {
     return expression;
   },
   arrayNew: function(initialSize = 0, initialValue = 0) {
-    return Array(initialSize).fill(initialValue);
+    return this.__decArr(Array(initialSize).fill(initialValue));
   },
   arraySize: function(arr) {
     return arr ? arr.length : 0;
@@ -978,10 +1135,10 @@ const pinescript = {
     return arr;
   },
   arraySlice: function(arr, startIndex = 0, endIndex = null) {
-    if (!arr) return [];
+    if (!arr) return this.__decArr([]);
     const start = Number(startIndex) || 0;
     const end = endIndex === null || endIndex === undefined ? arr.length : Number(endIndex) || 0;
-    return arr.slice(start, end);
+    return this.__decArr(arr.slice(start, end));
   },
   arraySort: function(arr, order = 'ascending') {
     if (arr) arr.sort((a, b) => order === 'ascending' ? a - b : b - a);
@@ -1191,7 +1348,7 @@ const pinescript = {
     const info = { ticker: 'AAPL', tickerid: 'NASDAQ:AAPL', prefix: 'NASDAQ', root: 'AAPL', suffix: '' };
     return info[type] || '';
   },
-  timenow: 1781574527470,
+  timenow: 1782783576652,
   barstate: "LAST",
   dividends: {},
   splits: {},
@@ -1245,11 +1402,11 @@ const pinescript = {
   arrayConcat: function(arr1, arr2) {
     if (!arr1) return arr2 || [];
     if (!arr2) return arr1;
-    return arr1.concat(arr2);
+    return this.__decArr(arr1.concat(arr2));
   },
   arrayCopy: function(arr) {
-    if (!arr) return [];
-    return [...arr];
+    if (!arr) return this.__decArr([]);
+    return this.__decArr([...arr]);
   },
   arrayBinarySearch: function(arr, value) {
     if (!arr || arr.length === 0) return -1;
@@ -1339,7 +1496,7 @@ globalThis.input.timeframe = globalThis.input.timeframe || ((defval) => defval);
 
 globalThis.array = globalThis.array || {
 
-  from: (...items) => items,
+  from: (...items) => pinescript.__decArr(items),
 
   size: (arr) => pinescript.arraySize(arr),
 
@@ -1508,6 +1665,8 @@ globalThis.line = globalThis.line || __pineNS({ style_solid: "solid", style_dash
 
 globalThis.box = globalThis.box || __pineNS({});
 
+globalThis.color = globalThis.color || __pineNS(Object.assign(function(c) { return c; }, { new: function(c, t) { return c; }, rgb: function(r, g, b, t) { return "#rgb(" + [r, g, b].join(",") + ")"; }, from_gradient: function(v, lo, hi, c1, c2) { return c1; }, r: function() { return 0; }, g: function() { return 0; }, b: function() { return 0; }, t: function() { return 0; }, aqua: "#00BCD4", black: "#363A45", blue: "#2962FF", fuchsia: "#E040FB", gray: "#787B86", green: "#4CAF50", lime: "#00E676", maroon: "#880E4F", navy: "#311B92", olive: "#808000", orange: "#FF9800", purple: "#9C27B0", red: "#FF5252", silver: "#B2B5BE", teal: "#00897B", white: "#FFFFFF", yellow: "#FFEB3B" }));
+
 globalThis.label = globalThis.label || __pineNS({ style_label_down: "label_down", style_label_up: "label_up", style_none: "none" });
 
 globalThis.polyline = globalThis.polyline || __pineNS({});
@@ -1520,7 +1679,9 @@ globalThis.map = globalThis.map || __pineNS({});
 
 globalThis.session = globalThis.session || __pineNS({ regular: "regular", extended: "extended" });
 
-globalThis.dayofweek = globalThis.dayofweek || __pineNS({ sunday: 1, monday: 2, tuesday: 3, wednesday: 4, thursday: 5, friday: 6, saturday: 7 });
+globalThis.ticker = globalThis.ticker || __pineNS({});
+
+globalThis.dayofweek = globalThis.dayofweek || __pineNS(Object.assign(function(t) { return new Date(t != null ? t : (globalThis.time || 0)).getUTCDay() + 1; }, { sunday: 1, monday: 2, tuesday: 3, wednesday: 4, thursday: 5, friday: 6, saturday: 7 }));
 
 globalThis.timeframe = __pineNS(Object.assign(globalThis.timeframe || {}, { period: (globalThis.timeframe && globalThis.timeframe.period) || "D", isintraday: false, isdaily: true, multiplier: 1 }));
 
@@ -1567,8 +1728,6 @@ globalThis.float = globalThis.float || function(x) { return x == null ? null : N
 globalThis.bool = globalThis.bool || function(x) { return Boolean(x); };
 
 globalThis.string = globalThis.string || function(x) { return x == null ? null : String(x); };
-
-globalThis.dayofweek = globalThis.dayofweek || __pineNS({ sunday: 1, monday: 2, tuesday: 3, wednesday: 4, thursday: 5, friday: 6, saturday: 7 });
 
 globalThis.str = globalThis.str || __pineNS({});
 
@@ -1655,7 +1814,7 @@ pinescript.text = { align_center: "center" };
 
 pinescript.table = {
 
-  new: function(position, columns, rows, opts) { return { position, columns, rows, opts: opts || {}, cells: [] }; },
+  new: function(position, columns, rows, opts) { return pinescript.__decDraw({ position, columns, rows, opts: opts || {}, cells: [] }); },
 
   cell: function(table, column, row, text, opts) {
 
@@ -1688,29 +1847,29 @@ function main() {
   null;
   // Study: Liquidity Sweep Detector [DefinedEdge]
   // Options: {"shorttitle":"Sweep Detector","overlay":true,"max_boxes_count":500,"max_labels_count":500,"max_lines_count":500}
-  let zoneGroup = "⚙️  Zone Detection";
-  let length = pinescript.inputInt(8, "Pivot Lookback", ({ minval: 3, maxval: 50, group: zoneGroup, tooltip: "Higher = fewer but more significant swing points. Lower = more zones and more sweep signals." }));
-  let maxZones = pinescript.inputInt(8, "Max Active Zones", ({ minval: 2, maxval: 15, group: zoneGroup, tooltip: "How many unbroken zones to track per side" }));
-  let zoneRange = pinescript.inputString("Wick Rejection", "Zone Range", ({ options: ["Wick Rejection", "Full Bar"], group: zoneGroup }));
-  let showInvalidated = pinescript.inputBool(false, "Show Invalidated Zones (faded)", ({ group: zoneGroup }));
-  let sweepGroup = "🎯  Sweep Detection";
-  let showSweeps = pinescript.inputBool(true, "Show Sweep Signals", ({ group: sweepGroup }));
-  let showSweepBG = pinescript.inputBool(true, "Highlight Sweep Bars", ({ group: sweepGroup }));
-  let filterGroup = "🔬  Signal Quality Filters";
-  let useTrendFilter = pinescript.inputBool(false, "Trend Filter (EMA)", ({ group: filterGroup, tooltip: "Only show bull sweeps above EMA, bear sweeps below EMA. With-trend sweeps = institutional reloading." }));
-  let trendEmaLen = pinescript.inputInt(50, "Trend EMA Length", ({ minval: 10, maxval: 200, group: filterGroup }));
-  let useVolFilter = pinescript.inputBool(false, "Volume Spike Filter", ({ group: filterGroup, tooltip: "Sweep bar must have higher-than-average volume. Real liquidity grabs leave a volume footprint." }));
-  let volMultiplier = pinescript.inputFloat(1.2, "Volume Multiplier", ({ minval: 1, maxval: 5, step: 0.1, group: filterGroup }));
-  let volAvgLen = pinescript.inputInt(20, "Volume Avg Length", ({ minval: 5, maxval: 100, group: filterGroup }));
-  let useWickFilter = pinescript.inputBool(false, "Wick Rejection Filter", ({ group: filterGroup, tooltip: "Sweep bar must show strong rejection — big wick, small body relative to total range." }));
-  let wickMinPct = pinescript.inputFloat(40, "Min Wick %", ({ minval: 20, maxval: 90, step: 5, group: filterGroup, tooltip: "Minimum percentage of bar range that must be wick (rejection strength)" }));
-  let vizGroup = "🎨  Visual Settings";
-  let showDash = pinescript.inputBool(true, "Show Dashboard", ({ group: vizGroup }));
-  let dashPos = pinescript.inputString("Top Right", "Dashboard Position", ({ options: ["Top Right", "Top Left", "Bottom Right", "Bottom Left"], group: vizGroup }));
-  let dashSize = pinescript.inputInt(2, "Dashboard Size (1-3)", ({ minval: 1, maxval: 3, group: vizGroup }));
-  let bullCol = pinescript.inputColor(pinescript.color.hex("#00b8d4"), "Support Zones", ({ group: vizGroup }));
-  let bearCol = pinescript.inputColor(pinescript.color.hex("#ff6d00"), "Resistance Zones", ({ group: vizGroup }));
-  let sweepCol = pinescript.inputColor(pinescript.color.hex("#e040fb"), "Sweep Signal", ({ group: vizGroup }));
+  var zoneGroup = "⚙️  Zone Detection";
+  var length = pinescript.inputInt(8, "Pivot Lookback", ({ minval: 3, maxval: 50, group: zoneGroup, tooltip: "Higher = fewer but more significant swing points. Lower = more zones and more sweep signals." }));
+  var maxZones = pinescript.inputInt(8, "Max Active Zones", ({ minval: 2, maxval: 15, group: zoneGroup, tooltip: "How many unbroken zones to track per side" }));
+  var zoneRange = pinescript.inputString("Wick Rejection", "Zone Range", ({ options: ["Wick Rejection", "Full Bar"], group: zoneGroup }));
+  var showInvalidated = pinescript.inputBool(false, "Show Invalidated Zones (faded)", ({ group: zoneGroup }));
+  var sweepGroup = "🎯  Sweep Detection";
+  var showSweeps = pinescript.inputBool(true, "Show Sweep Signals", ({ group: sweepGroup }));
+  var showSweepBG = pinescript.inputBool(true, "Highlight Sweep Bars", ({ group: sweepGroup }));
+  var filterGroup = "🔬  Signal Quality Filters";
+  var useTrendFilter = pinescript.inputBool(false, "Trend Filter (EMA)", ({ group: filterGroup, tooltip: "Only show bull sweeps above EMA, bear sweeps below EMA. With-trend sweeps = institutional reloading." }));
+  var trendEmaLen = pinescript.inputInt(50, "Trend EMA Length", ({ minval: 10, maxval: 200, group: filterGroup }));
+  var useVolFilter = pinescript.inputBool(false, "Volume Spike Filter", ({ group: filterGroup, tooltip: "Sweep bar must have higher-than-average volume. Real liquidity grabs leave a volume footprint." }));
+  var volMultiplier = pinescript.inputFloat(1.2, "Volume Multiplier", ({ minval: 1, maxval: 5, step: 0.1, group: filterGroup }));
+  var volAvgLen = pinescript.inputInt(20, "Volume Avg Length", ({ minval: 5, maxval: 100, group: filterGroup }));
+  var useWickFilter = pinescript.inputBool(false, "Wick Rejection Filter", ({ group: filterGroup, tooltip: "Sweep bar must show strong rejection — big wick, small body relative to total range." }));
+  var wickMinPct = pinescript.inputFloat(40, "Min Wick %", ({ minval: 20, maxval: 90, step: 5, group: filterGroup, tooltip: "Minimum percentage of bar range that must be wick (rejection strength)" }));
+  var vizGroup = "🎨  Visual Settings";
+  var showDash = pinescript.inputBool(true, "Show Dashboard", ({ group: vizGroup }));
+  var dashPos = pinescript.inputString("Top Right", "Dashboard Position", ({ options: ["Top Right", "Top Left", "Bottom Right", "Bottom Left"], group: vizGroup }));
+  var dashSize = pinescript.inputInt(2, "Dashboard Size (1-3)", ({ minval: 1, maxval: 3, group: vizGroup }));
+  var bullCol = pinescript.inputColor(pinescript.color.hex("#00b8d4"), "Support Zones", ({ group: vizGroup }));
+  var bearCol = pinescript.inputColor(pinescript.color.hex("#ff6d00"), "Resistance Zones", ({ group: vizGroup }));
+  var sweepCol = pinescript.inputColor(pinescript.color.hex("#e040fb"), "Sweep Signal", ({ group: vizGroup }));
   if (state.rz_top === undefined) state.rz_top = pinescript.arrayNew();
   if (state.rz_btm === undefined) state.rz_btm = pinescript.arrayNew();
   if (state.rz_x1 === undefined) state.rz_x1 = pinescript.arrayNew();
@@ -1769,11 +1928,11 @@ function main() {
     pinescript.arrayPush(state.sz_box, pinescript.boxNew(x, top, x, btm, ({ border_color: pinescript.color.new(bullCol, 60), border_width: 1, bgcolor: pinescript.color.new(bullCol, 88), border_style: line.style_solid })));
     return pinescript.arrayPush(state.sz_line, pinescript.lineNew(x, btm, x, btm, ({ color: bullCol, width: 1, style: line.style_dotted })));
   }
-  let ph = ta.pivothigh(length, length);
-  let pl = ta.pivotlow(length, length);
+  var ph = pinescript.ta.pivothigh(length, length);
+  var pl = pinescript.ta.pivotlow(length, length);
   if (ph) {
-    let _top = pinescript.hist(0, high, length);
-    let _btm = ((zoneRange === "Wick Rejection") ? pinescript.max(pinescript.hist(1, open, length), pinescript.hist(2, close, length)) : pinescript.hist(3, low, length));
+    var _top = pinescript.hist(0, high, length);
+    var _btm = ((zoneRange === "Wick Rejection") ? pinescript.max(pinescript.hist(1, open, length), pinescript.hist(2, close, length)) : pinescript.hist(3, low, length));
     addResistanceZone(_top, _btm, (bar_index - length));
   }
   if (pl) {
@@ -1785,33 +1944,33 @@ function main() {
   if (state.bearSweepNow === undefined) state.bearSweepNow = false;
   state.bullSweepNow = false;
   state.bearSweepNow = false;
-  let trendEma = pinescript.ema(close, trendEmaLen);
-  let volAvg = pinescript.sma(volume, volAvgLen);
-  let barRange = (high - low);
-  let bodySize = pinescript.abs((close - open));
-  let wickPct = ((barRange > 0) ? (((barRange - bodySize) / barRange) * 100) : 0);
-  let isAboveEma = (close > trendEma);
-  let isBelowEma = (close < trendEma);
-  let isVolSpike = (volume > (volAvg * volMultiplier));
-  let isStrongWick = (wickPct >= wickMinPct);
-  let bullFilterOk = (((!useTrendFilter || isAboveEma) && (!useVolFilter || isVolSpike)) && (!useWickFilter || isStrongWick));
-  let bearFilterOk = (((!useTrendFilter || isBelowEma) && (!useVolFilter || isVolSpike)) && (!useWickFilter || isStrongWick));
+  var trendEma = pinescript.ema(pinescript.series(8, close), trendEmaLen);
+  var volAvg = pinescript.sma(pinescript.series(9, volume), volAvgLen);
+  var barRange = (high - low);
+  var bodySize = pinescript.abs((close - open));
+  var wickPct = ((barRange > 0) ? (((barRange - bodySize) / barRange) * 100) : 0);
+  var isAboveEma = (close > trendEma);
+  var isBelowEma = (close < trendEma);
+  var isVolSpike = (volume > (volAvg * volMultiplier));
+  var isStrongWick = (wickPct >= wickMinPct);
+  var bullFilterOk = (((!useTrendFilter || isAboveEma) && (!useVolFilter || isVolSpike)) && (!useWickFilter || isStrongWick));
+  var bearFilterOk = (((!useTrendFilter || isBelowEma) && (!useVolFilter || isVolSpike)) && (!useWickFilter || isStrongWick));
   pinescript.plot((useTrendFilter ? trendEma : null), "Trend EMA", ({ color: pinescript.color.new(pinescript.color.white, 70), linewidth: 1 }));
   if ((pinescript.arraySize(state.rz_top) > 0)) {
     for (let i = (pinescript.arraySize(state.rz_top) - 1); i <= 0; i++) {
       _top = pinescript.arrayGet(state.rz_top, i);
       _btm = pinescript.arrayGet(state.rz_btm, i);
-      let _broken = pinescript.arrayGet(state.rz_broken, i);
-      let _swept = pinescript.arrayGet(state.rz_swept, i);
-      let _tests = pinescript.arrayGet(state.rz_tests, i);
-      let _bx = pinescript.arrayGet(state.rz_box, i);
-      let _ln = pinescript.arrayGet(state.rz_line, i);
+      var _broken = pinescript.arrayGet(state.rz_broken, i);
+      var _swept = pinescript.arrayGet(state.rz_swept, i);
+      var _tests = pinescript.arrayGet(state.rz_tests, i);
+      var _bx = pinescript.arrayGet(state.rz_box, i);
+      var _ln = pinescript.arrayGet(state.rz_line, i);
       if (!_broken) {
         box.set_right(_bx, (bar_index + 5));
         line.set_x2(_ln, (bar_index + 5));
         if ((((high > _btm) && (high <= _top)) && (close < _btm))) {
           pinescript.arraySet(state.rz_tests, i, (_tests + 1));
-          let _newAlpha = pinescript.max(70, (88 - (_tests * 6)));
+          var _newAlpha = pinescript.max(70, (88 - (_tests * 6)));
           box.set_bgcolor(_bx, pinescript.color.new(bearCol, _newAlpha));
         }
         if (((((high > _top) && (close <= _top)) && !_swept) && bearFilterOk)) {
@@ -1822,7 +1981,7 @@ function main() {
           box.set_border_width(_bx, 2);
           box.set_bgcolor(_bx, pinescript.color.new(sweepCol, 80));
         }
-        if (((close > _top) && (pinescript.hist(8, close, 1) > _top))) {
+        if (((close > _top) && (pinescript.hist(10, close, 1) > _top))) {
           pinescript.arraySet(state.rz_broken, i, true);
           if (showInvalidated) {
             box.set_bgcolor(_bx, pinescript.color.new(bearCol, 95));
@@ -1870,7 +2029,7 @@ function main() {
           box.set_border_width(_bx, 2);
           box.set_bgcolor(_bx, pinescript.color.new(sweepCol, 80));
         }
-        if (((close < _btm) && (pinescript.hist(9, close, 1) < _btm))) {
+        if (((close < _btm) && (pinescript.hist(11, close, 1) < _btm))) {
           pinescript.arraySet(state.sz_broken, i, true);
           if (showInvalidated) {
             box.set_bgcolor(_bx, pinescript.color.new(bullCol, 95));
@@ -1902,10 +2061,10 @@ function main() {
   if ((showSweeps && state.bearSweepNow)) {
     pinescript.labelNew(bar_index, high, "SWEEP", ({ style: label.style_label_down, color: pinescript.color.new(sweepCol, 20), textcolor: pinescript.color.white, size: pinescript.size.tiny }));
   }
-  let activeResist = 0;
-  let activeSup = 0;
-  let sweptResist = 0;
-  let sweptSup = 0;
+  var activeResist = 0;
+  var activeSup = 0;
+  var sweptResist = 0;
+  var sweptSup = 0;
   if ((pinescript.arraySize(state.rz_broken) > 0)) {
     for (let i = 0; i <= (pinescript.arraySize(state.rz_broken) - 1); i++) {
       if (!pinescript.arrayGet(state.rz_broken, i)) {
@@ -1926,12 +2085,12 @@ function main() {
       }
     }
   }
-  let nearestResist = null;
-  let nearestSupport = null;
+  var nearestResist = null;
+  var nearestSupport = null;
   if ((pinescript.arraySize(state.rz_top) > 0)) {
     for (let i = 0; i <= (pinescript.arraySize(state.rz_top) - 1); i++) {
       if (!pinescript.arrayGet(state.rz_broken, i)) {
-        let _dist = (pinescript.arrayGet(state.rz_btm, i) - close);
+        var _dist = (pinescript.arrayGet(state.rz_btm, i) - close);
         if (((_dist > 0) && (pinescript.na(nearestResist) || (_dist < nearestResist)))) {
           nearestResist = _dist;
         }
@@ -1948,25 +2107,25 @@ function main() {
       }
     }
   }
-  let nearResistPct = (!pinescript.na(nearestResist) ? ((nearestResist / close) * 100) : null);
-  let nearSupPct = (!pinescript.na(nearestSupport) ? ((nearestSupport / close) * 100) : null);
+  var nearResistPct = (!pinescript.na(nearestResist) ? ((nearestResist / close) * 100) : null);
+  var nearSupPct = (!pinescript.na(nearestSupport) ? ((nearestSupport / close) * 100) : null);
   pinescript.position.bottom_left;
   pinescript.position.bottom_right;
   pinescript.position.top_left;
   pinescript.position.top_right;
-  let dashPosTV = ((dashPos === "Top Right") ? undefined : ((dashPos === "Top Left") ? undefined : ((dashPos === "Bottom Right") ? undefined : ((dashPos === "Bottom Left") ? undefined : null))));
+  var dashPosTV = ((dashPos === "Top Right") ? undefined : ((dashPos === "Top Left") ? undefined : ((dashPos === "Bottom Right") ? undefined : ((dashPos === "Bottom Left") ? undefined : null))));
   pinescript.size.huge;
   pinescript.size.large;
   pinescript.size.normal;
-  let textTitle = ((dashSize === 1) ? undefined : ((dashSize === 2) ? undefined : ((dashSize === 3) ? undefined : null)));
+  var textTitle = ((dashSize === 1) ? undefined : ((dashSize === 2) ? undefined : ((dashSize === 3) ? undefined : null)));
   pinescript.size.large;
   pinescript.size.normal;
   pinescript.size.small;
-  let textLabel = ((dashSize === 1) ? undefined : ((dashSize === 2) ? undefined : ((dashSize === 3) ? undefined : null)));
+  var textLabel = ((dashSize === 1) ? undefined : ((dashSize === 2) ? undefined : ((dashSize === 3) ? undefined : null)));
   pinescript.size.huge;
   pinescript.size.large;
   pinescript.size.normal;
-  let textValue = ((dashSize === 1) ? undefined : ((dashSize === 2) ? undefined : ((dashSize === 3) ? undefined : null)));
+  var textValue = ((dashSize === 1) ? undefined : ((dashSize === 2) ? undefined : ((dashSize === 3) ? undefined : null)));
   if (state.dash === undefined) state.dash = pinescript.table.new(dashPosTV, 3, 9, ({ bgcolor: pinescript.color.new(pinescript.color.hex("#0a0e17"), 5), border_color: pinescript.color.new(pinescript.color.hex("#1e2a3a"), 0), border_width: 2, frame_color: pinescript.color.new(pinescript.color.hex("#1e2a3a"), 0), frame_width: 3 }));
   if ((showDash && barstate.islast)) {
     pinescript.table.cell(state.dash, 0, 0, "🎯 SWEEP DETECTOR", ({ text_color: pinescript.color.white, text_size: textTitle, bgcolor: pinescript.color.new(sweepCol, 40), text_halign: pinescript.text.align_center }));
@@ -1974,28 +2133,28 @@ function main() {
     pinescript.table.cell(state.dash, 0, 1, "ZONES", ({ text_color: pinescript.color.new(pinescript.color.white, 40), text_size: textLabel, bgcolor: pinescript.color.new(pinescript.color.hex("#0d1117"), 0) }));
     pinescript.table.cell(state.dash, 1, 1, (pinescript.strToString(activeResist) + " 🔴"), ({ text_color: bearCol, text_size: textValue, bgcolor: pinescript.color.new(pinescript.color.hex("#0d1117"), 0), text_halign: pinescript.text.align_center }));
     pinescript.table.cell(state.dash, 2, 1, (pinescript.strToString(activeSup) + " 🟢"), ({ text_color: bullCol, text_size: textValue, bgcolor: pinescript.color.new(pinescript.color.hex("#0d1117"), 0), text_halign: pinescript.text.align_center }));
-    let nrText = (!pinescript.na(nearResistPct) ? (pinescript.strToString(nearResistPct, "#.##") + "% away") : "— none —");
-    let nrCol = (!pinescript.na(nearResistPct) ? ((nearResistPct < 1) ? bearCol : ((nearResistPct < 3) ? pinescript.color.new(bearCol, 40) : pinescript.color.new(pinescript.color.white, 40))) : pinescript.color.new(pinescript.color.white, 60));
+    var nrText = (!pinescript.na(nearResistPct) ? (pinescript.strToString(nearResistPct, "#.##") + "% away") : "— none —");
+    var nrCol = (!pinescript.na(nearResistPct) ? ((nearResistPct < 1) ? bearCol : ((nearResistPct < 3) ? pinescript.color.new(bearCol, 40) : pinescript.color.new(pinescript.color.white, 40))) : pinescript.color.new(pinescript.color.white, 60));
     pinescript.table.cell(state.dash, 0, 2, "RESIST", ({ text_color: pinescript.color.new(pinescript.color.white, 40), text_size: textLabel, bgcolor: pinescript.color.new(pinescript.color.hex("#0d1117"), 0) }));
     pinescript.table.cell(state.dash, 1, 2, nrText, ({ text_color: nrCol, text_size: textValue, bgcolor: pinescript.color.new(pinescript.color.hex("#0d1117"), 0), text_halign: pinescript.text.align_center }));
     pinescript.tableMergeCells(state.dash, 1, 2, 2, 2);
-    let nsText = (!pinescript.na(nearSupPct) ? (pinescript.strToString(nearSupPct, "#.##") + "% away") : "— none —");
-    let nsCol = (!pinescript.na(nearSupPct) ? ((nearSupPct < 1) ? bullCol : ((nearSupPct < 3) ? pinescript.color.new(bullCol, 40) : pinescript.color.new(pinescript.color.white, 40))) : pinescript.color.new(pinescript.color.white, 60));
+    var nsText = (!pinescript.na(nearSupPct) ? (pinescript.strToString(nearSupPct, "#.##") + "% away") : "— none —");
+    var nsCol = (!pinescript.na(nearSupPct) ? ((nearSupPct < 1) ? bullCol : ((nearSupPct < 3) ? pinescript.color.new(bullCol, 40) : pinescript.color.new(pinescript.color.white, 40))) : pinescript.color.new(pinescript.color.white, 60));
     pinescript.table.cell(state.dash, 0, 3, "SUPPORT", ({ text_color: pinescript.color.new(pinescript.color.white, 40), text_size: textLabel, bgcolor: pinescript.color.new(pinescript.color.hex("#0d1117"), 0) }));
     pinescript.table.cell(state.dash, 1, 3, nsText, ({ text_color: nsCol, text_size: textValue, bgcolor: pinescript.color.new(pinescript.color.hex("#0d1117"), 0), text_halign: pinescript.text.align_center }));
     pinescript.tableMergeCells(state.dash, 1, 3, 2, 3);
     pinescript.table.cell(state.dash, 0, 4, "SWEEPS", ({ text_color: pinescript.color.new(pinescript.color.white, 40), text_size: textLabel, bgcolor: pinescript.color.new(pinescript.color.hex("#0d1117"), 0) }));
     pinescript.table.cell(state.dash, 1, 4, ("▼ " + pinescript.strToString(state.totalBearSweeps)), ({ text_color: bearCol, text_size: textValue, bgcolor: pinescript.color.new(pinescript.color.hex("#0d1117"), 0), text_halign: pinescript.text.align_center }));
     pinescript.table.cell(state.dash, 2, 4, ("▲ " + pinescript.strToString(state.totalBullSweeps)), ({ text_color: bullCol, text_size: textValue, bgcolor: pinescript.color.new(pinescript.color.hex("#0d1117"), 0), text_halign: pinescript.text.align_center }));
-    let biasText = ((state.totalBullSweeps > state.totalBearSweeps) ? "🟢 BULLISH BIAS" : ((state.totalBearSweeps > state.totalBullSweeps) ? "🔴 BEARISH BIAS" : "⚪ NEUTRAL"));
-    let biasBG = ((state.totalBullSweeps > state.totalBearSweeps) ? pinescript.color.new(bullCol, 80) : ((state.totalBearSweeps > state.totalBullSweeps) ? pinescript.color.new(bearCol, 80) : pinescript.color.new(pinescript.color.gray, 80)));
+    var biasText = ((state.totalBullSweeps > state.totalBearSweeps) ? "🟢 BULLISH BIAS" : ((state.totalBearSweeps > state.totalBullSweeps) ? "🔴 BEARISH BIAS" : "⚪ NEUTRAL"));
+    var biasBG = ((state.totalBullSweeps > state.totalBearSweeps) ? pinescript.color.new(bullCol, 80) : ((state.totalBearSweeps > state.totalBullSweeps) ? pinescript.color.new(bearCol, 80) : pinescript.color.new(pinescript.color.gray, 80)));
     pinescript.table.cell(state.dash, 0, 5, biasText, ({ text_color: pinescript.color.white, text_size: textValue, bgcolor: biasBG, text_halign: pinescript.text.align_center }));
     pinescript.tableMergeCells(state.dash, 0, 5, 2, 5);
-    let tF = (useTrendFilter ? "✅ Trend" : "❌ Trend");
-    let vF = (useVolFilter ? "✅ Vol" : "❌ Vol");
-    let wF = (useWickFilter ? "✅ Wick" : "❌ Wick");
-    let filtersOn = (((useTrendFilter ? 1 : 0) + (useVolFilter ? 1 : 0)) + (useWickFilter ? 1 : 0));
-    let filterBG = ((filtersOn === 3) ? pinescript.color.new(pinescript.color.hex("#00e676"), 85) : ((filtersOn >= 1) ? pinescript.color.new(pinescript.color.yellow, 85) : pinescript.color.new(pinescript.color.hex("#ff1744"), 85)));
+    var tF = (useTrendFilter ? "✅ Trend" : "❌ Trend");
+    var vF = (useVolFilter ? "✅ Vol" : "❌ Vol");
+    var wF = (useWickFilter ? "✅ Wick" : "❌ Wick");
+    var filtersOn = (((useTrendFilter ? 1 : 0) + (useVolFilter ? 1 : 0)) + (useWickFilter ? 1 : 0));
+    var filterBG = ((filtersOn === 3) ? pinescript.color.new(pinescript.color.hex("#00e676"), 85) : ((filtersOn >= 1) ? pinescript.color.new(pinescript.color.yellow, 85) : pinescript.color.new(pinescript.color.hex("#ff1744"), 85)));
     pinescript.table.cell(state.dash, 0, 6, "FILTERS", ({ text_color: pinescript.color.new(pinescript.color.white, 40), text_size: textLabel, bgcolor: pinescript.color.new(pinescript.color.hex("#0d1117"), 0) }));
     pinescript.table.cell(state.dash, 1, 6, ((((tF + "  ") + vF) + "  ") + wF), ({ text_color: pinescript.color.new(pinescript.color.white, 30), text_size: textLabel, bgcolor: filterBG, text_halign: pinescript.text.align_center }));
     pinescript.tableMergeCells(state.dash, 1, 6, 2, 6);
@@ -2051,6 +2210,10 @@ function run(data, options = {}) {
     rt.__shapeIdx = 0;
     globalThis.bar_index = i;
     globalThis.last_bar_index = n - 1;
+    globalThis.time_tradingday = inTime[i];
+    globalThis.time_close = inTime[i];
+    globalThis.last_bar_time = inTime[n - 1];
+    globalThis.timenow = inTime[n - 1];
     globalThis.barstate = {
       isfirst: i === 0, islast: i === n - 1, isrealtime: false, ishistory: true,
       isconfirmed: true, isnew: true, islastconfirmedhistory: i === n - 1,

@@ -42,6 +42,80 @@ const pinescript = {
     if (value != null && typeof value[Symbol.iterator] === 'function') return Array.from(value);
     return new Array(count || 0).fill(null);
   },
+  __decArr: function(arr) {
+    if (!Array.isArray(arr) || arr.__pineDecorated) return arr;
+    const self = this;
+    const def = (name, fn) => Object.defineProperty(arr, name, { value: fn, writable: true, configurable: true });
+    Object.defineProperty(arr, '__pineDecorated', { value: true, configurable: true });
+    def('get', (i) => (arr[i] === undefined ? null : arr[i]));
+    def('set', (i, v) => { arr[i] = v; return v; });
+    def('size', () => arr.length);
+    def('clear', () => { arr.length = 0; });
+    def('insert', (i, v) => { arr.splice(i, 0, v); });
+    def('remove', (i) => arr.splice(i, 1)[0]);
+    def('contains', (v) => arr.includes(v));
+    def('indexof', (v) => arr.indexOf(v));
+    def('lastindexof', (v) => arr.lastIndexOf(v));
+    def('first', () => (arr.length ? arr[0] : null));
+    def('last', () => (arr.length ? arr[arr.length - 1] : null));
+    def('sum', () => arr.reduce((a, b) => a + b, 0));
+    def('avg', () => (arr.length ? arr.reduce((a, b) => a + b, 0) / arr.length : 0));
+    def('min', () => (arr.length ? Math.min(...arr) : null));
+    def('max', () => (arr.length ? Math.max(...arr) : null));
+    def('range', () => (arr.length ? Math.max(...arr) - Math.min(...arr) : null));
+    // Statistical methods that route to the array.* built-ins (these names are not
+    // native to JS arrays, so attaching them here is safe from recursion).
+    def('median', () => self.arrayMedian(arr));
+    def('mode', () => self.arrayMode(arr));
+    def('stdev', () => self.arrayStdev(arr));
+    def('variance', () => self.arrayVariance(arr));
+    def('covariance', (other) => self.arrayCovariance(arr, other));
+    def('percentile_linear_interpolation', (p) => self.arrayPercentileLinearInterpolation(arr, p));
+    def('percentile_nearest_rank', (p) => self.arrayPercentileNearestRank(arr, p));
+    def('abs', () => self.__decArr(self.arrayAbs(arr)));
+    def('binary_search', (v) => self.arrayBinarySearch(arr, v));
+    // Pine's array.sort takes an order string, not a comparator. Use the native
+    // sort via .call so we don't recurse through this overridden method.
+    def('sort', (order) => { Array.prototype.sort.call(arr, (a, b) => (order === 'descending' ? b - a : a - b)); return arr; });
+    def('sort_indices', (order) => self.__decArr(arr.map((_, i) => i).sort((a, b) => (order === 'descending' ? arr[b] - arr[a] : arr[a] - arr[b]))));
+    // join/slice/reverse/concat/includes/fill already exist natively on Array with
+    // compatible semantics, so we deliberately leave them to the native methods.
+    return arr;
+  },
+  __decMap: function(m) {
+    if (!(m instanceof Map) || m.__pineDecorated) return m;
+    const def = (name, fn) => Object.defineProperty(m, name, { value: fn, writable: true, configurable: true });
+    Object.defineProperty(m, '__pineDecorated', { value: true, configurable: true });
+    def('put', (k, v) => { m.set(k, v); return v; });
+    def('contains', (k) => m.has(k));
+    def('remove', (k) => m.delete(k));
+    def('keys', () => Array.from(Map.prototype.keys.call(m)));
+    def('values', () => Array.from(Map.prototype.values.call(m)));
+    def('size_', () => m.size);
+    return m;
+  },
+  __decMatrix: function(m) {
+    if (!m || typeof m !== 'object' || m.__pineDecorated) return m;
+    const self = this;
+    const def = (name, fn) => Object.defineProperty(m, name, { value: fn, writable: true, configurable: true });
+    Object.defineProperty(m, '__pineDecorated', { value: true, configurable: true });
+    def('get', (r, c) => self.matrixGet(m, r, c));
+    def('set', (r, c, v) => self.matrixSet(m, r, c, v));
+    def('rows_', () => m.rows);
+    def('columns', () => m.cols);
+    def('fill', (v) => self.matrixFill(m, v));
+    return m;
+  },
+  __decDraw: function(obj) {
+    if (!obj || typeof obj !== 'object') return obj;
+    const p = new Proxy(obj, {
+      get(t, k) {
+        if (k in t || typeof k === 'symbol') return t[k];
+        return function() { return p; };
+      },
+    });
+    return p;
+  },
   alertcondition: function(condition, ...rest) {
     if (globalThis.__pineRuntime) {
       globalThis.__pineRuntime.alerts.push({ condition, args: rest });
@@ -49,6 +123,32 @@ const pinescript = {
     return null;
   },
   barcolor: function(color) { return null; },
+  plotchar: function(series, ...rest) {
+    const rt = globalThis.__pineRuntime;
+    if (!rt) return series;
+    const bar = rt.__barIndex | 0;
+    const ord = (rt.__shapeIdx = (rt.__shapeIdx | 0) + 1) - 1;
+    let key = 'char_' + ord;
+    for (const r of rest) {
+      if (typeof r === 'string') { key = r; break; }
+      if (r && typeof r === 'object' && r.title) { key = String(r.title); break; }
+    }
+    let s = rt.plotshapes[key];
+    if (!s) s = rt.plotshapes[key] = { title: key, data: [] };
+    s.data[bar] = this.__scalar(series);
+    return series;
+  },
+  plotarrow: function(series, ...rest) {
+    const rt = globalThis.__pineRuntime;
+    if (!rt) return series;
+    const bar = rt.__barIndex | 0;
+    const ord = (rt.__plotIdx = (rt.__plotIdx | 0) + 1) - 1;
+    const key = 'arrow_' + ord;
+    let p = rt.plots[key];
+    if (!p) p = rt.plots[key] = { title: key, data: [] };
+    p.data[bar] = this.__scalar(series);
+    return series;
+  },
   bgcolor: function(color, title, editable, showLast) {
     return null;
   },
@@ -470,6 +570,12 @@ const pinescript = {
   atan: function(value) {
     return Math.atan(value);
   },
+  todegrees: function(radians) {
+    return radians * (180 / Math.PI);
+  },
+  toradians: function(degrees) {
+    return degrees * (Math.PI / 180);
+  },
   floor: function(value) {
     return Math.floor(value);
   },
@@ -641,7 +747,7 @@ const pinescript = {
     return series;
   },
   lineNew: function(x1, y1, x2, y2, opts = {}) {
-    return { x1, y1, x2, y2, opts, _type: 'line' };
+    return this.__decDraw({ x1, y1, x2, y2, opts, _type: 'line' });
   },
   lineDelete: function(l) {
     return null;
@@ -661,7 +767,7 @@ const pinescript = {
     return point === 0 || point === 'y1' ? line.y1 : line.y2;
   },
   labelNew: function(x, y, text = '', opts = {}) {
-    return { x, y, text, opts, _type: 'label' };
+    return this.__decDraw({ x, y, text, opts, _type: 'label' });
   },
   labelDelete: function(l) {
     return null;
@@ -676,7 +782,7 @@ const pinescript = {
     return label.text || '';
   },
   boxNew: function(left, top, right, bottom, opts = {}) {
-    return { left, top, right, bottom, opts, _type: 'box' };
+    return this.__decDraw({ left, top, right, bottom, opts, _type: 'box' });
   },
   boxDelete: function(box) {
     return null;
@@ -694,7 +800,7 @@ const pinescript = {
     return box;
   },
   polylineNew: function(points, opts = {}) {
-    return { points: points || [], opts, _type: 'polyline' };
+    return this.__decDraw({ points: points || [], opts, _type: 'polyline' });
   },
   polylineDelete: function(poly) {
     return null;
@@ -765,7 +871,7 @@ const pinescript = {
     return { time: _time ?? null, price: _price ?? null };
   },
   mapNew: function() {
-    return new Map();
+    return this.__decMap(new Map());
   },
   mapSize: function(m) {
     return m instanceof Map ? m.size : 0;
@@ -800,7 +906,7 @@ const pinescript = {
     const r = Math.max(0, rows ?? 0);
     const c = Math.max(0, cols ?? 0);
     const data = Array.from({ length: r }, () => Array.from({ length: c }, () => initialValue));
-    return { rows: r, cols: c, data };
+    return this.__decMatrix({ rows: r, cols: c, data });
   },
   matrixRows: function(m) {
     return m?.rows ?? 0;
@@ -923,11 +1029,62 @@ const pinescript = {
     }
     return null;
   },
+  __jacobiEigen: function(m) {
+    if (!m || !Array.isArray(m.data)) return null;
+    const n = m.rows ?? 0;
+    if (n === 0 || n !== (m.cols ?? 0)) return null;
+    // Work on a copy so the input matrix is untouched.
+    const a = m.data.map(row => row.slice());
+    const v = Array.from({ length: n }, (_, i) => Array.from({ length: n }, (_, j) => (i === j ? 1 : 0)));
+    for (let sweep = 0; sweep < 100; sweep++) {
+      let off = 0;
+      for (let p = 0; p < n; p++) for (let q = p + 1; q < n; q++) off += a[p][q] * a[p][q];
+      if (off < 1e-20) break;
+      for (let p = 0; p < n; p++) {
+        for (let q = p + 1; q < n; q++) {
+          if (Math.abs(a[p][q]) < 1e-18) continue;
+          const theta = (a[q][q] - a[p][p]) / (2 * a[p][q]);
+          const t = Math.sign(theta || 1) / (Math.abs(theta) + Math.sqrt(theta * theta + 1));
+          const cos = 1 / Math.sqrt(t * t + 1);
+          const sin = t * cos;
+          for (let k = 0; k < n; k++) {
+            const akp = a[k][p], akq = a[k][q];
+            a[k][p] = cos * akp - sin * akq;
+            a[k][q] = sin * akp + cos * akq;
+          }
+          for (let k = 0; k < n; k++) {
+            const apk = a[p][k], aqk = a[q][k];
+            a[p][k] = cos * apk - sin * aqk;
+            a[q][k] = sin * apk + cos * aqk;
+          }
+          for (let k = 0; k < n; k++) {
+            const vkp = v[k][p], vkq = v[k][q];
+            v[k][p] = cos * vkp - sin * vkq;
+            v[k][q] = sin * vkp + cos * vkq;
+          }
+        }
+      }
+    }
+    // Sort eigenpairs by eigenvalue, descending.
+    const order = Array.from({ length: n }, (_, i) => i).sort((i, j) => a[j][j] - a[i][i]);
+    const values = order.map(i => a[i][i]);
+    const vectors = Array.from({ length: n }, (_, r) => order.map(c => v[r][c]));
+    return { values, vectors };
+  },
+  matrixEigenvalues: function(m) {
+    const e = this.__jacobiEigen(m);
+    return this.__decArr(e ? e.values : []);
+  },
+  matrixEigenvectors: function(m) {
+    const e = this.__jacobiEigen(m);
+    if (!e) return this.__decMatrix({ rows: 0, cols: 0, data: [] });
+    return this.__decMatrix({ rows: e.vectors.length, cols: e.vectors.length, data: e.vectors });
+  },
   requestSecurity: function(symbol, timeframe, expression) {
     return expression;
   },
   arrayNew: function(initialSize = 0, initialValue = 0) {
-    return Array(initialSize).fill(initialValue);
+    return this.__decArr(Array(initialSize).fill(initialValue));
   },
   arraySize: function(arr) {
     return arr ? arr.length : 0;
@@ -978,10 +1135,10 @@ const pinescript = {
     return arr;
   },
   arraySlice: function(arr, startIndex = 0, endIndex = null) {
-    if (!arr) return [];
+    if (!arr) return this.__decArr([]);
     const start = Number(startIndex) || 0;
     const end = endIndex === null || endIndex === undefined ? arr.length : Number(endIndex) || 0;
-    return arr.slice(start, end);
+    return this.__decArr(arr.slice(start, end));
   },
   arraySort: function(arr, order = 'ascending') {
     if (arr) arr.sort((a, b) => order === 'ascending' ? a - b : b - a);
@@ -1191,7 +1348,7 @@ const pinescript = {
     const info = { ticker: 'AAPL', tickerid: 'NASDAQ:AAPL', prefix: 'NASDAQ', root: 'AAPL', suffix: '' };
     return info[type] || '';
   },
-  timenow: 1781574527898,
+  timenow: 1782783577035,
   barstate: "LAST",
   dividends: {},
   splits: {},
@@ -1245,11 +1402,11 @@ const pinescript = {
   arrayConcat: function(arr1, arr2) {
     if (!arr1) return arr2 || [];
     if (!arr2) return arr1;
-    return arr1.concat(arr2);
+    return this.__decArr(arr1.concat(arr2));
   },
   arrayCopy: function(arr) {
-    if (!arr) return [];
-    return [...arr];
+    if (!arr) return this.__decArr([]);
+    return this.__decArr([...arr]);
   },
   arrayBinarySearch: function(arr, value) {
     if (!arr || arr.length === 0) return -1;
@@ -1339,7 +1496,7 @@ globalThis.input.timeframe = globalThis.input.timeframe || ((defval) => defval);
 
 globalThis.array = globalThis.array || {
 
-  from: (...items) => items,
+  from: (...items) => pinescript.__decArr(items),
 
   size: (arr) => pinescript.arraySize(arr),
 
@@ -1508,6 +1665,8 @@ globalThis.line = globalThis.line || __pineNS({ style_solid: "solid", style_dash
 
 globalThis.box = globalThis.box || __pineNS({});
 
+globalThis.color = globalThis.color || __pineNS(Object.assign(function(c) { return c; }, { new: function(c, t) { return c; }, rgb: function(r, g, b, t) { return "#rgb(" + [r, g, b].join(",") + ")"; }, from_gradient: function(v, lo, hi, c1, c2) { return c1; }, r: function() { return 0; }, g: function() { return 0; }, b: function() { return 0; }, t: function() { return 0; }, aqua: "#00BCD4", black: "#363A45", blue: "#2962FF", fuchsia: "#E040FB", gray: "#787B86", green: "#4CAF50", lime: "#00E676", maroon: "#880E4F", navy: "#311B92", olive: "#808000", orange: "#FF9800", purple: "#9C27B0", red: "#FF5252", silver: "#B2B5BE", teal: "#00897B", white: "#FFFFFF", yellow: "#FFEB3B" }));
+
 globalThis.label = globalThis.label || __pineNS({ style_label_down: "label_down", style_label_up: "label_up", style_none: "none" });
 
 globalThis.polyline = globalThis.polyline || __pineNS({});
@@ -1520,7 +1679,9 @@ globalThis.map = globalThis.map || __pineNS({});
 
 globalThis.session = globalThis.session || __pineNS({ regular: "regular", extended: "extended" });
 
-globalThis.dayofweek = globalThis.dayofweek || __pineNS({ sunday: 1, monday: 2, tuesday: 3, wednesday: 4, thursday: 5, friday: 6, saturday: 7 });
+globalThis.ticker = globalThis.ticker || __pineNS({});
+
+globalThis.dayofweek = globalThis.dayofweek || __pineNS(Object.assign(function(t) { return new Date(t != null ? t : (globalThis.time || 0)).getUTCDay() + 1; }, { sunday: 1, monday: 2, tuesday: 3, wednesday: 4, thursday: 5, friday: 6, saturday: 7 }));
 
 globalThis.timeframe = __pineNS(Object.assign(globalThis.timeframe || {}, { period: (globalThis.timeframe && globalThis.timeframe.period) || "D", isintraday: false, isdaily: true, multiplier: 1 }));
 
@@ -1567,8 +1728,6 @@ globalThis.float = globalThis.float || function(x) { return x == null ? null : N
 globalThis.bool = globalThis.bool || function(x) { return Boolean(x); };
 
 globalThis.string = globalThis.string || function(x) { return x == null ? null : String(x); };
-
-globalThis.dayofweek = globalThis.dayofweek || __pineNS({ sunday: 1, monday: 2, tuesday: 3, wednesday: 4, thursday: 5, friday: 6, saturday: 7 });
 
 globalThis.str = globalThis.str || __pineNS({});
 
@@ -1655,7 +1814,7 @@ pinescript.text = { align_center: "center" };
 
 pinescript.table = {
 
-  new: function(position, columns, rows, opts) { return { position, columns, rows, opts: opts || {}, cells: [] }; },
+  new: function(position, columns, rows, opts) { return pinescript.__decDraw({ position, columns, rows, opts: opts || {}, cells: [] }); },
 
   cell: function(table, column, row, text, opts) {
 
@@ -1689,66 +1848,66 @@ function main() {
   null;
   // Study: Peak Trading Activity Graphs [LuxAlgo]
   // Options: {"overlay":true}
-  let GREEN = pinescript.color.hex("#089981");
-  let RED = pinescript.color.hex("#F23645");
-  let YELLOW = pinescript.color.hex("#F2E805");
-  let DATA = pinescript.color.hex("#DBDBDB");
-  let BACKGROUND = pinescript.color.hex("#161616");
-  let BORDERS = pinescript.color.hex("#2E2E2E");
-  let ORANGE = pinescript.color.hex("#FF5D00");
-  let ORANGE_LIGHT = pinescript.color.hex("#FEF1E8");
-  let COLD_VIRIDIS = pinescript.color.hex("#400A53");
-  let LUKEWARM_VIRIDIS = pinescript.color.hex("#408E8B");
-  let HOT_VIRIDIS = pinescript.color.hex("#F8E650");
-  let COLD_PLASMA = pinescript.color.hex("#110A81");
-  let LUKEWARM_PLASMA = pinescript.color.hex("#B8487D");
-  let HOT_PLASMA = pinescript.color.hex("#F1F455");
-  let COLD_MAGMA = pinescript.color.hex("#000005");
-  let LUKEWARM_MAGMA = pinescript.color.hex("#9D3B7A");
-  let HOT_MAGMA = pinescript.color.hex("#FCF7BE");
-  let VIRIDIS = "Viridis";
-  let PLASMA = "Plasma";
-  let MAGMA = "Magma";
-  let CUSTOM = "Custom";
-  let TOP_RIGHT = "Top Right";
-  let BOTTOM_RIGHT = "Bottom Right";
-  let BOTTOM_LEFT = "Bottom Left";
-  let TINY = "Tiny";
-  let SMALL = "Small";
-  let NORMAL = "Normal";
-  let LARGE = "Large";
-  let HUGE = "Huge";
-  let VOLUME = "Volume";
-  let VOLATILITY = "Volatility";
-  let DAYOFWEEK = "Days of Week";
-  let DAYOFMONTH = "Days of Month";
-  let MONTH = "Months";
-  let HOURS = "Hours";
-  let DASHBOARD_GROUP = "Graph";
-  let STYLE_GROUP = "Style";
-  let deltaTooltip = "Display the difference between the medians as a percentage. The smaller median is 0, and the larger median is 100. Enabling this feature highlights the differences between values.";
-  let dashboardPositionTooltip = "Select the graph location.";
-  let dashboardSizeTooltip = "Select the graph text size.";
-  let dashboardWidthTooltip = "Select the graph width.";
-  let dashboardHeightTooltip = "Select the graph height.";
-  let baseDataInput = pinescript.inputString(VOLUME, "Data", ({ options: [VOLATILITY, VOLUME] }));
-  let periodInput = pinescript.inputString(DAYOFMONTH, "Period", ({ options: [MONTH, DAYOFMONTH, DAYOFWEEK, HOURS] }));
-  let deltaInput = pinescript.inputBool(false, "Display Delta Between Medians", ({ tooltip: deltaTooltip }));
-  let dashboardPositionInput = pinescript.inputString(TOP_RIGHT, "Position", ({ group: DASHBOARD_GROUP, tooltip: dashboardPositionTooltip, options: [TOP_RIGHT, BOTTOM_RIGHT, BOTTOM_LEFT] }));
-  let dashboardSizeInput = pinescript.inputString(SMALL, "Size", ({ group: DASHBOARD_GROUP, tooltip: dashboardSizeTooltip, options: [TINY, SMALL, NORMAL, LARGE, HUGE] }));
-  let dashboardWidthInput = pinescript.inputFloat(1, "Width", ({ group: DASHBOARD_GROUP, tooltip: dashboardWidthTooltip, minval: 1, step: 0.25 }));
-  let dashboardHeightInput = pinescript.inputFloat(1, "Height", ({ group: DASHBOARD_GROUP, tooltip: dashboardHeightTooltip, minval: 1, step: 0.25 }));
-  let colormapInput = pinescript.inputString(VIRIDIS, "Colors", ({ group: STYLE_GROUP, options: [VIRIDIS, PLASMA, MAGMA, CUSTOM] }));
-  let coldColorInput = pinescript.inputColor(RED, "Custom Cold", ({ group: STYLE_GROUP }));
-  let lukewarmColorInput = pinescript.inputColor(YELLOW, "Custom Lukewarm", ({ group: STYLE_GROUP }));
-  let hotColorInput = pinescript.inputColor(GREEN, "Custom Hot", ({ group: STYLE_GROUP }));
-  if (state.fullMonth === undefined) state.fullMonth = array.from(data.new(pinescript.arrayNew()), data.new(pinescript.arrayNew()), data.new(pinescript.arrayNew()), data.new(pinescript.arrayNew()), data.new(pinescript.arrayNew()), data.new(pinescript.arrayNew()), data.new(pinescript.arrayNew()), data.new(pinescript.arrayNew()), data.new(pinescript.arrayNew()), data.new(pinescript.arrayNew()), data.new(pinescript.arrayNew()), data.new(pinescript.arrayNew()), data.new(pinescript.arrayNew()), data.new(pinescript.arrayNew()), data.new(pinescript.arrayNew()), data.new(pinescript.arrayNew()), data.new(pinescript.arrayNew()), data.new(pinescript.arrayNew()), data.new(pinescript.arrayNew()), data.new(pinescript.arrayNew()), data.new(pinescript.arrayNew()), data.new(pinescript.arrayNew()), data.new(pinescript.arrayNew()), data.new(pinescript.arrayNew()), data.new(pinescript.arrayNew()), data.new(pinescript.arrayNew()), data.new(pinescript.arrayNew()), data.new(pinescript.arrayNew()), data.new(pinescript.arrayNew()), data.new(pinescript.arrayNew()), data.new(pinescript.arrayNew()));
-  if (state.fullWeek === undefined) state.fullWeek = ((syminfo.type === "crypto") ? array.from(data.new(pinescript.arrayNew(), "SUN"), data.new(pinescript.arrayNew(), "MON"), data.new(pinescript.arrayNew(), "TUE"), data.new(pinescript.arrayNew(), "WED"), data.new(pinescript.arrayNew(), "THU"), data.new(pinescript.arrayNew(), "FRI"), data.new(pinescript.arrayNew(), "SAT")) : array.from(data.new(pinescript.arrayNew(), "MON"), data.new(pinescript.arrayNew(), "TUE"), data.new(pinescript.arrayNew(), "WED"), data.new(pinescript.arrayNew(), "THU"), data.new(pinescript.arrayNew(), "FRI")));
-  if (state.fullYear === undefined) state.fullYear = array.from(data.new(pinescript.arrayNew(), "JAN"), data.new(pinescript.arrayNew(), "FEB"), data.new(pinescript.arrayNew(), "MAR"), data.new(pinescript.arrayNew(), "APR"), data.new(pinescript.arrayNew(), "MAY"), data.new(pinescript.arrayNew(), "JUN"), data.new(pinescript.arrayNew(), "JUL"), data.new(pinescript.arrayNew(), "AUG"), data.new(pinescript.arrayNew(), "SEP"), data.new(pinescript.arrayNew(), "OCT"), data.new(pinescript.arrayNew(), "NOV"), data.new(pinescript.arrayNew(), "DEC"));
-  if (state.fullDay === undefined) state.fullDay = array.from(data.new(pinescript.arrayNew(), "0"), data.new(pinescript.arrayNew(), "1"), data.new(pinescript.arrayNew(), "2"), data.new(pinescript.arrayNew(), "3"), data.new(pinescript.arrayNew(), "4"), data.new(pinescript.arrayNew(), "5"), data.new(pinescript.arrayNew(), "6"), data.new(pinescript.arrayNew(), "7"), data.new(pinescript.arrayNew(), "8"), data.new(pinescript.arrayNew(), "9"), data.new(pinescript.arrayNew(), "10"), data.new(pinescript.arrayNew(), "11"), data.new(pinescript.arrayNew(), "12"), data.new(pinescript.arrayNew(), "13"), data.new(pinescript.arrayNew(), "14"), data.new(pinescript.arrayNew(), "15"), data.new(pinescript.arrayNew(), "16"), data.new(pinescript.arrayNew(), "17"), data.new(pinescript.arrayNew(), "18"), data.new(pinescript.arrayNew(), "19"), data.new(pinescript.arrayNew(), "20"), data.new(pinescript.arrayNew(), "21"), data.new(pinescript.arrayNew(), "22"), data.new(pinescript.arrayNew(), "23"));
-  let parsedDayofweek = dayofweek(time_tradingday);
-  let parsedDayofmonth = ((syminfo.type === "crypto") ? dayofmonth : pinescript.dayofmonth(time_close));
-  let parsedMonth = ((syminfo.type === "crypto") ? month : pinescript.month(time_close));
+  var GREEN = pinescript.color.hex("#089981");
+  var RED = pinescript.color.hex("#F23645");
+  var YELLOW = pinescript.color.hex("#F2E805");
+  var DATA = pinescript.color.hex("#DBDBDB");
+  var BACKGROUND = pinescript.color.hex("#161616");
+  var BORDERS = pinescript.color.hex("#2E2E2E");
+  var ORANGE = pinescript.color.hex("#FF5D00");
+  var ORANGE_LIGHT = pinescript.color.hex("#FEF1E8");
+  var COLD_VIRIDIS = pinescript.color.hex("#400A53");
+  var LUKEWARM_VIRIDIS = pinescript.color.hex("#408E8B");
+  var HOT_VIRIDIS = pinescript.color.hex("#F8E650");
+  var COLD_PLASMA = pinescript.color.hex("#110A81");
+  var LUKEWARM_PLASMA = pinescript.color.hex("#B8487D");
+  var HOT_PLASMA = pinescript.color.hex("#F1F455");
+  var COLD_MAGMA = pinescript.color.hex("#000005");
+  var LUKEWARM_MAGMA = pinescript.color.hex("#9D3B7A");
+  var HOT_MAGMA = pinescript.color.hex("#FCF7BE");
+  var VIRIDIS = "Viridis";
+  var PLASMA = "Plasma";
+  var MAGMA = "Magma";
+  var CUSTOM = "Custom";
+  var TOP_RIGHT = "Top Right";
+  var BOTTOM_RIGHT = "Bottom Right";
+  var BOTTOM_LEFT = "Bottom Left";
+  var TINY = "Tiny";
+  var SMALL = "Small";
+  var NORMAL = "Normal";
+  var LARGE = "Large";
+  var HUGE = "Huge";
+  var VOLUME = "Volume";
+  var VOLATILITY = "Volatility";
+  var DAYOFWEEK = "Days of Week";
+  var DAYOFMONTH = "Days of Month";
+  var MONTH = "Months";
+  var HOURS = "Hours";
+  var DASHBOARD_GROUP = "Graph";
+  var STYLE_GROUP = "Style";
+  var deltaTooltip = "Display the difference between the medians as a percentage. The smaller median is 0, and the larger median is 100. Enabling this feature highlights the differences between values.";
+  var dashboardPositionTooltip = "Select the graph location.";
+  var dashboardSizeTooltip = "Select the graph text size.";
+  var dashboardWidthTooltip = "Select the graph width.";
+  var dashboardHeightTooltip = "Select the graph height.";
+  var baseDataInput = pinescript.inputString(VOLUME, "Data", ({ options: [VOLATILITY, VOLUME] }));
+  var periodInput = pinescript.inputString(DAYOFMONTH, "Period", ({ options: [MONTH, DAYOFMONTH, DAYOFWEEK, HOURS] }));
+  var deltaInput = pinescript.inputBool(false, "Display Delta Between Medians", ({ tooltip: deltaTooltip }));
+  var dashboardPositionInput = pinescript.inputString(TOP_RIGHT, "Position", ({ group: DASHBOARD_GROUP, tooltip: dashboardPositionTooltip, options: [TOP_RIGHT, BOTTOM_RIGHT, BOTTOM_LEFT] }));
+  var dashboardSizeInput = pinescript.inputString(SMALL, "Size", ({ group: DASHBOARD_GROUP, tooltip: dashboardSizeTooltip, options: [TINY, SMALL, NORMAL, LARGE, HUGE] }));
+  var dashboardWidthInput = pinescript.inputFloat(1, "Width", ({ group: DASHBOARD_GROUP, tooltip: dashboardWidthTooltip, minval: 1, step: 0.25 }));
+  var dashboardHeightInput = pinescript.inputFloat(1, "Height", ({ group: DASHBOARD_GROUP, tooltip: dashboardHeightTooltip, minval: 1, step: 0.25 }));
+  var colormapInput = pinescript.inputString(VIRIDIS, "Colors", ({ group: STYLE_GROUP, options: [VIRIDIS, PLASMA, MAGMA, CUSTOM] }));
+  var coldColorInput = pinescript.inputColor(RED, "Custom Cold", ({ group: STYLE_GROUP }));
+  var lukewarmColorInput = pinescript.inputColor(YELLOW, "Custom Lukewarm", ({ group: STYLE_GROUP }));
+  var hotColorInput = pinescript.inputColor(GREEN, "Custom Hot", ({ group: STYLE_GROUP }));
+  if (state.fullMonth === undefined) state.fullMonth = pinescript.array.from(data.new(pinescript.arrayNew()), data.new(pinescript.arrayNew()), data.new(pinescript.arrayNew()), data.new(pinescript.arrayNew()), data.new(pinescript.arrayNew()), data.new(pinescript.arrayNew()), data.new(pinescript.arrayNew()), data.new(pinescript.arrayNew()), data.new(pinescript.arrayNew()), data.new(pinescript.arrayNew()), data.new(pinescript.arrayNew()), data.new(pinescript.arrayNew()), data.new(pinescript.arrayNew()), data.new(pinescript.arrayNew()), data.new(pinescript.arrayNew()), data.new(pinescript.arrayNew()), data.new(pinescript.arrayNew()), data.new(pinescript.arrayNew()), data.new(pinescript.arrayNew()), data.new(pinescript.arrayNew()), data.new(pinescript.arrayNew()), data.new(pinescript.arrayNew()), data.new(pinescript.arrayNew()), data.new(pinescript.arrayNew()), data.new(pinescript.arrayNew()), data.new(pinescript.arrayNew()), data.new(pinescript.arrayNew()), data.new(pinescript.arrayNew()), data.new(pinescript.arrayNew()), data.new(pinescript.arrayNew()), data.new(pinescript.arrayNew()));
+  if (state.fullWeek === undefined) state.fullWeek = ((syminfo.type === "crypto") ? pinescript.array.from(data.new(pinescript.arrayNew(), "SUN"), data.new(pinescript.arrayNew(), "MON"), data.new(pinescript.arrayNew(), "TUE"), data.new(pinescript.arrayNew(), "WED"), data.new(pinescript.arrayNew(), "THU"), data.new(pinescript.arrayNew(), "FRI"), data.new(pinescript.arrayNew(), "SAT")) : pinescript.array.from(data.new(pinescript.arrayNew(), "MON"), data.new(pinescript.arrayNew(), "TUE"), data.new(pinescript.arrayNew(), "WED"), data.new(pinescript.arrayNew(), "THU"), data.new(pinescript.arrayNew(), "FRI")));
+  if (state.fullYear === undefined) state.fullYear = pinescript.array.from(data.new(pinescript.arrayNew(), "JAN"), data.new(pinescript.arrayNew(), "FEB"), data.new(pinescript.arrayNew(), "MAR"), data.new(pinescript.arrayNew(), "APR"), data.new(pinescript.arrayNew(), "MAY"), data.new(pinescript.arrayNew(), "JUN"), data.new(pinescript.arrayNew(), "JUL"), data.new(pinescript.arrayNew(), "AUG"), data.new(pinescript.arrayNew(), "SEP"), data.new(pinescript.arrayNew(), "OCT"), data.new(pinescript.arrayNew(), "NOV"), data.new(pinescript.arrayNew(), "DEC"));
+  if (state.fullDay === undefined) state.fullDay = pinescript.array.from(data.new(pinescript.arrayNew(), "0"), data.new(pinescript.arrayNew(), "1"), data.new(pinescript.arrayNew(), "2"), data.new(pinescript.arrayNew(), "3"), data.new(pinescript.arrayNew(), "4"), data.new(pinescript.arrayNew(), "5"), data.new(pinescript.arrayNew(), "6"), data.new(pinescript.arrayNew(), "7"), data.new(pinescript.arrayNew(), "8"), data.new(pinescript.arrayNew(), "9"), data.new(pinescript.arrayNew(), "10"), data.new(pinescript.arrayNew(), "11"), data.new(pinescript.arrayNew(), "12"), data.new(pinescript.arrayNew(), "13"), data.new(pinescript.arrayNew(), "14"), data.new(pinescript.arrayNew(), "15"), data.new(pinescript.arrayNew(), "16"), data.new(pinescript.arrayNew(), "17"), data.new(pinescript.arrayNew(), "18"), data.new(pinescript.arrayNew(), "19"), data.new(pinescript.arrayNew(), "20"), data.new(pinescript.arrayNew(), "21"), data.new(pinescript.arrayNew(), "22"), data.new(pinescript.arrayNew(), "23"));
+  var parsedDayofweek = dayofweek(time_tradingday);
+  var parsedDayofmonth = ((syminfo.type === "crypto") ? dayofmonth : pinescript.dayofmonth(time_close));
+  var parsedMonth = ((syminfo.type === "crypto") ? month : pinescript.month(time_close));
   pinescript.position.bottom_left;
   pinescript.position.bottom_right;
   pinescript.position.top_right;
@@ -1768,41 +1927,49 @@ function main() {
   [COLD_MAGMA, LUKEWARM_MAGMA, HOT_MAGMA];
   [COLD_PLASMA, LUKEWARM_PLASMA, HOT_VIRIDIS];
   [COLD_VIRIDIS, LUKEWARM_VIRIDIS, HOT_VIRIDIS];
-  let [cold, lukewarm, hot] = pinescript.unpack(((colormapInput === VIRIDIS) ? undefined : ((colormapInput === PLASMA) ? undefined : ((colormapInput === MAGMA) ? undefined : ((colormapInput === CUSTOM) ? undefined : null)))), 3);
+  var [cold, lukewarm, hot] = pinescript.unpack(((colormapInput === VIRIDIS) ? undefined : ((colormapInput === PLASMA) ? undefined : ((colormapInput === MAGMA) ? undefined : ((colormapInput === CUSTOM) ? undefined : null)))), 3);
   function error() {
     if (state.t_able === undefined) state.t_able = pinescript.table.new(pinescript.position.top_center, 1, 1, ({ bgcolor: ORANGE_LIGHT, border_color: ORANGE, border_width: 1, frame_color: ORANGE, frame_width: 1 }));
-    return t_able.cell(0, 0, "⚠ Warning: The tool will not display the dashboard on higher timeframes.nPlease select a chart timeframe that is equal to or lower than the period parameter in the settings panel.", ({ text_color: ORANGE, text_size: 0 }));
+    return state.t_able.cell(0, 0, "⚠ Warning: The tool will not display the dashboard on higher timeframes.nPlease select a chart timeframe that is equal to or lower than the period parameter in the settings panel.", ({ text_color: ORANGE, text_size: 0 }));
   }
   function gatherDaysOfWeek(output) {
-    let [dailyData, currentDay] = pinescript.unpack(pinescript.requestSecurity(syminfo.tickerid, "1D", [output, parsedDayofweek]), 2);
-    let current = fullWeek.get((currentDay - 1));
+    var [dailyData, currentDay] = pinescript.unpack(pinescript.requestSecurity(syminfo.tickerid, "1D", [output, parsedDayofweek]), 2);
+    var current = state.fullWeek.get((currentDay - 1));
     if (!pinescript.na(current)) {
-      current.values.push(pinescript.nz(dailyData));
+      return current.values.push(pinescript.nz(dailyData));
+    } else {
+      return null;
     }
   }
   function gatherMonths(output) {
-    let [montlhyData, currentMonth] = pinescript.unpack(pinescript.requestSecurity(syminfo.tickerid, "1M", [output, parsedMonth]), 2);
-    let current = fullYear.get((currentMonth - 1));
+    var [montlhyData, currentMonth] = pinescript.unpack(pinescript.requestSecurity(syminfo.tickerid, "1M", [output, parsedMonth]), 2);
+    var current = state.fullYear.get((currentMonth - 1));
     if (!pinescript.na(current)) {
-      current.values.push(pinescript.nz(montlhyData));
+      return current.values.push(pinescript.nz(montlhyData));
+    } else {
+      return null;
     }
   }
   function gatherDayOfMonth(output) {
-    let [dailyData, dayOfMonth] = pinescript.unpack(pinescript.requestSecurity(syminfo.tickerid, "1D", [output, parsedDayofmonth]), 2);
-    let current = fullMonth.get((dayOfMonth - 1));
+    var [dailyData, dayOfMonth] = pinescript.unpack(pinescript.requestSecurity(syminfo.tickerid, "1D", [output, parsedDayofmonth]), 2);
+    var current = state.fullMonth.get((dayOfMonth - 1));
     if (!pinescript.na(current)) {
-      current.values.push(pinescript.nz(dailyData));
+      return current.values.push(pinescript.nz(dailyData));
+    } else {
+      return null;
     }
   }
   function gatherHours(output) {
-    let [hourlyData, currentHour] = pinescript.unpack(pinescript.requestSecurity(syminfo.tickerid, "60", [output, hour]), 2);
-    let current = fullDay.get(currentHour);
+    var [hourlyData, currentHour] = pinescript.unpack(pinescript.requestSecurity(syminfo.tickerid, "60", [output, hour]), 2);
+    var current = state.fullDay.get(currentHour);
     if (!pinescript.na(current)) {
-      current.values.push(pinescript.nz(hourlyData));
+      return current.values.push(pinescript.nz(hourlyData));
+    } else {
+      return null;
     }
   }
   function gatherData() {
-    let output = ((baseDataInput === VOLUME) ? volume : pinescript.ta.tr);
+    var output = ((baseDataInput === VOLUME) ? volume : pinescript.ta.tr);
     switch (periodInput) {
       case DAYOFWEEK:
       {
@@ -1827,79 +1994,79 @@ function main() {
     }
   }
   function cell(t_able, column, row, data, color = pinescript.color.hex("#FFFFFF"), align = pinescript.text.align_center, background = null, height = 0) {
-    return t_able.cell(column, row, data, ({ text_color: pinescript.color, text_size: state.parsedDashboardSize, text_halign: align, bgcolor: background, height: height }));
+    return state.t_able.cell(column, row, data, ({ text_color: pinescript.color, text_size: state.parsedDashboardSize, text_halign: align, bgcolor: background, height: height }));
   }
   function divider(t_able, row, column) {
-    let rowDivider = "━━━━━━━━━━━";
-    t_able.merge_cells(0, row, column, row);
+    var rowDivider = "━━━━━━━━━━━";
+    state.t_able.merge_cells(0, row, column, row);
     return cell(state.t_able, 0, row, rowDivider, ({ align: pinescript.text.align_center, height: (0.5 * dashboardHeightInput), color: DATA }));
   }
   function displayColumns(fullData) {
     if (state.t_able === undefined) state.t_able = pinescript.table.new(state.parsedDashboardPosition, ((fullData.size() * 2) + 1), 104, ({ bgcolor: BACKGROUND, border_width: 0, frame_color: BORDERS, frame_width: 1, force_overlay: false }));
     if (state.parsedData === undefined) state.parsedData = pinescript.arrayNew();
-    for (const [index, eachDataPoint] of fullData) {
-      parsedData.push(eachDataPoint.values.median());
+    for (const [index, eachDataPoint] of (fullData ?? []).entries()) {
+      state.parsedData.push(eachDataPoint.values.median());
     }
-    t_able.merge_cells(0, 0, ((fullData.size() * 2) - 2), 0);
-    t_able.merge_cells(0, 1, ((fullData.size() * 2) - 2), 1);
-    let min = pinescript.strToString(parsedData.min(), ((baseDataInput === VOLATILITY) ? format.mintick : format.volume));
-    let max = pinescript.strToString(parsedData.max(), ((baseDataInput === VOLATILITY) ? format.mintick : format.volume));
+    state.t_able.merge_cells(0, 0, ((fullData.size() * 2) - 2), 0);
+    state.t_able.merge_cells(0, 1, ((fullData.size() * 2) - 2), 1);
+    var min = pinescript.strToString(state.parsedData.min(), ((baseDataInput === VOLATILITY) ? format.mintick : format.volume));
+    var max = pinescript.strToString(state.parsedData.max(), ((baseDataInput === VOLATILITY) ? format.mintick : format.volume));
     "Daily";
     "Hourly";
     "Monthly";
-    let periodTag = ((periodInput === MONTH) ? undefined : ((periodInput === HOURS) ? undefined : undefined));
-    let header = (deltaInput ? "(Delta)" : "");
+    var periodTag = ((periodInput === MONTH) ? undefined : ((periodInput === HOURS) ? undefined : undefined));
+    var header = (deltaInput ? "(Delta)" : "");
     cell(state.t_able, 0, 0, pinescript.strFormat("{0} Median {1} {2}nMin: {3}  Max: {4}", periodTag, baseDataInput, header, min, max), ({ align: pinescript.text.align_center, color: DATA }));
-    let column = 0;
-    for (const [index, eachDataPoint] of state.parsedData) {
+    var column = 0;
+    for (const [index, eachDataPoint] of (state.parsedData ?? []).entries()) {
       if ((index > 0)) {
         column += 2;
       }
-      t_able.merge_cells(column, 2, column, 103);
-      t_able.cell_set_height(column, 2, (0.2 * dashboardHeightInput));
-      let scale = (deltaInput ? ((eachDataPoint - parsedData.min()) / parsedData.range()) : (eachDataPoint / parsedData.max()));
-      let value = pinescript.max(1, pinescript.floor((100 * scale)));
-      let customColor = ((value >= 50) ? pinescript.color.from_gradient(value, 50, 100, pinescript.color.new(lukewarm, 0), pinescript.color.new(hot, 0)) : pinescript.color.from_gradient(value, 1, 50, pinescript.color.new(cold, 0), pinescript.color.new(lukewarm, 0)));
-      let topRow = (101 - value);
+      state.t_able.merge_cells(column, 2, column, 103);
+      state.t_able.cell_set_height(column, 2, (0.2 * dashboardHeightInput));
+      var scale = (deltaInput ? ((eachDataPoint - state.parsedData.min()) / state.parsedData.range()) : (eachDataPoint / state.parsedData.max()));
+      var value = pinescript.max(1, pinescript.floor((100 * scale)));
+      var customColor = ((value >= 50) ? pinescript.color.from_gradient(value, 50, 100, pinescript.color.new(lukewarm, 0), pinescript.color.new(hot, 0)) : pinescript.color.from_gradient(value, 1, 50, pinescript.color.new(cold, 0), pinescript.color.new(lukewarm, 0)));
+      var topRow = (101 - value);
       for (let row = 1; row <= 100; row++) {
-        t_able.cell((column + 1), (row + 1), ({ height: (0.1 * dashboardHeightInput) }));
+        state.t_able.cell((column + 1), (row + 1), ({ height: (0.1 * dashboardHeightInput) }));
         if ((row >= topRow)) {
-          t_able.cell_set_bgcolor((column + 1), (row + 1), customColor);
+          state.t_able.cell_set_bgcolor((column + 1), (row + 1), customColor);
         }
       }
-      t_able.cell((column + 1), 103, fullData.get(index).tag, ({ width: dashboardWidthInput, text_color: DATA, text_size: state.parsedDashboardSize }));
-      if ((index === (parsedData.size() - 1))) {
-        t_able.merge_cells((column + 2), 2, (column + 2), 103);
-        t_able.cell_set_height((column + 2), 2, (0.2 * dashboardHeightInput));
+      state.t_able.cell((column + 1), 103, fullData.get(index).tag, ({ width: dashboardWidthInput, text_color: DATA, text_size: state.parsedDashboardSize }));
+      if ((index === (state.parsedData.size() - 1))) {
+        state.t_able.merge_cells((column + 2), 2, (column + 2), 103);
+        state.t_able.cell_set_height((column + 2), 2, (0.2 * dashboardHeightInput));
       }
     }
   }
   function displayMonth() {
     if (state.t_able === undefined) state.t_able = pinescript.table.new(state.parsedDashboardPosition, 9, 7, ({ bgcolor: BACKGROUND, border_width: 0, frame_color: BORDERS, frame_width: 1, force_overlay: false }));
     if (state.parsedData === undefined) state.parsedData = pinescript.arrayNew();
-    for (const [index, eachDataPoint] of state.fullMonth) {
-      parsedData.push(eachDataPoint.values.median());
+    for (const [index, eachDataPoint] of (state.fullMonth ?? []).entries()) {
+      state.parsedData.push(eachDataPoint.values.median());
     }
-    t_able.merge_cells(0, 0, 6, 0);
-    let min = pinescript.strToString(parsedData.min(), ((baseDataInput === VOLATILITY) ? format.mintick : format.volume));
-    let max = pinescript.strToString(parsedData.max(), ((baseDataInput === VOLATILITY) ? format.mintick : format.volume));
+    state.t_able.merge_cells(0, 0, 6, 0);
+    var min = pinescript.strToString(state.parsedData.min(), ((baseDataInput === VOLATILITY) ? format.mintick : format.volume));
+    var max = pinescript.strToString(state.parsedData.max(), ((baseDataInput === VOLATILITY) ? format.mintick : format.volume));
     "Daily";
     "Hourly";
     "Monthly";
-    let periodTag = ((periodInput === MONTH) ? undefined : ((periodInput === HOURS) ? undefined : undefined));
-    let header = (deltaInput ? "(Delta)" : "");
+    var periodTag = ((periodInput === MONTH) ? undefined : ((periodInput === HOURS) ? undefined : undefined));
+    var header = (deltaInput ? "(Delta)" : "");
     cell(state.t_able, 0, 0, pinescript.strFormat("{0} Median {1} {2}nMax: {3}nMin: {4}", periodTag, baseDataInput, header, max, min), ({ align: pinescript.text.align_center, color: DATA }));
     divider(state.t_able, 1, 6);
-    let row = 2;
-    let column0 = array.from(1, 8, 15, 22, 29);
-    let column1 = array.from(2, 9, 16, 23, 30);
-    let column2 = array.from(3, 10, 17, 24, 31);
-    let column3 = array.from(4, 11, 18, 25);
-    let column4 = array.from(5, 12, 19, 26);
-    let column5 = array.from(6, 13, 20, 27);
-    let column6 = array.from(7, 14, 21, 28);
-    let nextRow = false;
-    for (const [index, eachDataPoint] of state.parsedData) {
+    var row = 2;
+    var column0 = pinescript.array.from(1, 8, 15, 22, 29);
+    var column1 = pinescript.array.from(2, 9, 16, 23, 30);
+    var column2 = pinescript.array.from(3, 10, 17, 24, 31);
+    var column3 = pinescript.array.from(4, 11, 18, 25);
+    var column4 = pinescript.array.from(5, 12, 19, 26);
+    var column5 = pinescript.array.from(6, 13, 20, 27);
+    var column6 = pinescript.array.from(7, 14, 21, 28);
+    var nextRow = false;
+    for (const [index, eachDataPoint] of (state.parsedData ?? []).entries()) {
       6;
       5;
       4;
@@ -1907,7 +2074,7 @@ function main() {
       2;
       1;
       0;
-      let column = ((column0.includes((index + 1))) ? undefined : ((column1.includes((index + 1))) ? undefined : ((column2.includes((index + 1))) ? undefined : ((column3.includes((index + 1))) ? undefined : ((column4.includes((index + 1))) ? undefined : ((column5.includes((index + 1))) ? undefined : ((column6.includes((index + 1))) ? undefined : null)))))));
+      var column = ((column0.includes((index + 1))) ? undefined : ((column1.includes((index + 1))) ? undefined : ((column2.includes((index + 1))) ? undefined : ((column3.includes((index + 1))) ? undefined : ((column4.includes((index + 1))) ? undefined : ((column5.includes((index + 1))) ? undefined : ((column6.includes((index + 1))) ? undefined : null)))))));
       if (nextRow) {
         row += 1;
         nextRow = false;
@@ -1915,9 +2082,9 @@ function main() {
       if (((((index + 1) % 7) === 0) && !nextRow)) {
         nextRow = true;
       }
-      let scale = (deltaInput ? ((eachDataPoint - parsedData.min()) / parsedData.range()) : (eachDataPoint / parsedData.max()));
-      let value = pinescript.max(1, pinescript.floor((100 * scale)));
-      let customColor = ((value >= 50) ? pinescript.color.from_gradient(value, 50, 100, pinescript.color.new(lukewarm, 0), pinescript.color.new(hot, 0)) : pinescript.color.from_gradient(value, 1, 50, pinescript.color.new(cold, 0), pinescript.color.new(lukewarm, 0)));
+      var scale = (deltaInput ? ((eachDataPoint - state.parsedData.min()) / state.parsedData.range()) : (eachDataPoint / state.parsedData.max()));
+      var value = pinescript.max(1, pinescript.floor((100 * scale)));
+      var customColor = ((value >= 50) ? pinescript.color.from_gradient(value, 50, 100, pinescript.color.new(lukewarm, 0), pinescript.color.new(hot, 0)) : pinescript.color.from_gradient(value, 1, 50, pinescript.color.new(cold, 0), pinescript.color.new(lukewarm, 0)));
       cell(state.t_able, column, row, pinescript.strToString((index + 1)), ({ background: customColor }));
     }
   }
@@ -1997,6 +2164,10 @@ function run(data, options = {}) {
     rt.__shapeIdx = 0;
     globalThis.bar_index = i;
     globalThis.last_bar_index = n - 1;
+    globalThis.time_tradingday = inTime[i];
+    globalThis.time_close = inTime[i];
+    globalThis.last_bar_time = inTime[n - 1];
+    globalThis.timenow = inTime[n - 1];
     globalThis.barstate = {
       isfirst: i === 0, islast: i === n - 1, isrealtime: false, ishistory: true,
       isconfirmed: true, isnew: true, islastconfirmedhistory: i === n - 1,

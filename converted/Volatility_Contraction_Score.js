@@ -42,6 +42,80 @@ const pinescript = {
     if (value != null && typeof value[Symbol.iterator] === 'function') return Array.from(value);
     return new Array(count || 0).fill(null);
   },
+  __decArr: function(arr) {
+    if (!Array.isArray(arr) || arr.__pineDecorated) return arr;
+    const self = this;
+    const def = (name, fn) => Object.defineProperty(arr, name, { value: fn, writable: true, configurable: true });
+    Object.defineProperty(arr, '__pineDecorated', { value: true, configurable: true });
+    def('get', (i) => (arr[i] === undefined ? null : arr[i]));
+    def('set', (i, v) => { arr[i] = v; return v; });
+    def('size', () => arr.length);
+    def('clear', () => { arr.length = 0; });
+    def('insert', (i, v) => { arr.splice(i, 0, v); });
+    def('remove', (i) => arr.splice(i, 1)[0]);
+    def('contains', (v) => arr.includes(v));
+    def('indexof', (v) => arr.indexOf(v));
+    def('lastindexof', (v) => arr.lastIndexOf(v));
+    def('first', () => (arr.length ? arr[0] : null));
+    def('last', () => (arr.length ? arr[arr.length - 1] : null));
+    def('sum', () => arr.reduce((a, b) => a + b, 0));
+    def('avg', () => (arr.length ? arr.reduce((a, b) => a + b, 0) / arr.length : 0));
+    def('min', () => (arr.length ? Math.min(...arr) : null));
+    def('max', () => (arr.length ? Math.max(...arr) : null));
+    def('range', () => (arr.length ? Math.max(...arr) - Math.min(...arr) : null));
+    // Statistical methods that route to the array.* built-ins (these names are not
+    // native to JS arrays, so attaching them here is safe from recursion).
+    def('median', () => self.arrayMedian(arr));
+    def('mode', () => self.arrayMode(arr));
+    def('stdev', () => self.arrayStdev(arr));
+    def('variance', () => self.arrayVariance(arr));
+    def('covariance', (other) => self.arrayCovariance(arr, other));
+    def('percentile_linear_interpolation', (p) => self.arrayPercentileLinearInterpolation(arr, p));
+    def('percentile_nearest_rank', (p) => self.arrayPercentileNearestRank(arr, p));
+    def('abs', () => self.__decArr(self.arrayAbs(arr)));
+    def('binary_search', (v) => self.arrayBinarySearch(arr, v));
+    // Pine's array.sort takes an order string, not a comparator. Use the native
+    // sort via .call so we don't recurse through this overridden method.
+    def('sort', (order) => { Array.prototype.sort.call(arr, (a, b) => (order === 'descending' ? b - a : a - b)); return arr; });
+    def('sort_indices', (order) => self.__decArr(arr.map((_, i) => i).sort((a, b) => (order === 'descending' ? arr[b] - arr[a] : arr[a] - arr[b]))));
+    // join/slice/reverse/concat/includes/fill already exist natively on Array with
+    // compatible semantics, so we deliberately leave them to the native methods.
+    return arr;
+  },
+  __decMap: function(m) {
+    if (!(m instanceof Map) || m.__pineDecorated) return m;
+    const def = (name, fn) => Object.defineProperty(m, name, { value: fn, writable: true, configurable: true });
+    Object.defineProperty(m, '__pineDecorated', { value: true, configurable: true });
+    def('put', (k, v) => { m.set(k, v); return v; });
+    def('contains', (k) => m.has(k));
+    def('remove', (k) => m.delete(k));
+    def('keys', () => Array.from(Map.prototype.keys.call(m)));
+    def('values', () => Array.from(Map.prototype.values.call(m)));
+    def('size_', () => m.size);
+    return m;
+  },
+  __decMatrix: function(m) {
+    if (!m || typeof m !== 'object' || m.__pineDecorated) return m;
+    const self = this;
+    const def = (name, fn) => Object.defineProperty(m, name, { value: fn, writable: true, configurable: true });
+    Object.defineProperty(m, '__pineDecorated', { value: true, configurable: true });
+    def('get', (r, c) => self.matrixGet(m, r, c));
+    def('set', (r, c, v) => self.matrixSet(m, r, c, v));
+    def('rows_', () => m.rows);
+    def('columns', () => m.cols);
+    def('fill', (v) => self.matrixFill(m, v));
+    return m;
+  },
+  __decDraw: function(obj) {
+    if (!obj || typeof obj !== 'object') return obj;
+    const p = new Proxy(obj, {
+      get(t, k) {
+        if (k in t || typeof k === 'symbol') return t[k];
+        return function() { return p; };
+      },
+    });
+    return p;
+  },
   alertcondition: function(condition, ...rest) {
     if (globalThis.__pineRuntime) {
       globalThis.__pineRuntime.alerts.push({ condition, args: rest });
@@ -49,6 +123,32 @@ const pinescript = {
     return null;
   },
   barcolor: function(color) { return null; },
+  plotchar: function(series, ...rest) {
+    const rt = globalThis.__pineRuntime;
+    if (!rt) return series;
+    const bar = rt.__barIndex | 0;
+    const ord = (rt.__shapeIdx = (rt.__shapeIdx | 0) + 1) - 1;
+    let key = 'char_' + ord;
+    for (const r of rest) {
+      if (typeof r === 'string') { key = r; break; }
+      if (r && typeof r === 'object' && r.title) { key = String(r.title); break; }
+    }
+    let s = rt.plotshapes[key];
+    if (!s) s = rt.plotshapes[key] = { title: key, data: [] };
+    s.data[bar] = this.__scalar(series);
+    return series;
+  },
+  plotarrow: function(series, ...rest) {
+    const rt = globalThis.__pineRuntime;
+    if (!rt) return series;
+    const bar = rt.__barIndex | 0;
+    const ord = (rt.__plotIdx = (rt.__plotIdx | 0) + 1) - 1;
+    const key = 'arrow_' + ord;
+    let p = rt.plots[key];
+    if (!p) p = rt.plots[key] = { title: key, data: [] };
+    p.data[bar] = this.__scalar(series);
+    return series;
+  },
   bgcolor: function(color, title, editable, showLast) {
     return null;
   },
@@ -470,6 +570,12 @@ const pinescript = {
   atan: function(value) {
     return Math.atan(value);
   },
+  todegrees: function(radians) {
+    return radians * (180 / Math.PI);
+  },
+  toradians: function(degrees) {
+    return degrees * (Math.PI / 180);
+  },
   floor: function(value) {
     return Math.floor(value);
   },
@@ -641,7 +747,7 @@ const pinescript = {
     return series;
   },
   lineNew: function(x1, y1, x2, y2, opts = {}) {
-    return { x1, y1, x2, y2, opts, _type: 'line' };
+    return this.__decDraw({ x1, y1, x2, y2, opts, _type: 'line' });
   },
   lineDelete: function(l) {
     return null;
@@ -661,7 +767,7 @@ const pinescript = {
     return point === 0 || point === 'y1' ? line.y1 : line.y2;
   },
   labelNew: function(x, y, text = '', opts = {}) {
-    return { x, y, text, opts, _type: 'label' };
+    return this.__decDraw({ x, y, text, opts, _type: 'label' });
   },
   labelDelete: function(l) {
     return null;
@@ -676,7 +782,7 @@ const pinescript = {
     return label.text || '';
   },
   boxNew: function(left, top, right, bottom, opts = {}) {
-    return { left, top, right, bottom, opts, _type: 'box' };
+    return this.__decDraw({ left, top, right, bottom, opts, _type: 'box' });
   },
   boxDelete: function(box) {
     return null;
@@ -694,7 +800,7 @@ const pinescript = {
     return box;
   },
   polylineNew: function(points, opts = {}) {
-    return { points: points || [], opts, _type: 'polyline' };
+    return this.__decDraw({ points: points || [], opts, _type: 'polyline' });
   },
   polylineDelete: function(poly) {
     return null;
@@ -765,7 +871,7 @@ const pinescript = {
     return { time: _time ?? null, price: _price ?? null };
   },
   mapNew: function() {
-    return new Map();
+    return this.__decMap(new Map());
   },
   mapSize: function(m) {
     return m instanceof Map ? m.size : 0;
@@ -800,7 +906,7 @@ const pinescript = {
     const r = Math.max(0, rows ?? 0);
     const c = Math.max(0, cols ?? 0);
     const data = Array.from({ length: r }, () => Array.from({ length: c }, () => initialValue));
-    return { rows: r, cols: c, data };
+    return this.__decMatrix({ rows: r, cols: c, data });
   },
   matrixRows: function(m) {
     return m?.rows ?? 0;
@@ -923,11 +1029,62 @@ const pinescript = {
     }
     return null;
   },
+  __jacobiEigen: function(m) {
+    if (!m || !Array.isArray(m.data)) return null;
+    const n = m.rows ?? 0;
+    if (n === 0 || n !== (m.cols ?? 0)) return null;
+    // Work on a copy so the input matrix is untouched.
+    const a = m.data.map(row => row.slice());
+    const v = Array.from({ length: n }, (_, i) => Array.from({ length: n }, (_, j) => (i === j ? 1 : 0)));
+    for (let sweep = 0; sweep < 100; sweep++) {
+      let off = 0;
+      for (let p = 0; p < n; p++) for (let q = p + 1; q < n; q++) off += a[p][q] * a[p][q];
+      if (off < 1e-20) break;
+      for (let p = 0; p < n; p++) {
+        for (let q = p + 1; q < n; q++) {
+          if (Math.abs(a[p][q]) < 1e-18) continue;
+          const theta = (a[q][q] - a[p][p]) / (2 * a[p][q]);
+          const t = Math.sign(theta || 1) / (Math.abs(theta) + Math.sqrt(theta * theta + 1));
+          const cos = 1 / Math.sqrt(t * t + 1);
+          const sin = t * cos;
+          for (let k = 0; k < n; k++) {
+            const akp = a[k][p], akq = a[k][q];
+            a[k][p] = cos * akp - sin * akq;
+            a[k][q] = sin * akp + cos * akq;
+          }
+          for (let k = 0; k < n; k++) {
+            const apk = a[p][k], aqk = a[q][k];
+            a[p][k] = cos * apk - sin * aqk;
+            a[q][k] = sin * apk + cos * aqk;
+          }
+          for (let k = 0; k < n; k++) {
+            const vkp = v[k][p], vkq = v[k][q];
+            v[k][p] = cos * vkp - sin * vkq;
+            v[k][q] = sin * vkp + cos * vkq;
+          }
+        }
+      }
+    }
+    // Sort eigenpairs by eigenvalue, descending.
+    const order = Array.from({ length: n }, (_, i) => i).sort((i, j) => a[j][j] - a[i][i]);
+    const values = order.map(i => a[i][i]);
+    const vectors = Array.from({ length: n }, (_, r) => order.map(c => v[r][c]));
+    return { values, vectors };
+  },
+  matrixEigenvalues: function(m) {
+    const e = this.__jacobiEigen(m);
+    return this.__decArr(e ? e.values : []);
+  },
+  matrixEigenvectors: function(m) {
+    const e = this.__jacobiEigen(m);
+    if (!e) return this.__decMatrix({ rows: 0, cols: 0, data: [] });
+    return this.__decMatrix({ rows: e.vectors.length, cols: e.vectors.length, data: e.vectors });
+  },
   requestSecurity: function(symbol, timeframe, expression) {
     return expression;
   },
   arrayNew: function(initialSize = 0, initialValue = 0) {
-    return Array(initialSize).fill(initialValue);
+    return this.__decArr(Array(initialSize).fill(initialValue));
   },
   arraySize: function(arr) {
     return arr ? arr.length : 0;
@@ -978,10 +1135,10 @@ const pinescript = {
     return arr;
   },
   arraySlice: function(arr, startIndex = 0, endIndex = null) {
-    if (!arr) return [];
+    if (!arr) return this.__decArr([]);
     const start = Number(startIndex) || 0;
     const end = endIndex === null || endIndex === undefined ? arr.length : Number(endIndex) || 0;
-    return arr.slice(start, end);
+    return this.__decArr(arr.slice(start, end));
   },
   arraySort: function(arr, order = 'ascending') {
     if (arr) arr.sort((a, b) => order === 'ascending' ? a - b : b - a);
@@ -1191,7 +1348,7 @@ const pinescript = {
     const info = { ticker: 'AAPL', tickerid: 'NASDAQ:AAPL', prefix: 'NASDAQ', root: 'AAPL', suffix: '' };
     return info[type] || '';
   },
-  timenow: 1781574528980,
+  timenow: 1782783578026,
   barstate: "LAST",
   dividends: {},
   splits: {},
@@ -1245,11 +1402,11 @@ const pinescript = {
   arrayConcat: function(arr1, arr2) {
     if (!arr1) return arr2 || [];
     if (!arr2) return arr1;
-    return arr1.concat(arr2);
+    return this.__decArr(arr1.concat(arr2));
   },
   arrayCopy: function(arr) {
-    if (!arr) return [];
-    return [...arr];
+    if (!arr) return this.__decArr([]);
+    return this.__decArr([...arr]);
   },
   arrayBinarySearch: function(arr, value) {
     if (!arr || arr.length === 0) return -1;
@@ -1339,7 +1496,7 @@ globalThis.input.timeframe = globalThis.input.timeframe || ((defval) => defval);
 
 globalThis.array = globalThis.array || {
 
-  from: (...items) => items,
+  from: (...items) => pinescript.__decArr(items),
 
   size: (arr) => pinescript.arraySize(arr),
 
@@ -1508,6 +1665,8 @@ globalThis.line = globalThis.line || __pineNS({ style_solid: "solid", style_dash
 
 globalThis.box = globalThis.box || __pineNS({});
 
+globalThis.color = globalThis.color || __pineNS(Object.assign(function(c) { return c; }, { new: function(c, t) { return c; }, rgb: function(r, g, b, t) { return "#rgb(" + [r, g, b].join(",") + ")"; }, from_gradient: function(v, lo, hi, c1, c2) { return c1; }, r: function() { return 0; }, g: function() { return 0; }, b: function() { return 0; }, t: function() { return 0; }, aqua: "#00BCD4", black: "#363A45", blue: "#2962FF", fuchsia: "#E040FB", gray: "#787B86", green: "#4CAF50", lime: "#00E676", maroon: "#880E4F", navy: "#311B92", olive: "#808000", orange: "#FF9800", purple: "#9C27B0", red: "#FF5252", silver: "#B2B5BE", teal: "#00897B", white: "#FFFFFF", yellow: "#FFEB3B" }));
+
 globalThis.label = globalThis.label || __pineNS({ style_label_down: "label_down", style_label_up: "label_up", style_none: "none" });
 
 globalThis.polyline = globalThis.polyline || __pineNS({});
@@ -1520,7 +1679,9 @@ globalThis.map = globalThis.map || __pineNS({});
 
 globalThis.session = globalThis.session || __pineNS({ regular: "regular", extended: "extended" });
 
-globalThis.dayofweek = globalThis.dayofweek || __pineNS({ sunday: 1, monday: 2, tuesday: 3, wednesday: 4, thursday: 5, friday: 6, saturday: 7 });
+globalThis.ticker = globalThis.ticker || __pineNS({});
+
+globalThis.dayofweek = globalThis.dayofweek || __pineNS(Object.assign(function(t) { return new Date(t != null ? t : (globalThis.time || 0)).getUTCDay() + 1; }, { sunday: 1, monday: 2, tuesday: 3, wednesday: 4, thursday: 5, friday: 6, saturday: 7 }));
 
 globalThis.timeframe = __pineNS(Object.assign(globalThis.timeframe || {}, { period: (globalThis.timeframe && globalThis.timeframe.period) || "D", isintraday: false, isdaily: true, multiplier: 1 }));
 
@@ -1567,8 +1728,6 @@ globalThis.float = globalThis.float || function(x) { return x == null ? null : N
 globalThis.bool = globalThis.bool || function(x) { return Boolean(x); };
 
 globalThis.string = globalThis.string || function(x) { return x == null ? null : String(x); };
-
-globalThis.dayofweek = globalThis.dayofweek || __pineNS({ sunday: 1, monday: 2, tuesday: 3, wednesday: 4, thursday: 5, friday: 6, saturday: 7 });
 
 globalThis.str = globalThis.str || __pineNS({});
 
@@ -1655,7 +1814,7 @@ pinescript.text = { align_center: "center" };
 
 pinescript.table = {
 
-  new: function(position, columns, rows, opts) { return { position, columns, rows, opts: opts || {}, cells: [] }; },
+  new: function(position, columns, rows, opts) { return pinescript.__decDraw({ position, columns, rows, opts: opts || {}, cells: [] }); },
 
   cell: function(table, column, row, text, opts) {
 
@@ -1688,85 +1847,85 @@ function main() {
   null;
   // Study: Volatility Contraction Score
   // Options: {"shorttitle":"VCS","overlay":false}
-  let grpCore = "VCP Logic Settings";
-  let grpScreen = "Screener Data for Pine Screener";
-  let lenShortInput = pinescript.inputInt(13, "Short Term", ({ minval: 3, group: grpCore }));
-  let lenLongInput = pinescript.inputInt(63, "Long Term", ({ minval: 20, group: grpCore }));
-  let lenVolInput = pinescript.inputInt(50, "Volume Average (Logic)", ({ minval: 10, group: grpCore }));
-  let sensitivity = 2;
-  let grpTrend = "Trend Filter";
-  let trendPenaltyWeight = pinescript.inputFloat(1, "Trend Penalty Strength", ({ minval: 0, maxval: 5, step: 0.5, group: grpTrend }));
-  let grpStruct = "Structure Settings";
-  let hlLookbackInput = pinescript.inputInt(63, "Structure Lookback", ({ minval: 20, group: grpStruct }));
-  let penaltyFactor = pinescript.inputFloat(0.75, "Penalty for Lower Low", ({ minval: 0, maxval: 1, step: 0.05, group: grpStruct }));
-  let grpBonus = "Consistency Weight";
-  let bonusMax = pinescript.inputInt(15, "Max Consistency Points", ({ minval: 5, maxval: 30, group: grpBonus }));
-  let scr_vol_len = pinescript.inputInt(50, "Avg Volume Length", ({ minval: 10, group: grpScreen }));
-  let rs_benchmark = input.symbol("SPY", "RS Benchmark", ({ group: grpScreen }));
-  let rs_len = pinescript.inputInt(21, "RS Period", ({ group: grpScreen }));
-  let adr_len = pinescript.inputInt(20, "ADR Period", ({ group: grpScreen }));
-  let grpColor = "Color & Thresholds";
-  let thHigh = pinescript.inputInt(80, "Level 2 (High)", ({ minval: 60, maxval: 100, group: grpColor }));
-  let thLow = pinescript.inputInt(60, "Level 1 (Base)", ({ minval: 0, maxval: 80, group: grpColor }));
-  let cHigh = pinescript.inputColor(pinescript.color.hex("#00E676"), "Level 2 Color", ({ group: grpColor }));
-  let cLow = pinescript.inputColor(pinescript.color.hex("#2962FF"), "Level 1 Color", ({ group: grpColor }));
-  let cBase = pinescript.inputColor(pinescript.color.hex("#787B86"), "Base Color (<60)", ({ group: grpColor }));
-  let barCount = (bar_index + 1);
-  let lenLong = pinescript.min(barCount, lenLongInput);
-  let lenShort = pinescript.min(barCount, lenShortInput);
-  let lenVol = pinescript.min(barCount, lenVolInput);
-  let trVal = pinescript.tr(true);
-  let trShort = pinescript.sma(trVal, lenShort);
-  let trLongAvg = pinescript.sma(trVal, lenLong);
-  let ratioATR = (trShort / pinescript.max(trLongAvg, 0.000001));
-  let stdShort = ta.stdev(close, lenShort);
-  let stdLongAvg = ta.stdev(close, lenLong);
-  let ratioStd = (stdShort / pinescript.max(stdLongAvg, 0.000001));
-  let volAvg = pinescript.sma(volume, lenVol);
-  let volShortAvg = pinescript.sma(volume, 5);
-  let volRatio = (volShortAvg / pinescript.max(volAvg, 1));
-  let netChange = pinescript.abs((close - pinescript.hist(0, close, lenShort)));
-  let totalTravel = pinescript.sum(pinescript.series(1, pinescript.tr(true)), lenShort);
-  let efficiency = (netChange / pinescript.max(totalTravel, 0.000001));
-  let trendFactor = pinescript.max(0, (1 - (efficiency * trendPenaltyWeight)));
-  let lowRecent = pinescript.lowest(pinescript.series(2, low), lenShort);
-  let barsBeforeShort = (barCount - lenShortInput);
-  let hasHistory = (barsBeforeShort > 0);
-  let lowBase = 0;
-  let isHigherLow = true;
+  var grpCore = "VCP Logic Settings";
+  var grpScreen = "Screener Data for Pine Screener";
+  var lenShortInput = pinescript.inputInt(13, "Short Term", ({ minval: 3, group: grpCore }));
+  var lenLongInput = pinescript.inputInt(63, "Long Term", ({ minval: 20, group: grpCore }));
+  var lenVolInput = pinescript.inputInt(50, "Volume Average (Logic)", ({ minval: 10, group: grpCore }));
+  var sensitivity = 2;
+  var grpTrend = "Trend Filter";
+  var trendPenaltyWeight = pinescript.inputFloat(1, "Trend Penalty Strength", ({ minval: 0, maxval: 5, step: 0.5, group: grpTrend }));
+  var grpStruct = "Structure Settings";
+  var hlLookbackInput = pinescript.inputInt(63, "Structure Lookback", ({ minval: 20, group: grpStruct }));
+  var penaltyFactor = pinescript.inputFloat(0.75, "Penalty for Lower Low", ({ minval: 0, maxval: 1, step: 0.05, group: grpStruct }));
+  var grpBonus = "Consistency Weight";
+  var bonusMax = pinescript.inputInt(15, "Max Consistency Points", ({ minval: 5, maxval: 30, group: grpBonus }));
+  var scr_vol_len = pinescript.inputInt(50, "Avg Volume Length", ({ minval: 10, group: grpScreen }));
+  var rs_benchmark = input.symbol("SPY", "RS Benchmark", ({ group: grpScreen }));
+  var rs_len = pinescript.inputInt(21, "RS Period", ({ group: grpScreen }));
+  var adr_len = pinescript.inputInt(20, "ADR Period", ({ group: grpScreen }));
+  var grpColor = "Color & Thresholds";
+  var thHigh = pinescript.inputInt(80, "Level 2 (High)", ({ minval: 60, maxval: 100, group: grpColor }));
+  var thLow = pinescript.inputInt(60, "Level 1 (Base)", ({ minval: 0, maxval: 80, group: grpColor }));
+  var cHigh = pinescript.inputColor(pinescript.color.hex("#00E676"), "Level 2 Color", ({ group: grpColor }));
+  var cLow = pinescript.inputColor(pinescript.color.hex("#2962FF"), "Level 1 Color", ({ group: grpColor }));
+  var cBase = pinescript.inputColor(pinescript.color.hex("#787B86"), "Base Color (<60)", ({ group: grpColor }));
+  var barCount = (bar_index + 1);
+  var lenLong = pinescript.min(barCount, lenLongInput);
+  var lenShort = pinescript.min(barCount, lenShortInput);
+  var lenVol = pinescript.min(barCount, lenVolInput);
+  var trVal = pinescript.tr(true);
+  var trShort = pinescript.sma(pinescript.series(0, trVal), lenShort);
+  var trLongAvg = pinescript.sma(pinescript.series(1, trVal), lenLong);
+  var ratioATR = (trShort / pinescript.max(trLongAvg, 0.000001));
+  var stdShort = pinescript.ta.stdev(close, lenShort);
+  var stdLongAvg = pinescript.ta.stdev(close, lenLong);
+  var ratioStd = (stdShort / pinescript.max(stdLongAvg, 0.000001));
+  var volAvg = pinescript.sma(pinescript.series(2, volume), lenVol);
+  var volShortAvg = pinescript.sma(pinescript.series(3, volume), 5);
+  var volRatio = (volShortAvg / pinescript.max(volAvg, 1));
+  var netChange = pinescript.abs((close - pinescript.hist(4, close, lenShort)));
+  var totalTravel = pinescript.sum(pinescript.series(5, pinescript.tr(true)), lenShort);
+  var efficiency = (netChange / pinescript.max(totalTravel, 0.000001));
+  var trendFactor = pinescript.max(0, (1 - (efficiency * trendPenaltyWeight)));
+  var lowRecent = pinescript.lowest(pinescript.series(6, low), lenShort);
+  var barsBeforeShort = (barCount - lenShortInput);
+  var hasHistory = (barsBeforeShort > 0);
+  var lowBase = 0;
+  var isHigherLow = true;
   if (hasHistory) {
-    lowBase = pinescript.hist(3, pinescript.lowest(pinescript.series(4, low), hlLookbackInput), lenShortInput);
+    lowBase = pinescript.hist(7, pinescript.lowest(pinescript.series(8, low), hlLookbackInput), lenShortInput);
     isHigherLow = (lowRecent >= lowBase);
   }
-  let s_atr = (pinescript.max(0, (1 - pinescript.nz(ratioATR, 1))) * sensitivity);
-  let s_std = (pinescript.max(0, (1 - pinescript.nz(ratioStd, 1))) * sensitivity);
-  let s_vol = pinescript.max(0, (1 - pinescript.nz(volRatio, 1)));
-  let rawScore = (((s_atr * 0.4) + (s_std * 0.4)) + (s_vol * 0.2));
-  let filteredScore = (rawScore * trendFactor);
-  let physicsScore = pinescript.min(100, (filteredScore * 100));
-  let smoothPhysics = pinescript.ema(physicsScore, 3);
-  let isTight = (smoothPhysics >= 70);
+  var s_atr = (pinescript.max(0, (1 - pinescript.nz(ratioATR, 1))) * sensitivity);
+  var s_std = (pinescript.max(0, (1 - pinescript.nz(ratioStd, 1))) * sensitivity);
+  var s_vol = pinescript.max(0, (1 - pinescript.nz(volRatio, 1)));
+  var rawScore = (((s_atr * 0.4) + (s_std * 0.4)) + (s_vol * 0.2));
+  var filteredScore = (rawScore * trendFactor);
+  var physicsScore = pinescript.min(100, (filteredScore * 100));
+  var smoothPhysics = pinescript.ema(pinescript.series(9, physicsScore), 3);
+  var isTight = (smoothPhysics >= 70);
   if (state.daysTight === undefined) state.daysTight = 0;
   state.daysTight = (isTight ? (state.daysTight + 1) : 0);
-  let weightPhysics = ((100 - bonusMax) / 100);
-  let weightedPhysicsScore = (smoothPhysics * weightPhysics);
-  let consistencyScore = pinescript.min(bonusMax, state.daysTight);
-  let totalScore = (weightedPhysicsScore + consistencyScore);
-  let finalScore = (isHigherLow ? totalScore : (totalScore * penaltyFactor));
+  var weightPhysics = ((100 - bonusMax) / 100);
+  var weightedPhysicsScore = (smoothPhysics * weightPhysics);
+  var consistencyScore = pinescript.min(bonusMax, state.daysTight);
+  var totalScore = (weightedPhysicsScore + consistencyScore);
+  var finalScore = (isHigherLow ? totalScore : (totalScore * penaltyFactor));
   finalScore = pinescript.nz(finalScore, 0);
-  let colZone = ((finalScore >= thHigh) ? cHigh : ((finalScore >= thLow) ? cLow : cBase));
+  var colZone = ((finalScore >= thHigh) ? cHigh : ((finalScore >= thLow) ? cLow : cBase));
   pinescript.plot(finalScore, "VCS", ({ color: colZone, style: plot.style_histogram, linewidth: 1 }));
   pinescript.hline(thLow, "Threshold", ({ color: pinescript.color.gray, linestyle: hline.style_dotted }));
-  let scr_vol_val = pinescript.sma(volume, scr_vol_len);
+  var scr_vol_val = pinescript.sma(pinescript.series(10, volume), scr_vol_len);
   pinescript.plot(scr_vol_val, "Avg Vol", ({ display: display.data_window }));
-  let mCapBasic = pinescript.requestFinancial(syminfo.tickerid, "MARKET_CAP_BASIC", "D", ({ ignore_invalid_symbol: true }));
-  let mCapFinal = (pinescript.na(mCapBasic) ? (pinescript.nz(syminfo.shares_outstanding_total) * close) : mCapBasic);
+  var mCapBasic = pinescript.requestFinancial(syminfo.tickerid, "MARKET_CAP_BASIC", "D", ({ ignore_invalid_symbol: true }));
+  var mCapFinal = (pinescript.na(mCapBasic) ? (pinescript.nz(syminfo.shares_outstanding_total) * close) : mCapBasic);
   pinescript.plot(mCapFinal, "Market Cap", ({ display: display.data_window }));
-  let adr_val = (100 * (pinescript.sma((high / low), adr_len) - 1));
+  var adr_val = (100 * (pinescript.sma(pinescript.series(11, (high / low)), adr_len) - 1));
   pinescript.plot(adr_val, "ADR %", ({ display: display.data_window }));
-  let benchmark_close = pinescript.requestSecurity(rs_benchmark, timeframe.period, close, ({ ignore_invalid_symbol: true }));
-  let rs_ratio = (close / benchmark_close);
-  let rs_rank = pinescript.percentrank(rs_ratio, rs_len);
+  var benchmark_close = pinescript.requestSecurity(rs_benchmark, timeframe.period, close, ({ ignore_invalid_symbol: true }));
+  var rs_ratio = (close / benchmark_close);
+  var rs_rank = pinescript.percentrank(rs_ratio, rs_len);
   pinescript.plot(rs_rank, "Relative Strength", ({ display: display.data_window }));
 }
 
@@ -1812,6 +1971,10 @@ function run(data, options = {}) {
     rt.__shapeIdx = 0;
     globalThis.bar_index = i;
     globalThis.last_bar_index = n - 1;
+    globalThis.time_tradingday = inTime[i];
+    globalThis.time_close = inTime[i];
+    globalThis.last_bar_time = inTime[n - 1];
+    globalThis.timenow = inTime[n - 1];
     globalThis.barstate = {
       isfirst: i === 0, islast: i === n - 1, isrealtime: false, ishistory: true,
       isconfirmed: true, isnew: true, islastconfirmedhistory: i === n - 1,
